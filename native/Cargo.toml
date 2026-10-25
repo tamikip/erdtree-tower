@@ -1,0 +1,19 @@
+[package]
+name = "erdtree-tower-preview"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "erdtree_tower_preview"
+crate-type = ["cdylib"]
+
+[dependencies]
+erdtree-tower = { path = ".." }
+eldenring = { path = "vendor/fromsoftware-rs/crates/eldenring" }
+fromsoftware-shared = { path = "vendor/fromsoftware-rs/crates/shared" }
+hudhook = { path = "vendor/hudhook", default-features = false, features = ["dx12"] }
+
+[profile.release]
+debug = 1
+

@@ -1,0 +1,11 @@
+# 仓库与运行包
+
+此仓库保存黄金树爬塔 Mod 的源码、测试和场景资源，包含随机装备词条与101种 Ruby 新法术。最新可运行包放在本仓库的私有 GitHub Release 附件中。
+
+下载 Release ZIP 后完整解压，运行 `Launch-Preview.cmd`。游戏目录不同于启动脚本默认值时，通过 `Launch-Preview.ps1 -GameDir <游戏Game目录>` 启动。游戏版本检查与现有启动器一致。新词条、新法术请新开旅程体验。
+
+仓库不保存个人存档、会话文件、日志、编译缓存和历史测试包。Release 包也不包含这些文件或旧版 DLL。
+
+Rust 源码与所需 vendored 代码在 `src/`、`native/`，可通过对应的 Cargo.toml 构建。`Build.ps1` 和 `scene-builder/SceneBuilder.csproj` 沿用原工作区布局；完整资源重建仍需原工作区中的 SoulsFormats、UXM、参数定义与游戏文件，仓库未声称包含这些外部依赖。
+
+法术接入的自动验证记录随资源保存。实际施放和原包缺失视觉引用的限制见 README；第三方来源见 THIRD_PARTY_NOTICES.md。

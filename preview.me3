@@ -1,0 +1,12 @@
+profileVersion = "v1"
+savefile = "ER_TOWER_PREVIEW.sl2"
+start_online = false
+
+[[supports]]
+game = "eldenring"
+
+[[natives]]
+path = 'erdtree_tower_preview_v95.dll'
+
+[[packages]]
+path = 'scene-assets'

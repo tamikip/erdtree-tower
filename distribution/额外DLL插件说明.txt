@@ -1,0 +1,20 @@
+额外 DLL 插件
+
+可以直接编辑 runtime/test.me3，添加额外 DLL；启动器不会再重写已有的这个文件。
+启动时另生成 runtime/test.launch.me3 供 ME3 使用，不要编辑这个临时运行文件。
+也兼容 runtime/custom-natives.toml，两个用户配置文件都不会被覆盖。
+旧版 seamless 入口对应 seamless-entry/runtime/custom-natives.toml。
+
+第一次启动新版后，退出游戏，用记事本打开 custom-natives.toml，按下面格式添加插件：
+
+[[natives]]
+path = 'D:/Plugins/LivePlugin/plugin.dll'
+
+请将路径替换为实际 DLL 路径，去掉示例前的 #。建议使用完整路径及正斜杠，保留插件配套文件。
+多个 DLL 可重复添加 [[natives]] 段；如需 load_after 等选项，按插件作者的 ME3 说明配置。
+不要在这里重复加入无缝或爬塔 DLL，也不要添加 profileVersion 等整份配置的根字段。
+
+保存后从原来的爬塔启动入口运行即可。旧版入口对应 seamless.me3 与 seamless.launch.me3。
+同一个 DLL 在两处重复配置时，优先保留 .me3 中的选项，只加载一次。
+如果插件配置已被旧启动器覆盖，请从自己的备份或 .me3.before-custom.bak 恢复相应插件段。
+此功能提供额外 DLL 的加载入口，不保证第三方插件与无缝、爬塔之间的兼容性。

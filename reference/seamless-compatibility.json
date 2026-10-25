@@ -1,0 +1,71 @@
+{
+  "status": "experimental_combat_runtime_wired_replication_unverified",
+  "gameplay_compatible": false,
+  "independent_rewards": {
+    "rules": "Implemented in src/party_rewards.rs: owner-scoped contracts, gear and rewards; request deduplication; host progression barrier; reconnect persistence",
+    "tests": "Six rules tests, five real TCP tests, one two-child-process reward-barrier test and 24 core unit tests pass; game inventory remains a stub",
+    "runtime_integrated": true,
+    "integration_scope": "Opt-in v93 combat path calls existing local reward and contract delivery; interruption marker blocks retries; service rooms remain blocked and live replication is unverified",
+    "game_dll_updated": true,
+    "remaining": "Bind independently authenticated tower peers to actual Seamless players, per-client inventory bridge and durable delivery receipts, replicated enemies and party travel, real multiplayer validation",
+    "details": "reference/联机独立奖励接入状态.md"
+  },
+  "tower_transport": {
+    "implementation": "src/party_link.rs: independent nonblocking TCP with version/session handshake and per-player credentials",
+    "verified": "Real loopback TCP and two separate client processes; framing, message roles, disconnect/reconnect identity, duplicate connection rejection and independent reward barrier",
+    "security_scope": "Plain TCP for trusted LAN or encrypted tunnel only; credential identity is not a verified Steam or Seamless identity",
+    "runtime_integrated": true,
+    "integration_scope": "Native worker thread and bounded queues; explicit host/guest config; no Steam identity mapping or automatic reconnect",
+    "test_log": "work/coop91-green.log"
+  },
+  "basis": "Installed Elden Ring Seamless Co-op",
+  "ersc_sha256": "FCD11A1849FD37851BB449BE30F1525CF498F63FD1FA568C4E15030EBE7CB251",
+  "installed_version": "2.0.1",
+  "latest_release_verified": false,
+  "update_source": "User-supplied Seamless Co-op v2.0.1 archive; embedded DLL version verified",
+  "previous_version_backup": "work/seamless84-backup-20261009-225849",
+  "direct_ersc_launcher_integration": "Launch-Seamless-Tower.cmd invokes original ersc_launcher.exe with a temporary opt-in dinput8 bootstrap and ModEngine2 resource mounting. Actual startup verified on 2026-10-09: ersc.dll, tower DLL, resource mount and first overlay frame. No character entered.",
+  "latest_release_user_confirmed": "2.0.1",
+  "entry_save_extension": "ertowercoop",
+  "entry_runtime_directory": "release-preview/seamless-entry/runtime",
+  "known_entry_limitations": ["Build 86 relocates attendants to verified entry coordinates; act 2/3 NPC stability awaits gameplay verification", "Tower official-online and local-world guards remain enabled", "Cooperative gameplay synchronization remains unimplemented"],
+  "attendant_fix_evidence": "Read-only live samples showed HP falling to zero while NPC Y fell roughly 20 meters from the spawn position. Build 86 removes the generic lateral offset on distinct battlefields; act 1 reverted to Limgrave colosseum per user request. 91 native tests passed.",
+  "spirit_fix_build": 85,
+  "spirit_fix_evidence": "Live process: 0x4b6e80 refresh hook installed; Seamless hooks at 0x4b72f0 and 0x4b85b0 left unchanged. 90 native tests passed. User confirmed successful summon; combat log records alive=true and used=true. Solo route, travel, spawn and reward flow observed under Seamless.",
+  "observed_pe_exports": ["modengine_ext_init"],
+  "agreed_rules": {
+    "route_authority": "host",
+    "travel": "whole_party",
+    "enemy_authority": "host_only",
+    "rewards": "independent_three_choices_per_player",
+    "defeat": "entire_party_dead"
+  },
+  "verified_local_sources": [
+    "work/me3-source/schemas/mod-profile.zh.md",
+    "work/fromsoftware-rs/crates/eldenring/src/cs/session_manager.rs",
+    "work/fromsoftware-rs/crates/eldenring/src/cs/network_session.rs",
+    "work/fromsoftware-rs/crates/eldenring/src/cs/world_chr_man.rs",
+    "native/src/runtime.rs"
+  ],
+  "unverified_requirements": [
+    "Seamless lobby and player authority mapping in a live session",
+    "Host debug-spawned enemies replicated to clients with stable identity",
+    "A supported transport for tower route, run identity and reward receipts",
+    "Party warp and load acknowledgement without competing resets",
+    "Spectator and resurrection behavior before all-party defeat",
+    "Reconnect and host-disconnect handling",
+    "Independent room-service and reward consumption under event-flag replication"
+  ],
+  "probe": {
+    "launcher": "Launch-Seamless-Probe.cmd",
+    "save_extension": "ertowerprobe",
+    "tower_assets_loaded": false,
+    "tower_runtime_enabled": false,
+    "gameplay_hooks_enabled": false,
+    "settings": "Copies installed settings privately; changes only probe save extension and disables invasions",
+    "logs": "release-preview/seamless-probe/tower-preview.log",
+    "logs_account_identifiers": false
+  },
+  "public_api_search": "Search returned purported API repositories which all returned HTTP 404; rejected as implementation evidence. No supported API has been verified.",
+  "testing_constraint": "User currently has only one computer/player available; multiplayer behavior cannot yet be validated."
+}

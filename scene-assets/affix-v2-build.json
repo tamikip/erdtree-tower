@@ -1,0 +1,12 @@
+{
+  "sourceRegulationSha256": "6A81E51D64F3A700027B20403250E8BB78D806DF3BA97CD803243A02A26AAB61",
+  "sourceItemTextSha256": "1753A1120D7F74488B5197F2D46DF47C5DC148D25CBA4927852AE2BBCBF90F15",
+  "builtRegulationSha256": "643A854F1A706A348A81649F12E16D1C104152F72F1ACDFC0F3158A0E6289B57",
+  "builtItemTextSha256": "0E9AAA628C3730706E849DBCF53277542908D2880B7FC032496D484BAE22B43B",
+  "variants": 12328,
+  "effects": 48,
+  "originalParametersPreserved": true,
+  "originalTextPreserved": true,
+  "reinforcementOriginsVerified": true,
+  "newEffectReferencesVerified": true
+}

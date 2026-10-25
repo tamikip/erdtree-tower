@@ -1,0 +1,507 @@
+[
+  {
+    "id": 11540,
+    "name": "Sanguine Rupture",
+    "caption": "A terrifying aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster with bloodthorns to cover the area with tainted blood, inflicting hemorrhage buildup and fire damage. Charging extends the surge of the blood.\n\nSorcerers who pledged themselves to the Blood Star would indulge in physical depletion, so much so that their very flesh molded to the staves they used.\n Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 11600,
+    "name": "Oracle Bubbles",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nProduces several small magical bubbles that drift towards foes before they naturally pop.\nCharging increases the delay before the bubbles pop.\n\nThe claymen search for lost oracles within their bubbles. Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 11610,
+    "name": "Great Oracular Bubble",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nProduces a gigantic magical bubble that drifts towards foes before it naturally ruptures.\nCharging increases the delay before the bubble pops.\n\nThe claymen search for lost oracles within their bubbles. Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12500,
+    "name": "Crystal Dart",
+    "caption": "Sorcery of the mysterious Crystalians.\n\nFires a swift crystal shard in front of the caster.\n\nA sorcery created by the Crystalians that predates almost all of Caria, yet its influence can be seen in numerous magical Carian arts and phalanxes. Boosted by: Crystalian Sorcery"
+  },
+  {
+    "id": 12501,
+    "name": "Ancestral Wisps",
+    "caption": "Spectral sorcery of ancestral spirits.\n\nSet staff alight with ancestral magic and scatter particles of spirit energy that make foes more susceptible to magic damage.\n\nThe horns of the ancestral spirits grew to unyielding lengths, entangling the bodies of their worshippers and sharing their power. Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 12510,
+    "name": "Rampart Gale",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nManipulate the surrounding winds and hurl them at foes. This sorcery can be charged, cast repeatedly and while in motion.\n\nThe mighty force of Stormveil\u0027s winds were long uncontested.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 12520,
+    "name": "River of Knives",
+    "caption": "Superior ice sorcery of the Town of Zamor.\n\nSummon a storm of ice spikes that seek foes for a short time, inflicting frostbite.\nCharging enhances potency and duration.\n\nDesperate against the giantsflame, Zamor sorcerers waited in ambush and hurled bolts of frigid magic at unwary opponents.\n Boosted by: Cold Sorcery"
+  },
+  {
+    "id": 12530,
+    "name": "Pursuing Rancor",
+    "caption": "Sorcery of the servants of Death.\n\nSummons a ghostflame rancor that manifests near foes and explodes after a brief delay.\n\nDeathbirds acted as fire keepers of the spirit realm graveyard, but this particular fire burned a blackened white and gleamed cold like snow.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 12540,
+    "name": "Ancestral Clarity",
+    "caption": "Spectral sorcery of ancestral spirits.\n\nAlleviates any sleep and madness buildup within the caster.\n\nAncestral spirits exist as a phenomenon beyond the purview of the Erdtree. Life sprouts from death, as it does from birth. Such is the way of the living.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 12550,
+    "name": "Runic Thirst",
+    "caption": "Sorcery of the servants of Death.\n\nImbues the caster\u0027s body with an enriching ghostflame aura, sapping more runes from slain enemies for a short time.\n\nThe lamplight is similar to grace in appearance, only it is said that it can only be seen by those who met their death in battle.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 12560,
+    "name": "Crystal Lance",
+    "caption": "Sorcery of the mysterious Crystalians.\n\nConjures a magic crystal spike to impale foes.\nCast again to propel the lance forward as a projectile, exploding on impact.\n\nA sorcery created by the Crystalians that predates almost all of Caria, yet its influence can be seen in numerous magical Carian arts and phalanxes.\n Boosted by: Crystalian Sorcery"
+  },
+  {
+    "id": 12600,
+    "name": "Returned Once More",
+    "caption": "Spectral sorcery of ancient ancestral spirits.\n\nBathe staff in spectral energy, imbuing caster with an empowering prayer that saves them from otherwise fatal damage.\nTemporarily boosts non-physical attack after the effect.\n\nDeath, as enforced by the Erdtree\u0027s grace, is necessary. But those privileged by the sight of budding horns could stall an otherwise inevitable fate.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 12610,
+    "name": "Billowing Rancor",
+    "caption": "Sorcery of the servants of Death.\n\nBathe the staff with the biting cold of ghostflame and thrust forward, calling a fan of ghostflame pillars in front of the caster.\n\nDeathbirds acted as fire keepers of the spirit realm graveyard, but this particular fire burned a blackened white and gleamed cold like snow.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 12620,
+    "name": "Spectral Pillars of Light",
+    "caption": "Spectral sorcery of ancestral spirits.\n\nCharge staff with ancestral energy, then plunge staff into the ground to cast an array of spectral arrows that pierce the caster\u0027s surroundings.\n\nAncestral spirits exist as a phenomenon beyond the purview of the Erdtree. Life sprouts from death, as it does from birth. Such is the way of the living.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 12710,
+    "name": "Blasphemous Misdirection",
+    "caption": "One of the terrible sorceries of Rykard, Lord of Blasphemy.\n\nViolently set the staff aflame, then deliver a sweeping blow that sends forth a seething bladed spirit.\nWhen charged, the spirit pierces through foes while siphoning their health.\n\nRykard\u0027s eventual turn to heresy preceded his amounting to nothing greater than the gods he stood against.\n Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 12720,
+    "name": "Simmering Bolides",
+    "caption": "One of the sorceries developed from the magma of Mt. Gelmir.\n\nSwing staff upwards, summoning a line of volcanic eruptions that travel forward.\n\nRykard\u0027s restoring of the ancient hexes led to the discovery that the magma was so ubiquitous on Mt. Gelmir, it could be pulled from underneath the very soil. Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 12730,
+    "name": "Primordial Arc",
+    "caption": "Primeval sorcery devised by Lusat.\n\nCast a powerful horizontal arc of starry torrents that spreads outward.\n\nLusat saw echoes of knowledge, kingdoms, and cultures reverberate through an incomprehensible infinity. Every possible outcome at once, and then just as abruptly, nothing at all. Boosted by: Lustat Sorcery"
+  },
+  {
+    "id": 12740,
+    "name": "Biting Winds",
+    "caption": "Ice sorcery of the Town of Zamor.\n\nSteady the staff and channel an icy storm around the caster\u0027s body to inflict frostbite buildup.\n\nZamor knights were masters of obscurity. When they approached, the bite of cold inevitably followed.\n Boosted by: Cold Sorcery"
+  },
+  {
+    "id": 12750,
+    "name": "Nebular Strike",
+    "caption": "One of the glintstone sorceries that manipulates gravitational forces.\n\nShowers armament held in the right hand with gravity magic, dealing extra magic and poise damage for a short time.\n\nDark clouds of dense, enormous stars are indicative of the Naturalborn\u2019s power, or perhaps something greater\u2026\n Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 12760,
+    "name": "Stalwart Bubble",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nIncreases poise and hardness for the caster.\n\nSome of the ancient priests preferred a polearm while others supported them from afar using largely defensive sorceries. Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12770,
+    "name": "Frostgale Lance",
+    "caption": "Ice sorcery of the Town of Zamor.\n\nLeap forward through biting winds and thrust the staff downward to create a massive freezing tornado at the point of impact.\n\nThe knights of Zamor channeled icy winds through their weapons, as their powerful sorceries doubled as marvelous displays of swordsmanship.\n Boosted by: Cold Sorcery"
+  },
+  {
+    "id": 12810,
+    "name": "Night Maiden\u0027s Mirage",
+    "caption": "One of the night sorceries of Sellia, Town of Sorcery.\n\nQuickly retreat backwards, concealing the caster\u0027s presence while releasing a damaging silver mist.\n\nNight Maidens would often employ Sellian sorceries to quickly disengage from danger. Capable assassins, however, saw them fit for exploiting weakness.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 12820,
+    "name": "Eochaid\u0027s Incisions",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster to conjure an aberrant blade and attack in a wide sweep, inflicting a unique type of hemorrhage that wears down the health of foes for a brief time.\nCan cast another follow-up attack.\n\nAberrant sorcerers were not well-versed in traditional magic. Their discovery of the Blood Star yielded sorceries that could instead be cast by inflicting wounds upon oneself.\n Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 12830,
+    "name": "Ancient Priest\u0027s Blessing",
+    "caption": "Ancient sorcery of the claymen who served as priests in the ancient dynasty.\n\nAccumulates magical blessings of ancient priests, sacrificing the caster\u0027s attack power to vastly boost all damage negation for allies.\n\nThe ancient dynasty battled as a single unit with synergy that rivaled a hivemind.\n Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12840,
+    "name": "Crystal Mace",
+    "caption": "Sorcery of the mysterious Crystalians.\n\nConjures a magic crystal mace to smash foes.\nRepeated inputs allow for up to two follow-up casts.\n\nA sorcery created by the Crystalians that predates almost all of Caria, yet its influence can be seen in numerous magical Carian arts and phalanxes."
+  },
+  {
+    "id": 12910,
+    "name": "Zamor Tempest",
+    "caption": "Superior ice sorcery of the Town of Zamor.\n\nBuild frost magic within one\u0027s body and unleash it as a mighty gale.\nCharging enhances potency.\n\nCenturies of war battered the top of the mountain. Even when Zamor blood permeated the very snow, they persisted still.\n Boosted by: Cold Sorcery"
+  },
+  {
+    "id": 12920,
+    "name": "Lamplight",
+    "caption": "Sorcery of the servants of Death.\n\nCreates a beacon of spiritual lamplight from the Helphen, illuminating surroundings while boosting magic damage negation and frostbite resistance.\n\nThe lamplight is similar to grace in appearance, and it is said that it can only be seen by those who met their death in battle.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 12921,
+    "name": "Night of Nascent Frost",
+    "caption": "Superior ice sorcery of the Town of Zamor.\n\nCreates a magical ice vortex around the caster. For a short while, dealing physical damage will either heal or boost magic attack depending on the caster\u0027s current HP.\n\nThe night of frost emptied all life from the mountain\u0027s glow. The crops withered and the leaves fell, never to grow again.\n"
+  },
+  {
+    "id": 12922,
+    "name": "Preserving Bubble",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nCalls upon the nurturing of the ancient priests, ejecting any and all filth from the caster\u0027s body.\n\nHidden within the warrens and ruins of their own home, the ancient shamans wait eternally for augurs of wisdom that have long expired. Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12923,
+    "name": "Regnerative Bubble",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nRestores a small amount of health (480) over a short time for the caster.\n\nThe priests of the ancient dynasty uniquely commanded magic to support others in their rank, as most of them were well-practiced in healing sorceries. Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12924,
+    "name": "Superior Regenerative Bubble",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nRestores a moderate amount of health (880) over a short time for the caster.\n\nThe priests of the ancient dynasty uniquely commanded magic to support others in their rank, as most of them were well-practiced in healing sorceries.\n Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12930,
+    "name": "Recusant\u0027s Vow",
+    "caption": "Sorcery developed from the blasphemy of Rykard\u0027s followers.\n\nCreates a magmatic shield that boosts fire damage and fire damage negation.\nCasting again will fling pools of magma widely in front of the caster.\n\nRykard\u0027s followers once thought his pursuit to be a righteous path, even throwing themselves to the maw of the Serpent King during their audience.\n Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 12931,
+    "name": "Ancient Tidal Curtain",
+    "caption": "Ancient sorcery of the claymen who served as priests in the ancient dynasty.\n\nRestores a moderate amount of health (880) over a short time and lowers all status resistances of enemies in the caster\u0027s vicinity.\n\nHidden within the warrens and ruins of their own home, the ancient shamans wait eternally for augurs of wisdom that have long expired.\n Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 12940,
+    "name": "Needle Volley",
+    "caption": "Ice sorcery of the Town of Zamor.\n\nFires a wide-fanning volley of ice shards that shred foes.\nCharging extends the duration of the volley.\n\nCloaked in icy tempests, the knights of Zamor have challenged the Fire Giants since ancient times.\n"
+  },
+  {
+    "id": 12941,
+    "name": "Soul Barter",
+    "caption": "Spectral sorcery of ancestral spirits.\n\nSet caster alight with spectral energy and convert any damage received into FP.\n\nSpectral phenomena once coexisted with the Erdtree, mirroring the flora and fauna of daily life.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 12950,
+    "name": "Spirit Stifle",
+    "caption": "Spectral sorcery of ancestral spirits.\n\nRaise staff aloft and summon a soul-sapping miasma that reduces foes\u0027 physical and magic defense for a short time.\n\nThose who bore witness to the regal spirits knew that true life extended beyond the reach of the Golden Order.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 12960,
+    "name": "Stormhawk Reflex",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nInherit a blessing from the storm that surrounds the caster\u0027s body with hastening winds, temporarily allowing ease of dodging while boosting stamina regeneration and endurance.\n\nEven with tremendously cumbersome armor, the knights of Stormveil moved and fought with inhuman agility.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 12970,
+    "name": "Winds of Sovereignty",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nInherit a blessing from the storm that surrounds the caster\u0027s body with blockading winds, boosting physical and lightning damage negation.\n\nIt was not uncommon to see sparks of lightning shimmering in the castle cyclones, but the mightiest knights armed themselves with the winds alone.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 12980,
+    "name": "Rampart Barricade",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nInherit a blessing from the storm that surrounds the caster\u0027s body with extinguishing winds, boosting physical and fire damage negation.\n\nIt was not uncommon to see sparks of lightning shimmering in the castle cyclones, but the mightiest knights armed themselves with the winds alone.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 12990,
+    "name": "Nightbearer Miracle",
+    "caption": "Forbidden sorcery of Sellia, Town of Sorcery.\n\nDeploys a distortion screen around the caster, increasing non-physical damage negation.\nWhen physically struck by an enemy, the distortion will shift to slowly regenerate the caster\u0027s health.\n\nNight Maidens would often employ Sellian sorceries to quickly disengage from danger. Capable assassins, however, saw them fit for exploiting weakness.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13000,
+    "name": "Night Maiden\u0027s Mist",
+    "caption": "One of the night sorceries of Sellia, Town of Sorcery.\n\nReleases a life-sapping silver mist before the caster, dealing damage to all caught within, including the caster.\nThis sorcery can be cast while in motion.\n\nBelow Sellia, the Eternal City of Nokron sleeps. This sorcery originates from the maidens of that place. Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13010,
+    "name": "Evernight Snare",
+    "caption": "One of the night sorceries of Sellia, Town of Sorcery.\n\nLay forth an invisible magic seal directly in front of the caster that ensnares foes that come near, rendering them temporarily vulnerable.\n\nNight Maidens would often employ Sellian sorceries to quickly disengage from danger. Capable assassins, however, saw them fit for exploiting weakness.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13020,
+    "name": "Nightbearer Grip",
+    "caption": "Forbidden sorcery of Sellia, Town of Sorcery.\n\nAllows the caster to distort the psyche of the weak-willed, turning a foe to an ally while massively increasing their attack power and damage negation.\n\nTo save themselves, Night Maidens would even go as far as obscuring the will of their pursuers, spilling their blood with their own swords.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13030,
+    "name": "Fleeting Darkness",
+    "caption": "Forbidden sorcery of Sellia, Town of Sorcery.\n\nCreates a small space of darkness that dispels magic projectiles from foes, using its power to retaliate with night shards.\n\nOriginally a lost sorcery of the Eternal City, the despair that brought about its ruin made manifest.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13100,
+    "name": "Recusant\u0027s Audience",
+    "caption": "Sorcery developed from the blasphemy of Rykard\u0027s followers.\n\nBathe the caster\u0027s body in blasphemous flame, sacrificing a small portion of HP to alleviate frostbite and hemorrhage buildup.\n\nRykard\u0027s followers once thought his pursuit to be a righteous path, even throwing themselves to the maw of the Serpent King during their audience.\n Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 13200,
+    "name": "Arciform Comets",
+    "caption": "One of the glintstone sorceries of the Academy of Raya Lucaria.\n\nFires four small glintstone projectiles simultaneously that travel in an arc and pursue their target. \n\nDerivative of a sorcery used by the academy\u0027s adjudicator, but some would argue magic evolves quickest when redefined. Boosted by: Lustat Sorcery"
+  },
+  {
+    "id": 13201,
+    "name": "Crystal Sling",
+    "caption": "Sorcery of the mysterious Crystalians.\n\nSummons a line of large crystals that fire forwards, seeking foes.\nCharging increases the amount of crystals summoned.\n\nA sorcery created by the Crystalians that predates almost all of Caria, yet its influence can be seen in numerous magical Carian arts and phalanxes. Boosted by: Crystalian Sorcery"
+  },
+  {
+    "id": 13210,
+    "name": "Death Rite Repulse",
+    "caption": "Ruinous sorcery of the servants of Death.\n\nProduces a concentration of ghostflame at the caster\u0027s center and releases it across a wide area, dealing frostbite buildup and cleansing any deathblight from the caster.\n\nThe blaze of the lamplight would burn the dead to ash. To the living however, its flame was bitterly, numbingly cold.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 13220,
+    "name": "Darkstar of the Naturalborn",
+    "caption": "Eternal gravity sorcery of Astel, the Naturalborn.\n\nCasts a semi-transparent pulsating darkstar that intermittently shoots gravity projectiles at nearby foes for a brief time.\n\nCrackling and sprawling, the stars fizzle out one by one and form an ocean of emptiness, slowly swallowing the world. Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13230,
+    "name": "Cosmic Skyfire",
+    "caption": "One of the sorceries of the Carian royal family.\n\nCall down a cascade of powerful magic comets from the sky that scour over a wide area in front of the caster.\n\nCarian knights favored magic that enhanced their frontline presence without upstaging their swordsmanship, making this garish sorcery a particular anomaly.\n Boosted by: Crystalian Sorcery"
+  },
+  {
+    "id": 13240,
+    "name": "Great Storm Spear",
+    "caption": "Superior sorcery that channels the tempests of Stormveil.\n\nSurround the staff with a lightning tempest that lifts the caster upwards, then descend into a downward plunge that sends forth a mighty gale of piercing wind.\n\nThis sorcery forms a counterpart to Great Storm Axe. Highly lethal to single targets, but only when cast in the main hand.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13250,
+    "name": "Tibia\u0027s Cavalry",
+    "caption": "Sorcery of the servants of Death.\n\nSummons three large cavalry knight apparitions to attack foes in front of the caster.\n\nThe dead have long been left to wander, lost in lightless obscurity.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 13260,
+    "name": "Tidal Retaliation",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nCalls upon the protection of the ancient priests, manifesting a ring of volatile bubbles that radiate outward from the caster upon taking damage.\n\nThe ancient dynasty battled as a single unit with synergy that rivaled a hivemind.\n Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 13270,
+    "name": "Great Storm Axe",
+    "caption": "Superior sorcery that channels the tempests of Stormveil.\n\nEnvelop the staff in a storm tempest, then leap forward to deliver a crashing downward blow that splinters off into highly damaging wind currents.\n\nThis sorcery forms a counterpart to Great Storm Spear. Highly lethal to groups of close enemies, but only when cast in the off-hand. Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13280,
+    "name": "Helphen\u0027s Foresight",
+    "caption": "Sorcery of the servants of Death.\n\nLends the caster the guidance of the lamplight, allowing them to detect that which would normally be invisible.\n\nAttune yourself to the roots of the lampwood. See the unseen. Boosted by: Death Sorcery"
+  },
+  {
+    "id": 13300,
+    "name": "Aberrant Spines",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster with bloodthorns to fling forth an array of sharp splinters that inflict damage and blood loss buildup.\n\nAberrant sorcerers were not well-versed in traditional magic. Their discovery of the Blood Star yielded sorceries that could instead be cast by inflicting wounds upon oneself.\n Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 13310,
+    "name": "Simmering Relent",
+    "caption": "One of the sorceries developed from the magma of Mt. Gelmir.\n\nWidely swing the staff and summon a seething magma comet that launches towards foes.\nCan be cast in succession.\n\nAfter discovering the ancient hexes of Gelmir, Rykard, son of Queen Rennala, brought them back into practical use as new forms of sorcery.\n Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 13320,
+    "name": "Ancient Tidal Arc",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nFires a crawling wave of water that spreads outward, exploding after traveling a short distance.\nCharging generates a bubble shield around the caster that boosts physical damage negation.\n\nThousands of feet beneath the soil, water-worn structures tell of an ancient dynasty that housed otherworldly intelligence.\n Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 13330,
+    "name": "Terra Erudita",
+    "caption": "Primeval sorcery devised by Azur.\n\nSiphons energies from the primeval current into sorceries, boosting non-physical damage and casting speed.\nMagic grows exponentially heavier under the current\u0027s weight, allowing closer enemies to be stunned more easily.\n\nEntangled within the primeval current was the one truth. Those closest to the moon felt the current\u2019s pull tenfold.\n Boosted by: Lustat Sorcery"
+  },
+  {
+    "id": 13340,
+    "name": "Loretta\u0027s Protection",
+    "caption": "Sorcery used by Loretta, Knight of the Haligtree.\n\nCreates a personal barrier that increases magic damage negation while reducing FP consumption (33%). \n\nProtecting the Carian family would prove a heavy responsibility for entire battalions. Yet this was a task Loretta once proudly fulfilled by herself.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13350,
+    "name": "Haligtree Knight\u0027s Oath",
+    "caption": "Sorcery used by Loretta, Knight of the Haligtree.\n\nCreates a magical aura around the caster that wards off elements deemed unworthy by the Carian lineage.\nEnormously increases lightning, fire, and holy damage negation while reducing FP consumption (20%).\n\nLoretta, once a royal Carian Knight, went on a journey in search of a haven for Albinaurics, and determined that the Haligtree was their best chance for eventual salvation.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13400,
+    "name": "Splintering Bubble",
+    "caption": "Sorcery of the claymen who served as priests in the ancient dynasty.\n\nProduces a concentrated bubble that splits into multiple smaller bubbles that drift towards foes.\n\nThe claymen search for lost oracles within their bubbles.\n Boosted by: Giantsflame Incantation"
+  },
+  {
+    "id": 13410,
+    "name": "Haligtree Knight\u0027s Mastery",
+    "caption": "Sorcery used by Loretta, Knight of the Haligtree.\n\nCalls upon the knight Loretta\u0027s aid to deliver a barrage of magical arrows cascading downward in a forward area.\n\nThe wind stilled and the moon gleamed in the presence of the Haligtree Knight. Her arrival was felt long before it was seen. Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13420,
+    "name": "Death Rite Spear",
+    "caption": "Sorcery of the servants of Death.\n\nThrust staff into the air and call down a single ritual spear.\nCan be followed up with a second spear.\n\nThe land of the lampwood was scored by gravestones of unfortunate souls still waiting for death.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 13421,
+    "name": "Pillars of Magma",
+    "caption": "One of the sorceries developed from the magma of Mt. Gelmir.\n\nRaise the staff and set it ablaze, then forcefully plunge the staff into the ground, creating a large outward-fanning magma shockwave.\n\nRykard\u2019s restoring of the ancient hexes led to the discovery that the magma was so ubiquitous on the volcano\u2019s surface, it could be pulled from underneath the very soil. Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 13430,
+    "name": "Fellstar Crash",
+    "caption": "One of the glintstone sorceries that manipulates gravitational forces.\n\nThrust the staff upward and call down a massive bolt of gravitational lightning.\nRepeated inputs allow for successive casting.\n\nMerely a glimpse of the destructive power fated to end the Eternal City.\n Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13440,
+    "name": "Cragflesh",
+    "caption": "One of the glintstone sorceries that manipulates gravitational forces.\n\nStomp hard into the ground to create a massive gravity well, then reinforce the caster\u0027s body with rocks from the earth.\nThis vastly increases physical damage negation at the expense of mobility.\n\nThe Red Lion General wielded gravitational powers which he learned in Selia during his younger days.\nAll so he would never have to abandon his beloved but scrawny steed. Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13441,
+    "name": "Starscourge Hammer",
+    "caption": "One of the glintstone sorceries that manipulates gravitational forces.\n\nLeap forward to create a gravity shockwave and slam staff downward, casting a line of gravity lightning pillars.\n\nThe Red Lion General wielded gravitational powers which he learned in Selia during his younger days.\nAll so he would never have to abandon his beloved but scrawny steed.\n Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13450,
+    "name": "Fellstar Rift",
+    "caption": "One of the glintstone sorceries that manipulates gravitational forces.\n\nCalls forth a rift of space that sends a wave of sharp, jagged rocks in front of the caster.\n\nThis gravity manipulation was once used by those born of falling stars.\n Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13460,
+    "name": "Dark Moon Armament",
+    "caption": "Dark moon sorcery of Ranni, the Witch.\n\nEnwreathe armament in the right hand with a cold power synonymous with Ranni\u0027s Dark Moon, increasing frostbite buildup and magic damage.\n\nRanni\u0027s sigil is a full moon, cold and leaden. Within it, a limitless starry expanse of human imperfection.\n Boosted by: Cold Sorcery"
+  },
+  {
+    "id": 13470,
+    "name": "Torrential Cataclysm",
+    "caption": "Primeval sorcery devised by Azur.\n\nCreates a defensive trio of star particles that intermittently launch primeval stars at nearby foes while also protecting the caster from non-physical damage.\nThe arc and effect will both persist for a short time.\n\nWhen Azur glimpsed into the primeval current, he saw darkness. He was left both bewitched and fearful of the abyss.\n Boosted by: Lustat Sorcery"
+  },
+  {
+    "id": 13471,
+    "name": "Crystal Shell",
+    "caption": "Sorcery of the mysterious Crystalians.\n\nEnwreathes the caster\u0027s body in an unshatterable crystal aura, raising all status resistances and boosting physical damage negation, excluding damage from strikes.\n\nThis sorcery is used by high-ranking adepts among the Crystalians. Favored by practitioners of magic who wanted a taste of the frontlines.\n Boosted by: Crystalian Sorcery"
+  },
+  {
+    "id": 13500,
+    "name": "Aberrant Gouge",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster with bloodthorns to lash forward with a piercing bloodthorn of flame.\nCharging increases potency.\n\nSome exiled sorcerers have found a way to transmute the aberrant blood into magic energy, but the true sting of thorns is that of a ruinous, smoldering flame.\n Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 13510,
+    "name": "Deenh\u0027s Stormwind Talons",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nChannel the long lost true tempests of stormveil around caster\u0027s hands and perform an upwards rending strike with formed hawk talons.\n\nDeenh was a fierce hawk that faithfully rendered lifelong service to the old king of Stormveil long ago, when the true storm raged.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13511,
+    "name": "Carian Daggers",
+    "caption": "One of the sorceries of the Carian royal family.\n\nConjure a set of fanning magic daggers from the hand and throw them at foes.\nThe blades seek foes with nigh immaculate precision.\n\nA distinguished sorcery that combines terrifying speed with graceful Carian finesse. Boosted by: Carian Sword Sorcery"
+  },
+  {
+    "id": 13520,
+    "name": "Meteorite of Radahn",
+    "caption": "Unflinching gravity sorcery of Radahn, the Red Lion.\n\nGrips large clumps of rock from the ground and levitates them around the caster, launching themselves at foes after a long delay.\nDuring the delay, this sorcery boosts poise and physical damage negation.\n\nA bulwark of strength against the swirling constellations, Radahn stood in defense of Sellia as both general and student.\n Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13521,
+    "name": "Formless Bloodvine Spires",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster multiple times to fire a volley of interlacing thorns that cause heavy damage and blood loss buildup. Repeated inputs allow for up to two follow-up casts.\n\nScholars turned fanatics, they fed themselves to the star and its awful thorned maw.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 13530,
+    "name": "Spooling Briar Veins",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nMassively wounds the caster with bloodthorns to create thorned entrapments around the area, pulling in foes.\nCast again to release a magic aberrant blast of energy that repels foes back.\n\nSorcerers who pledged themselves to the Blood Star would indulge in physical depletion, so much so that their very flesh molded to the staves they used. Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 13531,
+    "name": "Sins of Theodorix",
+    "caption": "Blasphemous lava sorcery reminiscent of the ancient hero, Theodorix.\n\nBreathe into staff as if it were a torch and create large pools of magma in a wide area in front of the caster.\nCan be cast while on horseback.\n\nTheodorix was once an ancient troll warrior that fought against the giants, but he was cursed for the unforgivable sin of using draconic power.\n Boosted by: Dragon Communion Incantation"
+  },
+  {
+    "id": 13540,
+    "name": "Surge of Smarag",
+    "caption": "Superior glintstone sorcery of the Academy of Raya Lucaria.\n\nBreathe into staff as if it were a torch and unleash a volatile wave of glintstone flame in a wide area in front of the caster.\n\nSmarag was a devourer of sorcerers, and over time, his body became corrupted by their glintstones.\n"
+  },
+  {
+    "id": 13541,
+    "name": "Miasmic Dust",
+    "caption": "Spectral sorcery of ancestor spirits.\n\nRelease a weakening mist fanning outwards from the caster.\nThe very next melee attack will deal increased damage to any targeted foes.\n\nThose who bore witness to the regal spirits knew that true life extended beyond the reach of the Golden Order.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 13550,
+    "name": "Matriarch\u0027s Promise Hereafter",
+    "caption": "Spectral sorcery of ancient ancestor spirits.\n\nInvoke the aid of a matronly wraith that pulls in foes while dealing magic damage and steadily restoring the caster\u0027s health.\nCan be cast while in mid-air.\n\nWhen the Order arrived, no torches were lit nor weapons drawn. There was only a compliant silence, and the grievous withering that followed it.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 13560,
+    "name": "Rampart Lance",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nConjure static winds and thrust forward with crackling air, dealing heavy poise damage and knocking back foes. This sorcery can be followed up with an additional attack.\n\nThe mighty force of Stormveil\u0027s winds were long uncontested.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13580,
+    "name": "Crystal Ringblades",
+    "caption": "Sorcery of the mysterious Crystalians.\n\nFlings forward an array of small crystal rings used as throwing instruments by the Crystalians.\n\nCrystal sorceries are among the closest in ideals to the primeval current. As such, the Crystalians are revered guests of the sorcerers.\n Boosted by: Crystalian Sorcery"
+  },
+  {
+    "id": 13590,
+    "name": "Taker\u0027s Spite",
+    "caption": "One of the terrible sorceries of Rykard, Lord of Blasphemy.\n\nEmit a terrible serpentine roar remindful of the blasphemous lord, then swirl staff around to bathe surroundings with cyclones of magma.\n\nThe road of blasphemy is long and perilous. One cannot walk it unprepared to sin.\n Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 13700,
+    "name": "Sellian Advance",
+    "caption": "Superior night sorcery of Sellia, Town of Sorcery.\n\nBlink forward into mist to rapidly close distance, then leap into the air and descend into a wide, horizontal slash.\n\nThe most elite assassins of Sellia tempered highly mobile sorceries to quickly withdraw from sight and return to the fray with terrifying lethality.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13710,
+    "name": "Rending Talons",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nConjure flaying blades of wind that rupture foes, inflicting gradual damage and blood loss buildup.\n\nThe winds whipped with such lethality outside the castle perimeter, travelers unprepared would see their skin shredded from their bones. Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 13720,
+    "name": "Primordial Stars",
+    "caption": "Primeval sorcery devised by Lusat.\n\nFire forth an ancient shooting star with a nebulous tail.\n\nWhen Lusat glimpsed into the primeval current, he beheld the final moments of a great star cluster, and upon seeing it, he too was broken.\n Boosted by: Lustat Sorcery"
+  },
+  {
+    "id": 13730,
+    "name": "Altar of Denial",
+    "caption": "Ruinous sorcery of the servants of Death.\n\nPerforms a rite in the vicinity that sacrifices a portion of the caster\u0027s maximum HP to increase maximum FP \u0026 stamina.\nEnemies in the radius will have their non-physical attack power greatly lowered.\n\nWherever the dead gather, the cold flame will soothe the misdirected and signal those who seek the lamplight.\n Boosted by: Death Sorcery"
+  },
+  {
+    "id": 13740,
+    "name": "Aberrant Blossom",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster to create a blossoming bloodthorn flower that sends ripples of blood through the ground in a wide area for a short time.\n\nSome exiled sorcerers have found a way to transmute the aberrant blood into magic energy, but the true sting of thorns is that of a ruinous, smoldering flame.\n Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 13800,
+    "name": "Fragmenting Comets",
+    "caption": "Primeval sorcery devised by Azur.\n\nLobs a barrage of explosive starry projectiles that travel in an arc.\nCharging concentrates the spell into a single powerful projectile.\n\nWhen Azur glimpsed into the primeval current, he saw only darkness. He was driven into catatonia, pulled into the gateway to a limitless abyss.\n Boosted by: Lustat Sorcery"
+  },
+  {
+    "id": 13810,
+    "name": "Astel\u0027s Waning Darkstar",
+    "caption": "Eternal gravity sorcery of Astel, Stars of Darkness.\n\nDissolve surroundings in a decaying darkstar that implodes after a brief delay, dealing magic damage while pulling foes closer to the caster.\n\nCrackling and sprawling, the stars fizzle out one by one and form an ocean of emptiness, slowly swallowing the world. Boosted by: Gravity Sorcery"
+  },
+  {
+    "id": 13811,
+    "name": "Nightbearer Curtain",
+    "caption": "Forbidden sorcery of Sellia, Town of Sorcery.\n\nCreates a protective night shield around the caster, softening the next five instances of damage taken.\nEnemies in the vicinity will suffer decreased non-physical defense when the shield bursts.\n\nNight Maidens were targets. Passivity was rewarded only with death.\n Boosted by: Night Sorcery"
+  },
+  {
+    "id": 13820,
+    "name": "Bloodlake",
+    "caption": "An aberrant sorcery discovered by exiled criminals.\nTheirs are the sorceries most reviled by the academy.\n\nWounds the caster with bloodthorns to scatter tainted blood in the vicinity, improving ability to inflict blood loss.\nCharging widens the area of effect.\n\nAberrant sorcerers were not well-versed in traditional magic. Their discovery of the Blood Star yielded sorceries that could instead be cast by inflicting wounds upon oneself.\n Boosted by: Thorn Sorcery"
+  },
+  {
+    "id": 13830,
+    "name": "Stellar Phantasmic Mirror",
+    "caption": "Forbidden sorcery of Sellia, Town of Sorcery.\n\nConjure a refracting screen around the caster that redirects magic projectiles and incantations at the expense of reduced physical damage negation.\n\nThe phantasms of Sellia cling to a faded reflection of the once-prosperous town. Though painful, one must remember the sorcerous teachings as they were if one hopes to preserve them.\n"
+  },
+  {
+    "id": 14000,
+    "name": "Chthonian Chorus",
+    "caption": "Spectral sorcery of ancestor spirits.\n\nEmboldens caster with a sacred tune that boosts magic and holy damage negation, but slightly reduces lightning and fire damage negation.\nIncreases the efficiency of flasks.\n\nThe ancestral followers distanced themselves from the Erdtree in hopes that their horns would one day gleam as bright as the spirits they worshiped.\n Boosted by: Dragon Cult Incantation"
+  },
+  {
+    "id": 14010,
+    "name": "Storm the Front!",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nDash forward with haste, leaving behind storm winds that damage foes in the vicinity.\nThose at the finishing point of the dash will suffer more damage.\n\nStormveil\u2019s knights traveled just as they fought, spoke, lived\u2026 With haste and recklessness.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 14020,
+    "name": "Old King\u0027s Stance",
+    "caption": "Sorcery that channels the tempests of Stormveil.\n\nInherit a blessing from the storm that surrounds the caster\u0027s body with magic-imbued winds, temporarily making them feel lighter than air.\n\nWhen Stormveil\u0027s old monarch withered away, the true storms followed soon after.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 14030,
+    "name": "Sweeping Storm Claymore",
+    "caption": "Superior sorcery that channels the tempests of Stormveil.\n\nProjects a tempest that fans outward and pulls in foes, then perform a wide sweep with a large greatsword of storm winds.\n\nThose who inherited the blessing of the storm advanced without impediment. Nothing barred their path.\n Boosted by: Bestial Incantation"
+  },
+  {
+    "id": 14400,
+    "name": "Maw of the Serpent",
+    "caption": "One of the terrible sorceries of Rykard, Lord of Blasphemy.\n\nPlunge staff into the ground and absorb the energies of those around you, dealing fire damage to foes in the vicinity while boosting fire damage negation.\n\nRykard\u0027s followers once thought his pursuit to be a righteous path, even throwing themselves to the maw of the Serpent King during their audience.\n Boosted by: Magma Sorcery"
+  },
+  {
+    "id": 14403,
+    "name": "Spiritflesh",
+    "caption": "Spectral sorcery of ancestral spirits.\n\nSet caster alight with spectral energy, allowing for a slight amount of HP to be regained when killing foes.\n\nAncestral spirits exist as a phenomenon beyond the purview of the Erdtree. Life sprouts from death, as it does from birth. Such is the way of the living.\n Boosted by: Dragon Cult Incantation"
+  }
+]
