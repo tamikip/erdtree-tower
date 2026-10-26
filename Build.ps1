@@ -66,7 +66,7 @@ if (Test-Path -LiteralPath $releaseAssets) {
     Remove-Item -LiteralPath $releaseAssets -Recurse -Force
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'scene-assets') -Destination $release -Recurse -Force
-foreach ($name in @('preview.me3', 'Launch-Preview.ps1', 'Launch-Preview.cmd', 'Launch-Seamless-Tower.ps1', 'New-PartyConfig.ps1', 'README.md', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('preview.me3', 'Launch-Preview.ps1', 'Launch-Preview.cmd', 'Launch-Seamless-Tower.ps1', 'New-PartyConfig.ps1', 'README.md', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'ADDITIONAL-TERMS.md')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses') -Destination $release -Recurse -Force

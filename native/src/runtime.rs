@@ -978,28 +978,32 @@ fn tick_locked() {
     if let Some(spirits)=encounter_state(&mut state.party_spirits,summon_scope,summon_available) {
         if let Err(error)=spirits.poll(world,summon_scope.unwrap().2,true){super::log(format!("Party spirit registration: {error}"));}
     }
-    let bars=if music_active {state.pending.as_ref().map(|pending|pending.foes.iter().enumerate().filter_map(|(slot,foe)|{
+    let bar_affixes=state.pending.as_ref().map(|p|&p.next_run).or(state.view.run.as_ref())
+        .and_then(|run|if let Phase::Combat{id}=run.phase {Some(erdtree_tower::boss_affixes::roll(run,id))}else{None}).unwrap_or_default();
+    let mut bars:Vec<_>=if music_active {state.pending.as_ref().map(|pending|pending.foes.iter().filter_map(|foe|{
         let handle=foe.fight.handle()?;let chr=world.chr_ins_by_handle(&handle)?;
         if foe.entity_address!=Some(std::ptr::from_ref(chr) as usize)||chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(){return None;}
-        (foe.spec.bar>0&&slot<3).then_some((slot,foe.spec.bar,handle))
+        let rank=super::enemies::bar_rank(&foe.spec);let name=super::enemies::bar_text(&foe.spec)?;
+        Some((rank,if rank==0 {super::boss_affixes::bar_name(&bar_affixes,name)}else{name},handle))
     }).collect()).unwrap_or_default()}else{Vec::new()};
-    let mut bars=bars;
     if state.party.as_ref().is_some_and(|p|!p.host()&&p.bound&&!p.victory)&&!game.warp_requested {
         if let Some(run)=state.view.run.as_ref() {if let Phase::Combat{id}=run.phase {
             let arena=super::arenas::for_act(run.act);
             if world.main_player.as_ref().is_some_and(|p|i32::from(p.current_block_id)==arena.block&&p.chr_ins.modules.data.hp>0) {
                 let roster=super::enemies::node_roster(run,id);
                 let ids=super::enemies::map_entities(&roster).unwrap_or_default();
-                for (slot,spec) in roster.iter().enumerate().filter(|(slot,spec)|*slot<3&&spec.bar>0) {
+                for (slot,spec) in roster.iter().enumerate() {
+                    let Some(name)=super::enemies::bar_text(spec) else{continue};
                     if let Some(chr)=world.chr_sets.iter().flatten().flat_map(|set|set.characters())
                         .find(|chr|ids.get(slot)==Some(&chr.event_entity_id)&&chr.npc_id==spec.model&&chr.npc_param_id==spec.npc&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&enemy_loaded(unsafe {chr.chr_set_entry.as_ref()}.chr_load_status)) {
-                        bars.push((slot,spec.bar,chr.field_ins_handle));
+                        let rank=super::enemies::bar_rank(spec);
+                        bars.push((rank,if rank==0 {super::boss_affixes::bar_name(&bar_affixes,name)}else{name},chr.field_ins_handle));
                     }
                 }
             }
         }}
     }
-    super::boss_bars::sync(bars);
+    super::boss_bars::sync(super::boss_bars::select(bars));
     let attendant_allowed=state.room.is_none()&&!game.warp_requested
         &&world.main_player.as_ref().is_some_and(|p|p.chr_ins.modules.data.hp>0&&(
             (state.travel.is_some()&&state.view.run.as_ref().is_some_and(|r|super::arenas::for_act(r.act).block==i32::from(p.current_block_id))&&super::native_talk::flag(45007993).unwrap_or(false))

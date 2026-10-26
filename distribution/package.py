@@ -32,7 +32,7 @@ def copy_tree(src, relative):
             copy_file(item, Path(relative) / item.relative_to(src))
 
 copy_file(built_native, native[0])
-for name in ['preview.me3', 'Launch-Preview.ps1', 'THIRD_PARTY_NOTICES.md']:
+for name in ['preview.me3', 'Launch-Preview.ps1', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'ADDITIONAL-TERMS.md']:
     copy_file(source / name, name)
 # Ship launcher sources directly so a stale release-preview copy cannot leak into the package.
 for name in ['Launch-Seamless-Tower.ps1', 'New-PartyConfig.ps1']:

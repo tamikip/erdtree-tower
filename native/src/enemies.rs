@@ -38,6 +38,17 @@ static POOLS:LazyLock<Vec<Enemy>>=LazyLock::new(||include_str!("../../scene-asse
     let kind=match p[1]{"weak"=>NodeKind::Monster,"elite"=>NodeKind::Elite,"boss"=>NodeKind::Boss,_=>panic!("Invalid enemy tier")};
     enemy(p[4],p[2].parse().unwrap(),p[0].parse().unwrap(),kind)
 }).collect());
+pub const POOL_NAME_FIRST:i32=9610000;
+pub const BOSS_NAME_FIRST:i32=9600000;
+static POOL_NAMES:LazyLock<Vec<&'static str>>=LazyLock::new(||{let mut names=Vec::new();for e in POOLS.iter(){if !names.contains(&e.name){names.push(e.name);}}names});
+pub fn pool_name_count()->usize {POOL_NAMES.len()}
+pub fn boss_name_count()->usize {BOSSES.len()}
+pub fn bar_text(spec:&Enemy)->Option<i32> {
+    if spec.bar>0 {return Some(BOSS_NAME_FIRST+spec.bar as i32-1);}
+    if spec.npc>=950000000 {return Some(BOSS_NAME_FIRST+(spec.npc-950000000)/2);}
+    POOL_NAMES.iter().position(|n|*n==spec.name).map(|i|POOL_NAME_FIRST+i as i32)
+}
+pub fn bar_rank(spec:&Enemy)->u8 {if spec.bar>0 {0}else if spec.npc>=950000000||spec.kind==NodeKind::Boss {1}else if spec.kind==NodeKind::Elite {2}else{3}}
 pub fn roster(kind: NodeKind, seed: u64, ordinal: usize, layer: usize,act:u8) -> Vec<Enemy> {
     if kind == NodeKind::Boss { return boss_roster(kind,seed,ordinal,act); }
     if kind == NodeKind::Elite && act!=1 && (seed.wrapping_add(ordinal as u64))%4!=0 {return boss_roster(kind,seed/4,ordinal,act);}
@@ -199,6 +210,17 @@ fn mix(mut value:u64)->u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn every_enemy_gets_a_tower_bar_name_and_bosses_keep_theirs() {
+        let names=include_str!("../../scene-builder/AffixTextFix.cs");assert!(names.contains(&format!("PoolNameFirst={}",super::POOL_NAME_FIRST)));
+        for e in super::POOLS.iter() {let text=super::bar_text(e).unwrap();assert!((super::POOL_NAME_FIRST..super::POOL_NAME_FIRST+super::pool_name_count() as i32).contains(&text));}
+        for (_,boss) in super::BOSSES.iter() {
+            let text=super::bar_text(boss).unwrap();assert!((super::BOSS_NAME_FIRST..super::BOSS_NAME_FIRST+super::boss_name_count() as i32).contains(&text));
+            if boss.bar>0 {assert_eq!(text,super::BOSS_NAME_FIRST+boss.bar as i32-1);assert_eq!(super::bar_rank(boss),0);}
+            let elite=super::Enemy{npc:boss.npc+1,kind:NodeKind::Elite,bar:0,..*boss};assert_eq!(super::bar_text(&elite),Some(super::BOSS_NAME_FIRST+(boss.npc-950000000)/2));
+        }
+        assert!(super::BOSS_NAME_FIRST+(super::boss_name_count() as i32)<=super::POOL_NAME_FIRST);
+    }
     #[test]
     fn solo_spawn_waits_for_confirmed_kills_and_party_keeps_group_spawning() {
         use erdtree_tower::encounter::Outcome::*;

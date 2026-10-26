@@ -82,6 +82,7 @@ static class AffixAssets {
                     }
                     foreach(int textTable in weapon?new[]{11,21,25}:new[]{12,22,26}) {
                         string text=textTable is 11 or 12?name:textTable is 21 or 22?description.Replace("\\n","\n"):detail[4].Replace("\\n","\n")+"\n\n"+description.Replace("\\n","\n");
+                        if(textTable==25)text=AffixTextFix.Fit(text);
                         if(texts[textTable].Entries.Any(e=>e.ID==id))throw new Exception("Affix FMG collision");
                         texts[textTable].Entries.Add(new FMG.Entry(id,text));
                     }

@@ -1,5 +1,7 @@
 # Third-party notices
 
+Erdtree Tower's own code and data are licensed under GPL-3.0-or-later with additional terms; see `LICENSE` and `ADDITIONAL-TERMS.md`. The third-party components below keep their own licenses.
+
 The preview DLL statically links pinned revisions of fromsoftware-rs (MIT option) and hudhook (MIT).
 hudhook is vendored under native/vendor/hudhook from revision 72e1cc062c35df847b703e5507b82eb21d80d82c with the DX12 queue-discovery changes described in its TOWER_PATCH.md.
 The Ruby spell parameter subset is derived from the user-supplied RNG Lands - Ruby 0.7.2 archive (Nexus Mods Elden Ring mod 3229: https://www.nexusmods.com/eldenring/mods/3229). Original English spell text is retained in scene-assets/ruby-spells-original.json. This attribution does not designate the original mod as open source or grant redistribution rights.

@@ -6,6 +6,18 @@ pub const FIRST:i32=9620000;
 const ROT_BUILDUP:i32=FIRST+41;const ENVY:i32=FIRST+70;const PRIDE:i32=FIRST+80;const SHIELD:i32=FIRST+90;const REBORN:i32=FIRST+95;
 const EFFECTS:[i32;10]=[FIRST,FIRST+10,FIRST+20,FIRST+30,FIRST+40,ROT_BUILDUP,ENVY,PRIDE,SHIELD,REBORN];
 const ROT_RADIUS:f32=5.0;
+const BAR_MARKER:i32=FIRST+99;
+static BAR_NAMES:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
+/// text-update 写入带词条的血条名称时，同时在 regulation 中加入标记行；没有标记就沿用原名，避免名称缺失
+pub fn bar_names_ready()->bool {
+    if BAR_NAMES.load(std::sync::atomic::Ordering::Relaxed){return true;}
+    let ready=unsafe {SoloParamRepository::instance()}.is_ok_and(|p|p.get::<SpEffectParam>(BAR_MARKER as u32).is_some());
+    if ready{BAR_NAMES.store(true,std::sync::atomic::Ordering::Relaxed);}ready
+}
+pub fn bar_name(affixes:&[Affix],name:i32)->i32 {
+    if affixes.is_empty()||!bar_names_ready(){return name;}
+    erdtree_tower::boss_affixes::bar_name(affixes,name,super::enemies::BOSS_NAME_FIRST).unwrap_or(name)
+}
 fn resident(affix:Affix)->Option<i32> {
     match affix {Affix::Stalwart=>Some(FIRST),Affix::Bulwark=>Some(FIRST+10),Affix::Frenzied=>Some(FIRST+20),Affix::Regenerating=>Some(FIRST+30),Affix::Rot=>Some(FIRST+40),_=>None}
 }

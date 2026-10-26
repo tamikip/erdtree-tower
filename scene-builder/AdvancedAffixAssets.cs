@@ -7,7 +7,7 @@ static class AdvancedAffixAssets {
     static readonly string[] Types=["物理","魔法","锈蚀","艾尔登"];
     static readonly string[] Stats=["Strength","Dexterity","Magic","Faith","Luck"];
     static readonly string[] Scaling=["correctStrength","correctAgility","correctMagic","correctFaith","correctLuck"];
-    static readonly string[] Labels=["STR","DEX","INT","FAI","ARC"];
+    static readonly string[] Labels=["力气","灵巧","智力","信仰","感应"];
     static readonly string[] Damage=["Physics","Magic","Fire","Thunder","Dark"];
     static readonly string[] DamageLabels=["物理","魔力","火焰","雷电","神圣"];
     static ulong Mix(ulong n){unchecked{n=(n^(n>>30))*0xbf58476d1ce4e5b9UL;n=(n^(n>>27))*0x94d049bb133111ebUL;return n^(n>>31);}}
@@ -40,7 +40,7 @@ static class AdvancedAffixAssets {
         var correction=read("AttackElementCorrectParam");
         if(correction.Rows.Any(r=>r.ID>CorrectionFirst&&r.ID<=CorrectionFirst+31))throw new Exception("Advanced scaling correction collision");
         for(int mask=1;mask<32;mask++) {
-            var row=new PARAM.Row(CorrectionFirst+mask,$"Tower scaling mask {mask}",correction.AppliedParamdef);
+            var row=new PARAM.Row(correction.Rows.Single(r=>r.ID==ScalingCorrectionFix.Template)){ID=CorrectionFirst+mask,Name=$"Tower scaling mask {mask}"};
             for(int stat=0;stat<5;stat++)foreach(var element in Damage)Set(row,$"is{Stats[stat]}Correct_by{element}",(mask>>stat)&1);
             correction.Rows.Add(row);
         }
@@ -62,7 +62,7 @@ static class AdvancedAffixAssets {
                     ulong seed=Mix((ulong)baseId^((ulong)tier<<32)^((ulong)profile<<40)^0xaff22026UL);
                     double roll=(Mix(seed^43)%10001)/10000.0;int mask=weapon?Mask(source,seed,profile):0;
                     int mode=(int)(Mix(seed^47)%5),stars=roll>=0.995?2:roll>=0.97?1:0;
-                    string build=string.Join('/',Labels.Where((_,i)=>(mask&(1<<i))!=0));
+                    string build=mask==31?"全属性":string.Join('/',Labels.Where((_,i)=>(mask&(1<<i))!=0));
                     string name=weapon?$"{Tiers[tier]}·{build}·{entry[2]}{(stars==0?"":stars==1?" ★":" ★★")}":$"{Tiers[tier]}·{Types[profile]}·{entry[2]}";
                     var slots=weapon?new[]{"residentSpEffectId","residentSpEffectId1","residentSpEffectId2"}:new[]{"residentSpEffectId","residentSpEffectId2","residentSpEffectId3"};
                     int count=Math.Min(tier<2?1:tier,family.Min(r=>slots.Count(k=>I(r,k)<=0)));
@@ -104,7 +104,7 @@ static class AdvancedAffixAssets {
                     foreach(int fmgId in weapon?new[]{11,21,25}:new[]{12,22,26}) {
                         if(text[fmgId].Entries.Any(e=>e.ID==id))throw new Exception("Advanced affix text collision");
                         string value=fmgId is 11 or 12?name:fmgId is 21 or 22?info:detail[4]+"\\n\\n"+info;
-                        text[fmgId].Entries.Add(new FMG.Entry(id,value.Replace("\\n","\n")));
+                        text[fmgId].Entries.Add(new FMG.Entry(id,fmgId==25?AffixTextFix.Fit(value.Replace("\\n","\n")):value.Replace("\\n","\n")));
                     }
                     catalog.Add($"{kind}|{id}|{baseId}|{tier}|{name}|{profile}");
                     detailLines.Add(string.Join('\t',new[]{(tag|(uint)id).ToString(),detail[1],name,info,detail[4]+"\\n\\n"+info,stats,detail[6]}));rarities.Add($"{tag|(uint)id}\t{tier}");
@@ -134,6 +134,7 @@ static class AdvancedAffixAssets {
             if(I(row,"rarity")!=tier)throw new Exception("Advanced rarity mismatch");
             if(weapon) {
                 if(!corrections.TryGetValue(I(row,"attackElementCorrectId"),out var correction))throw new Exception("Missing advanced scaling correction");
+                if(!ScalingCorrectionFix.Neutral(correction,corrections[ScalingCorrectionFix.Template]))throw new Exception("Advanced scaling correction overrides vanilla rates");
                 for(int s=0;s<5;s++) {
                     bool enabled=(mask&(1<<s))!=0;
                     if((F(row,Scaling[s])>0)!=enabled)throw new Exception("Advanced displayed scaling mismatch");

@@ -9,3 +9,7 @@
 Rust 源码与所需 vendored 代码在 `src/`、`native/`，可通过对应的 Cargo.toml 构建。`Build.ps1` 和 `scene-builder/SceneBuilder.csproj` 沿用原工作区布局；完整资源重建仍需原工作区中的 SoulsFormats、UXM、参数定义与游戏文件，仓库未声称包含这些外部依赖。
 
 法术接入的自动验证记录随资源保存。实际施放和原包缺失视觉引用的限制见 README；第三方来源见 THIRD_PARTY_NOTICES.md。
+
+## 协议
+
+作者编写的代码与数据以 GPL-3.0-or-later 发布，并附加保留署名、标明修改版、不授予名称使用权三条附加条款，详见 [LICENSE](LICENSE) 与 [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md)。游戏数据、其他 mod 的派生内容和第三方代码不在此协议范围内。

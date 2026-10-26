@@ -26,6 +26,26 @@ impl Affix {
     fn group(self)->u8 {match self {Affix::Bulwark|Affix::Golden=>1,Affix::Regenerating|Affix::Reborn=>2,_=>0}}
 }
 pub const MAX_AFFIXES:usize=3;
+pub const BAR_NAME_FIRST:i32=9700000;
+pub const BAR_NAME_STRIDE:i32=200;
+fn allowed(affixes:&[Affix])->bool {
+    affixes.len()<=MAX_AFFIXES&&points(affixes)<=budget(3)&&affixes.iter().filter(|a|a.group()!=0).all(|a|affixes.iter().filter(|b|b.group()==a.group()).count()==1)
+}
+static COMBOS:std::sync::LazyLock<Vec<Vec<Affix>>>=std::sync::LazyLock::new(|| {
+    let mut combos=Vec::new();let n=Affix::ALL.len();
+    for size in 1..=MAX_AFFIXES {for mask in 1u32..(1<<n) {
+        if mask.count_ones() as usize!=size {continue;}
+        let combo:Vec<_>=Affix::ALL.iter().copied().filter(|a|mask&(1<<a.index())!=0).collect();
+        if allowed(&combo){combos.push(combo);}
+    }}
+    combos
+});
+pub fn combos()->&'static [Vec<Affix>] {&COMBOS}
+pub fn combo_table()->String {combos().iter().enumerate().map(|(i,c)|format!("{i}|{}\n",title(c))).collect()}
+pub fn bar_name(affixes:&[Affix],boss_name:i32,first:i32)->Option<i32> {
+    let index=combos().iter().position(|c|c==affixes)?;let offset=boss_name-first;
+    (0..BAR_NAME_STRIDE).contains(&offset).then(||BAR_NAME_FIRST+index as i32*BAR_NAME_STRIDE+offset)
+}
 pub fn budget(act:u8)->u8 {match act {1=>2,2=>4,_=>6}}
 pub fn roll(run:&Run,node:usize)->Vec<Affix> {
     if !run.boss_affixes||!run.nodes.get(node).is_some_and(|n|n.kind==NodeKind::Boss) {return vec![];}
@@ -36,7 +56,7 @@ pub fn roll(run:&Run,node:usize)->Vec<Affix> {
         if chosen.len()==MAX_AFFIXES {break;}
         if affix.cost()<=left&&(affix.group()==0||!chosen.iter().any(|c:&Affix|c.group()==affix.group())) {left-=affix.cost();chosen.push(affix);}
     }
-    chosen
+    chosen.sort_by_key(|a|a.index());chosen
 }
 pub fn points(affixes:&[Affix])->u8 {affixes.iter().map(|a|a.cost()).sum()}
 pub fn bonus_runes(run:&Run,node:usize)->u32 {
@@ -63,6 +83,17 @@ mod tests {
             seen.extend(affixes);
         }}
         assert_eq!(seen.len(),Affix::ALL.len());
+    }
+    #[test]
+    fn every_roll_has_a_bar_name_and_the_combo_table_is_current() {
+        assert_eq!(include_str!("../scene-assets/boss-affix-combos.txt"),combo_table(),"regenerate scene-assets/boss-affix-combos.txt from boss_affixes::combo_table()");
+        assert!(BAR_NAME_FIRST+combos().len() as i32*BAR_NAME_STRIDE<9800000);
+        for seed in 0..500 {for act in 1..=3 {
+            let mut run=Run::new(seed,Class::Samurai);run.act=act;let affixes=roll(&run,boss(&run));
+            let name=bar_name(&affixes,9600005,9600000).unwrap();assert_eq!((name-BAR_NAME_FIRST)%BAR_NAME_STRIDE,5);
+            assert_eq!(&combos()[((name-BAR_NAME_FIRST)/BAR_NAME_STRIDE) as usize],&affixes);
+        }}
+        assert_eq!(bar_name(&[],9600005,9600000),None);assert_eq!(bar_name(&[Affix::Rot],9600000+BAR_NAME_STRIDE,9600000),None);
     }
     #[test]
     fn only_new_runs_and_boss_nodes_get_affixes() {
