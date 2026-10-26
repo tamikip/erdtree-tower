@@ -858,7 +858,7 @@ impl Run {
         }
         run.validate()?;
         if let Phase::Reward{id,ref offers}=run.phase {
-            if *offers==rewards::before_claimed_bases(&run,id)||*offers==rewards::before_spirit_levels(&run,id)||*offers==rewards::before_currency_1500(&run,id)||*offers==rewards::before_chest_boosts(&run,id)||*offers==rewards::before_bosses(&run,id)||*offers==rewards::before_elites(&run,id)||*offers==rewards::before_base_talismans(&run,id)||*offers==rewards::before_spirit_weight(&run,id)||*offers==rewards::previous_offers(&run,id)||*offers==run.legacy_offers(id)||*offers==rewards::before_spirits(&run,id)||*offers==rewards::before_expansion(&run,id) {
+            if *offers==rewards::before_whetblades(&run,id)||*offers==rewards::before_claimed_bases(&run,id)||*offers==rewards::before_spirit_levels(&run,id)||*offers==rewards::before_currency_1500(&run,id)||*offers==rewards::before_chest_boosts(&run,id)||*offers==rewards::before_bosses(&run,id)||*offers==rewards::before_elites(&run,id)||*offers==rewards::before_base_talismans(&run,id)||*offers==rewards::before_spirit_weight(&run,id)||*offers==rewards::previous_offers(&run,id)||*offers==run.legacy_offers(id)||*offers==rewards::before_spirits(&run,id)||*offers==rewards::before_expansion(&run,id) {
                 run.phase=Phase::Reward{id,offers:run.offers(id)};
             }
         }
@@ -938,7 +938,7 @@ impl Run {
                     .nodes
                     .get(*id)
                     .is_some_and(|n| n.kind.combat() || n.kind == NodeKind::Chest)
-                    || (*offers != self.offers(*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
+                    || (*offers != self.offers(*id) && *offers != rewards::before_whetblades(self,*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
                 {
                     return fail();
                 }

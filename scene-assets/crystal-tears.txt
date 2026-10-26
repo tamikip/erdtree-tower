@@ -30,3 +30,11 @@ crystal|11028|带火破露滴
 crystal|11029|带魔力破露滴
 crystal|11030|带雷破露滴
 crystal|11031|带圣破露滴
+crystal|2011000|绿秘密露滴
+crystal|2011010|涌红枯露滴
+crystal|2011020|夺红破露滴
+crystal|2011030|夺蓝破露滴
+crystal|2011040|油光露滴
+crystal|2011050|吸血破露滴
+crystal|2011060|铃兰结晶露滴
+crystal|2011070|反弹硬露滴

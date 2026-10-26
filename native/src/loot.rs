@@ -6,16 +6,24 @@ use erdtree_tower::rewards::{CATALOG,ItemKind};
 pub struct Loot { pub id:i32, pub name:&'static str }
 pub fn casting_tools(data:&eldenring::cs::PlayerGameData)->[bool;2] {
     let Ok(params)=(unsafe {SoloParamRepository::instance()}) else{return [false,false];};
+    casting_tools_from(data.equipment.equip_inventory_data.items_data.items()
+        .filter(|e|e.item_id.category()==eldenring::cs::ItemCategory::Weapon).map(|e|(e.item_id.param_id(),e.quantity)),
+        |id|params.get::<eldenring::cs::EquipParamWeapon>(id).map(|p|[p.enable_magic(),p.enable_miracle()]))
+}
+fn casting_tools_from(entries:impl IntoIterator<Item=(u32,u32)>,lookup:impl Fn(u32)->Option<[bool;2]>)->[bool;2] {
     let mut tools=[false,false];
-    for entry in data.equipment.equip_inventory_data.items_data.items().filter(|e|e.quantity>0&&e.item_id.category()==eldenring::cs::ItemCategory::Weapon) {
-        if let Some(weapon)=params.get::<eldenring::cs::EquipParamWeapon>(entry.item_id.param_id()) {
-            tools[0]|=weapon.enable_magic();tools[1]|=weapon.enable_miracle();
+    for (id,_) in entries.into_iter().filter(|(_,quantity)|*quantity>0) {
+        if let Some(capabilities)=lookup(id/100*100) {
+            tools[0]|=capabilities[0];tools[1]|=capabilities[1];
         }
     }
     tools
 }
 pub fn count(data:&eldenring::cs::PlayerGameData,id:u32)->u64 {
-    let owns=|item:eldenring::cs::ItemId|item.param_id()==id&0x0fffffff && match id>>28 {0=>item.category()==eldenring::cs::ItemCategory::Weapon,1=>item.category()==eldenring::cs::ItemCategory::Protector,2=>item.category()==eldenring::cs::ItemCategory::Accessory,4=>item.category()==eldenring::cs::ItemCategory::Goods,_=>false};
+    use eldenring::cs::{ItemCategory,ItemId};
+    let category=match id>>28 {0=>ItemCategory::Weapon,1=>ItemCategory::Protector,2=>ItemCategory::Accessory,4=>ItemCategory::Goods,_=>return 0};
+    let Ok(target)=ItemId::new(category,id&0x0fffffff) else{return 0;};
+    let owns=|item|super::items::same_reward_item(item,target);
     data.equipment.equip_inventory_data.items_data.items().filter(|e|owns(e.item_id)).map(|e|u64::from(e.quantity)).sum::<u64>()
         +data.storage.as_ref().map_or(0,|s|s.items_data.items().filter(|e|owns(e.item_id)).map(|e|u64::from(e.quantity)).sum::<u64>())
 }
@@ -55,7 +63,7 @@ pub fn choose(seed:u64,node:usize)->Loot {
     n=(n^(n>>27)).wrapping_mul(0x94d049bb133111eb);n^=n>>31;
     let kinds=[ItemKind::Weapon,ItemKind::Talisman,ItemKind::Sorcery,ItemKind::Incantation,ItemKind::Spirit];
     let roll=n as usize%21;
-    let kind=kinds[if roll==20 {4}else{roll/5}];
+    let kind=if n%10==0 {ItemKind::Tool}else{kinds[if roll==20 {4}else{roll/5}]};
     let pool:Vec<_>=CATALOG.iter().filter(|i|i.kind==kind&&i.random_eligible()).collect();
     let item=pool[(n>>32) as usize%pool.len()];
     Loot{id:item.id as i32,name:item.name}
@@ -121,14 +129,24 @@ pub fn prepare(run:&erdtree_tower::Run,node:usize,data:&eldenring::cs::PlayerGam
     use eldenring::cs::ItemLotParam_map;
     let tools=casting_tools(data);
     let item=chest_choice_for_run(run,node,|id|!erdtree_tower::rewards::castable(id,tools))?;
+    let granted=super::smith::reward_id(data,item.id as u32)?;
     let params=unsafe {SoloParamRepository::instance_mut()}.map_err(|_|"宝箱参数未加载")?;
     let lot=params.get_mut::<ItemLotParam_map>(45010900).ok_or("缺少原生宝箱掉落参数")?;
-    lot.set_lot_item_id01(item.id&0x0fffffff);lot.set_lot_item_category01(category(item.id));lot.set_lot_item_num01(1);
+    lot.set_lot_item_id01((granted&0x0fffffff) as i32);lot.set_lot_item_category01(category(item.id));lot.set_lot_item_num01(1);
     super::log(format!("Native chest node {node}: {}",item.name));Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn upgraded_catalysts_still_unlock_spell_rewards() {
+        let lookup=|id|match id {160001200=>Some([true,false]),170000000=>Some([false,true]),_=>None};
+        for level in 0..=25 {
+            assert_eq!(casting_tools_from([(160001200+level,1),(170000000+level.min(10),1)],lookup),[true,true]);
+            assert_eq!(casting_tools_from([(160001200+level,0),(170000000+level.min(10),1)],lookup),[false,true]);
+            assert_eq!(casting_tools_from([(160001300+level,1)],lookup),[false,false]);
+        }
+    }
     #[test]
     fn chest_catalyst_filter_keeps_only_castable_spells() {
         for tools in [[false,false],[true,false],[false,true],[true,true]] {

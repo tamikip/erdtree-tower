@@ -255,7 +255,7 @@ pub(crate) fn reward_description(run: &Run, reward: &Reward) -> String {
                 .map_or(1, |b| (b.level + 1).min(3)),
         ),
         Reward::UpgradeWeapon => {
-            "右手武器追赶持有武器的最高等效等级，至少普通 +2 / 失色 +1；保留质变与战灰，满级封顶"
+            "右手武器升至背包最高等效等级，再普通 +3 / 失色 +1；保留质变与战灰，满级封顶"
                 .into()
         }
         Reward::Gold(amount) => format!("获得 {amount} 卢恩"),

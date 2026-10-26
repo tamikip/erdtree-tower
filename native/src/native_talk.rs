@@ -153,7 +153,7 @@ impl NativeTalk {
                         self.event(19,&[choice,message,-1])?;
                     }
                 } else if self.service==1 {
-                    for (i,message) in [9500001,9500041].into_iter().enumerate() {
+                    for (i,message) in [9500001,9500041,9500042].into_iter().enumerate() {
                         self.event(19,&[i as i32+1,message,-1])?;
                     }
                     self.event(19,&[99,9500003,-1])?;
@@ -244,6 +244,8 @@ impl NativeTalk {
                     self.event(31,&[])?;
                     self.state=5;
                 } else if self.service == 2 {
+                    let player=unsafe {eldenring::cs::PlayerIns::local_player()}.map_err(|_|"角色未加载")?;
+                    super::native_shop::refresh_weapon_levels(unsafe {player.player_game_data.as_ref()})?;
                     self.event(22, &[super::native_shop::GOODS as i32, (super::native_shop::GOODS+super::native_shop::STOCK_COUNT-1) as i32])?;
                     self.state = 3;
                 } else if self.service == 0 {
@@ -325,6 +327,7 @@ fn confirmation_dialog(text:i32)->[i32;5] {[8,text,1,2,2]}
 fn smith_menu(choice:i32)->Option<(i32,Vec<i32>,i32)> {
     match choice {
         1=>Some((24,vec![0],9)),
+        3=>Some((48,vec![],7)),
         _=>None,
     }
 }
@@ -417,7 +420,7 @@ mod tests {
     fn smith_services_remain_free_after_upgrade_and_use_verified_native_menus() {
         assert_eq!(super::smith_menu(1),Some((24,vec![0],9)));
         assert_eq!(super::smith_menu(2),None);
-        assert_eq!(super::smith_menu(3),None);
+        assert_eq!(super::smith_menu(3),Some((48,vec![],7)));
         assert_eq!(super::smith_menu(4),None);
         assert_eq!(super::attendant_menu(2),Some((48,vec![],7)));
         assert_eq!(super::attendant_menu(3),Some((28,vec![-1,-1],11)));

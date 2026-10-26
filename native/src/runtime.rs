@@ -1304,7 +1304,7 @@ fn tick_locked() {
             run.flasks = count;
             run.physick_empty=super::physick::empty(player_data);
             if !matches!(run.phase,Phase::Reward{..}) {
-                for entry in player_data.equipment.equip_inventory_data.items_data.items().filter(|e|e.quantity>0&&e.item_id.category()==eldenring::cs::ItemCategory::Goods&&(11000..=11031).contains(&e.item_id.param_id())) {
+                for entry in player_data.equipment.equip_inventory_data.items_data.items().filter(|e|e.quantity>0&&e.item_id.category()==eldenring::cs::ItemCategory::Goods&&erdtree_tower::rewards::progression_good(0x40000000|e.item_id.param_id())) {
                     let id=0x40000000|entry.item_id.param_id();
                     if !run.claimed_items.contains(&id){run.claimed_items.push(id);}
                 }
@@ -1740,7 +1740,7 @@ fn contract_action(state:&mut Runtime,world:&mut WorldChrMan,action:Action)->Res
         Action::SkipContract=>contract.skip()?,
         Action::Gear(index)=>{
             contract.begin_gift(index)?;
-            let entries=super::contracts::gift_entries(contract,index)?;
+            let entries=super::contracts::gift_entries(contract,index,unsafe {player.player_game_data.as_ref()})?;
             record_checked(run)?;
             for (slot,(id,qty)) in entries.into_iter().enumerate() {
                 if run.contract.as_ref().unwrap().gift.as_ref().unwrap().delivered[slot]{continue;}

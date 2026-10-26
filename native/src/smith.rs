@@ -4,6 +4,12 @@ use std::{ffi::c_void,sync::atomic::{AtomicUsize,Ordering}};
 use hudhook::mh::{MhHook,MH_EnableHook};
 
 static ORIGINAL:AtomicUsize=AtomicUsize::new(0);
+static OFFER_DIAGNOSTICS:std::sync::Mutex<std::collections::BTreeSet<String>>=std::sync::Mutex::new(std::collections::BTreeSet::new());
+fn log_offer(message:String) {
+    if let Ok(mut seen)=OFFER_DIAGNOSTICS.lock() {
+        if seen.len()<2048&&seen.insert(message.clone()) {super::log(message);}
+    }
+}
 #[repr(C)]
 struct Offer {weapon:i32,material:i32,flags:u32}
 fn update_offer(offer:&mut Offer,old:i32,next:i32,material:i32) {
@@ -19,12 +25,34 @@ pub fn reinforcement_target(id:i32,cap:i32)->Option<i32> {
 }
 pub fn target_with_peak(id:i32,cap:i32,peak:i32)->Option<i32> {
     if id<0||!matches!(cap,10|25)||id%100>=cap {return None;}
-    let step=if cap==25 {2}else{1};
-    Some(id-id%100+(id%100+step).max(peak.clamp(0,50)*cap/50).min(cap))
+    let step=if cap==25 {3}else{1};
+    Some(id-id%100+(id%100).max(peak.clamp(0,50)*cap/50).saturating_add(step).min(cap))
+}
+pub fn received_with_peak(id:u32,cap:Option<i32>,peak:i32)->u32 {
+    if id>>28!=0 {return id;}
+    let Some(cap)=cap.filter(|cap|matches!(cap,10|25)) else{return id;};
+    id-id%100+(id%100).max((peak.clamp(0,50)*cap/50) as u32).min(cap as u32)
+}
+pub fn acquisition_id(id:u32,peak:i32,params:&SoloParamRepository)->Result<u32,String> {
+    use eldenring::cs::{EquipParamWeapon,ReinforceParamWeapon};
+    if id>>28!=0 {return Ok(id);}
+    let base=params.get::<EquipParamWeapon>(id/100*100).ok_or("武器参数未就绪")?;
+    if base.origin_equip_wep1()<0 {return Ok(id);}
+    let cap=if base.origin_equip_wep16()<0 {10}else{25};
+    let next=received_with_peak(id,Some(cap),peak);
+    let reinforce=i32::from(base.reinforce_type_id())+(next%100) as i32;
+    if reinforce<0||params.get::<ReinforceParamWeapon>(reinforce as u32).is_none() {
+        return Err("追平等级的武器参数不完整，未发放或扣款".into());
+    }
+    Ok(next)
+}
+pub fn reward_id(data:&PlayerGameData,id:u32)->Result<u32,String> {
+    if id>>28!=0 {return Ok(id);}
+    let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"武器参数未就绪")?;
+    acquisition_id(id,inventory_peak(data,params),params)
 }
 pub fn inventory_peak(data:&PlayerGameData,params:&SoloParamRepository)->i32 {
-    std::iter::once(&data.equipment.equip_inventory_data).chain(data.storage.as_ref().map(|s|&**s))
-        .flat_map(|inventory|inventory.items_data.items())
+    data.equipment.equip_inventory_data.items_data.items()
         .filter(|e|e.quantity>0&&e.item_id.category()==ItemCategory::Weapon)
         .filter_map(|e| {
             let id=e.item_id.param_id();
@@ -36,21 +64,30 @@ pub fn inventory_peak(data:&PlayerGameData,params:&SoloParamRepository)->i32 {
 unsafe extern "C" fn build_offers(list:*mut Offers,id:i32)->usize {
     let original:BuildOffers=unsafe {std::mem::transmute(ORIGINAL.load(Ordering::Acquire))};
     let count=unsafe {original(list,id)};
-    let Ok(params)=(unsafe {SoloParamRepository::instance()}) else{return count;};
-    let Some(base)=params.get::<eldenring::cs::EquipParamWeapon>((id.max(0)/100*100) as u32) else{return count;};
-    if id<0||base.material_set_id()!=700000||base.origin_equip_wep1()<0 {return count;}
+    let Ok(params)=(unsafe {SoloParamRepository::instance()}) else{log_offer(format!("Smith bypass: id={id} params unavailable"));return count;};
+    let Some(base)=params.get::<eldenring::cs::EquipParamWeapon>((id.max(0)/100*100) as u32) else{log_offer(format!("Smith bypass: id={id} weapon parameter missing"));return count;};
+    if id<0||base.material_set_id()!=700000||base.origin_equip_wep1()<0 {
+        log_offer(format!("Smith bypass: id={id} material={} origin1={}",base.material_set_id(),base.origin_equip_wep1()));
+        return count;
+    }
     let cap=if base.origin_equip_wep16()<0 {10}else{25};
-    let peak=unsafe {eldenring::cs::PlayerIns::local_player()}.ok()
-        .map(|p|inventory_peak(unsafe {p.player_game_data.as_ref()},params)).unwrap_or(0);
+    let player=unsafe {eldenring::cs::PlayerIns::local_player()}.ok();
+    let peak=player.as_ref().map(|p|inventory_peak(unsafe {p.player_game_data.as_ref()},params)).unwrap_or(0);
     let Some(next)=target_with_peak(id,cap,peak) else{return count;};
-    let Some(reinforce)=params.get::<eldenring::cs::ReinforceParamWeapon>((i32::from(base.reinforce_type_id())+next%100) as u32) else{return count;};
+    let Some(reinforce)=params.get::<eldenring::cs::ReinforceParamWeapon>((i32::from(base.reinforce_type_id())+next%100) as u32) else{log_offer(format!("Smith bypass: id={id} next={next} reinforcement parameter missing"));return count;};
     if list.is_null()||count>1024 {return count;}
     let list=unsafe {&mut *list};
     if list.begin.is_null()||(list.end as usize).checked_sub(list.begin as usize)!=Some(count*std::mem::size_of::<Offer>()) {return count;}
     // Pinned native offer entries: target ID, material set, category/operation bits.
+    let mut changed=0;
+    let mut offers=Vec::new();
     for offer in unsafe {std::slice::from_raw_parts_mut(list.begin,count)} {
+        offers.push((offer.weapon,offer.flags));
+        let before=offer.weapon;
         update_offer(offer,id,next,base.material_set_id()+i32::from(reinforce.material_set_id()));
+        changed+=usize::from(before!=offer.weapon);
     }
+    log_offer(format!("Smith offer: id={id} cap={cap} peak={peak} next={next} player={} changed={changed} offers={offers:?}",player.is_some()));
     count
 }
 pub unsafe fn install()->Result<(),String> {
@@ -112,6 +149,16 @@ pub fn upgrade_talisman(data:&mut PlayerGameData,offer:TalismanOffer)->Result<()
 }
 pub fn configure_menu()->Result<(),String> {
     if ORIGINAL.load(Ordering::Acquire)==0 {return Err("强化接口未加载，请检查日志".into());}
+    if let Ok(mut seen)=OFFER_DIAGNOSTICS.lock(){seen.clear();}
+    if let (Ok(player),Ok(params))=(unsafe {eldenring::cs::PlayerIns::local_player()},unsafe {SoloParamRepository::instance()}) {
+        let data=unsafe {player.player_game_data.as_ref()};
+        for (location,inventory) in std::iter::once(("bag",&data.equipment.equip_inventory_data)).chain(data.storage.as_ref().map(|s|("storage",&**s))) {
+            let weapons:Vec<_>=inventory.items_data.items().filter(|e|e.quantity>0&&e.item_id.category()==ItemCategory::Weapon)
+                .map(|e|{let id=e.item_id.param_id();(id,params.get::<eldenring::cs::EquipParamWeapon>(id/100*100).map(|p|(p.origin_equip_wep1(),p.origin_equip_wep16()))) }).collect();
+            super::log(format!("Smith inventory: location={location} weapons={weapons:?}"));
+        }
+        super::log(format!("Smith inventory peak: {}",inventory_peak(data,params)));
+    }
     // Pinned executable 2.7.2.0: the native eligibility predicate reads these four category gates.
     super::items::checked_function(0x78589b,&[0x8b,0x80,0x7c,0x04,0,0,0x85,0xc0,0x74,0x12])?;
     let menu=unsafe {eldenring::cs::CSMenuManImp::instance_mut()}.map_err(|_|"强化菜单未就绪")?;
@@ -182,15 +229,54 @@ mod tests {
     #[test]
     fn catch_up_converts_caps_without_rounding_up_or_losing_affinity() {
         use super::target_with_peak;
-        assert_eq!(target_with_peak(901200,25,40),Some(901220));
-        assert_eq!(target_with_peak(901200,10,40),Some(901208));
-        assert_eq!(target_with_peak(901200,25,35),Some(901217));
-        assert_eq!(target_with_peak(901200,10,38),Some(901207));
-        assert_eq!(target_with_peak(901220,25,40),Some(901222));
+        assert_eq!(target_with_peak(901200,25,40),Some(901223));
+        assert_eq!(target_with_peak(901200,10,40),Some(901209));
+        assert_eq!(target_with_peak(901200,25,35),Some(901220));
+        assert_eq!(target_with_peak(901200,10,38),Some(901208));
+        assert_eq!(target_with_peak(901220,25,40),Some(901223));
         assert_eq!(target_with_peak(901208,10,40),Some(901209));
         assert_eq!(target_with_peak(901224,25,50),Some(901225));
         assert_eq!(target_with_peak(901210,10,50),None);
         assert_eq!(target_with_peak(-1,25,50),None);
+    }
+    #[test]
+    fn camp_offer_catches_normal_weapon_up_to_somber_six() {
+        let peak=6*50/10;
+        for level in [0,1,2,6,10,12] {
+            let old=901200+level;
+            let next=super::target_with_peak(old,25,peak).unwrap();
+            assert_eq!(next,901218);
+            let mut offer=super::Offer{weapon:old+1,material:700001,flags:1};
+            super::update_offer(&mut offer,old,next,700018);
+            assert_eq!(offer.weapon,901218);
+            assert_eq!(offer.material,700018);
+        }
+    }
+    #[test]
+    fn acquisition_matches_peak_without_an_upgrade_step_or_affinity_loss() {
+        use super::received_with_peak as receive;
+        assert_eq!(receive(160001200,Some(25),30),160001215);
+        assert_eq!(receive(160001200,Some(10),30),160001206);
+        assert_eq!(receive(160001215,Some(25),30),160001215);
+        assert_eq!(receive(160001218,Some(25),30),160001218);
+        assert_eq!(receive(160001200,Some(10),36),160001207);
+        assert_eq!(receive(160001200,Some(25),50),160001225);
+        assert_eq!(receive(160001200,Some(10),50),160001210);
+        assert_eq!(receive(160001200,Some(25),0),160001200);
+        for id in [50000000,110000,0x40000000|2200006,0x10000000|5260000] {
+            assert_eq!(receive(id,None,50),id);
+        }
+        assert_eq!(receive(0x40000000|2200006,Some(25),50),0x40000000|2200006);
+    }
+    #[test]
+    fn upgrading_is_one_step_above_acquisition_for_every_valid_peak_and_level() {
+        for cap in [10,25] {for peak in 0..=50 {for level in 0..cap {
+            let id=160001200+level;
+            let received=super::received_with_peak(id as u32,Some(cap),peak) as i32;
+            let upgraded=super::target_with_peak(id,cap,peak).unwrap();
+            assert_eq!(upgraded,160001200+(received%100+if cap==25 {3}else{1}).min(cap));
+            assert!(upgraded>id&&upgraded%100<=cap);
+        }}}
     }
     #[test]
     fn native_offer_changes_only_reinforcement_not_affinity_or_reversion() {
@@ -205,7 +291,7 @@ mod tests {
     }
     #[test]
     fn reinforcement_step_preserves_affinity_and_caps() {
-        assert_eq!(super::reinforcement_target(901200,25),Some(901202));
+        assert_eq!(super::reinforcement_target(901200,25),Some(901203));
         assert_eq!(super::reinforcement_target(901223,25),Some(901225));
         assert_eq!(super::reinforcement_target(901224,25),Some(901225));
         assert_eq!(super::reinforcement_target(901225,25),None);

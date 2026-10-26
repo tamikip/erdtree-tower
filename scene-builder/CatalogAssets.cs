@@ -2,11 +2,11 @@ using SoulsFormats;
 
 static class CatalogAssets {
     public static void Build(string game,string output,string cache) {
-        var binder=BND4.Read(Path.Combine(cache,"item.msgbnd.dcx"));
-        var tables=binder.Files.ToDictionary(f=>Path.GetFileNameWithoutExtension(f.Name),f=>FMG.Read(f.Bytes));
+        var binder=BND4.Read(Path.Combine(cache,"item_dlc02.msgbnd.dcx"));
+        var tables=ItemTextTables.Read(binder);
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(game,"regulation.bin"));
         PARAM Read(string name) {var p=PARAM.Read(reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name)==name).Bytes);p.ApplyParamdef(PARAMDEF.XmlDeserialize($"work/SoulsRandomizers/diste/Defs/{name}.xml"));return p;}
-        var rewards=new List<string>();var shop=new List<string>();var extras=new List<string>();
+        var rewards=new List<string>();var shop=new List<string>();var extras=new List<string>();var crystals=new List<string>();var epic=new List<string>();
         int potGroup=Convert.ToInt32(Read("EquipParamGoods").Rows.Single(r=>r.ID==300)["potGroupId"].Value);
         foreach(var (param,table) in new[]{("EquipParamWeapon","Weapon"),("EquipParamProtector","Protector"),("EquipParamAccessory","Accessory"),("EquipParamGoods","Goods"),("EquipParamGem","Gem")}) {
             var names=tables[table+"Name"].Entries.Where(e=>!string.IsNullOrWhiteSpace(e.Text)).GroupBy(e=>e.ID).ToDictionary(g=>g.Key,g=>g.First().Text);
@@ -17,13 +17,16 @@ static class CatalogAssets {
                 string kind=table switch {"Weapon"=>"weapon","Protector"=>"armor","Accessory"=>"talisman",_=>""};
                 if(table=="Protector"&&row.ID<40000)continue;
                 if(table=="Weapon") {
-                    if(row.ID<1000000||row.ID%10000!=0||I("wepType")>=80)continue;
+                    if(row.ID<1000000||row.ID%10000!=0||I("wepType") is 81 or 83 or 85 or 86||I("wepType")==87&&row.ID<24500000)continue;
+                    if(I("rarity")==2)epic.Add(row.ID.ToString());
                     var group=I("reinforceShopCategory") switch {2=>"staff",3=>"seal",_=>""};
                     if(group!="")extras.Add($"{group}|0|{row.ID}|2400|1|{name}");
                     else shop.Add($"0|{row.ID}|1800|{name}");
                 }
                 if(table=="Goods") {
+                    if(I("goodsType")==10&&name.EndsWith("露滴"))crystals.Add($"crystal|{row.ID}|{name}");
                     kind=I("goodsType") switch {5=>"sorcery",16 or 18=>"incantation",7 or 8 when row.ID%1000==0=>"spirit",_=>""};
+                    if(row.ID is 8590 or >=8970 and <=8974)kind="tool";
                     if(I("isConsume")==1&&I("enable_live")==1) {
                         if(name.Contains("肝脏干")||name.EndsWith("苔药"))extras.Add($"resistance|3|{row.ID}|300|10|{name}");
                         else if(name.StartsWith("腌制")||name.EndsWith("肉块")||name is "煮熟虾子" or "煮熟螃蟹")extras.Add($"food|3|{row.ID}|300|5|{name}");
@@ -39,6 +42,8 @@ static class CatalogAssets {
         File.WriteAllLines(Path.Combine(output,"reward-catalog.txt"),rewards);
         File.WriteAllLines(Path.Combine(output,"shop-catalog.txt"),shop);
         File.WriteAllLines(Path.Combine(output,"shop-extras.txt"),extras);
+        File.WriteAllLines(Path.Combine(output,"crystal-tears.txt"),crystals);
+        File.WriteAllLines(Path.Combine(output,"epic-weapons.txt"),epic);
         foreach(var group in rewards.GroupBy(l=>l.Split('|')[0]))Console.WriteLine($"{group.Key}: {group.Count()}");
         Console.WriteLine($"Shop weapons/ashes of war: {shop.Count()}, extras: {extras.Count}");
     }

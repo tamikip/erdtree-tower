@@ -168,7 +168,7 @@ mod tests {
     use super::*;
     #[test]
     fn reinforcement_preserves_affinity_and_checks_normal_and_somber_caps() {
-        assert_eq!(next_id(901200, 25, true).unwrap(), 901202);
+        assert_eq!(next_id(901200, 25, true).unwrap(), 901203);
         assert_eq!(next_id(901224, 25, true).unwrap(), 901225);
         assert_eq!(next_id(901209, 10, true).unwrap(), 901210);
         assert!(next_id(901225, 25, true).is_err());

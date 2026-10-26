@@ -43,10 +43,10 @@ static class NativeAssets {
         }
         if(service==1) {
             states[2].EntryCommands.Clear();states[2].EntryCommands.AddRange(new[]{Cmd(110),Cmd(20)});
-            foreach(var (choice,text) in new[]{(1,9500001),(2,9500041),(99,9500003)})states[2].EntryCommands.Add(Cmd(19,choice,text,-1));
+            foreach(var (choice,text) in new[]{(1,9500001),(2,9500041),(3,9500042),(99,9500003)})states[2].EntryCommands.Add(Cmd(19,choice,text,-1));
             states[4].Conditions.Clear();
             foreach(int choice in new[]{1,2})states[4].Conditions.Add(Go(8,And(Eq(Fn(23),choice),Flag(basis+995))));
-            foreach(var (choice,state,command,menu) in new[]{(1,5,Cmd(24,0),9),(2,10,Cmd(22,SmithAssets.ShopFirst,SmithAssets.ShopFirst+99),5)}) {
+            foreach(var (choice,state,command,menu) in new[]{(1,5,Cmd(24,0),9),(2,10,Cmd(22,SmithAssets.ShopFirst,SmithAssets.ShopFirst+99),5),(3,11,Cmd(48),7)}) {
                 states[4].Conditions.Add(Go(state,Eq(Fn(23),choice)));
                 states[state]=new ESD.State();states[state].EntryCommands.Add(command);
                 states[state].Conditions.Add(Go(0,And(Eq(Fn(59,Num(menu),Num(0)),0),Eq(Fn(58,Num(0)),0))));
@@ -177,7 +177,7 @@ static class NativeAssets {
         campText.Entries.Single(e=>e.ID==9500000).Text="补给：2 红 1 蓝＋灵药";
         campText.Entries.Single(e=>e.ID==9500044).Text="补给：1 红 2 蓝＋灵药";
         menu.Files.Single(f=>f.ID==33).Bytes=campText.Write();
-        AddText(menu,33,new[]{(9500041,"强化护符"),(9500042,"更换战灰"),(9500043,"记忆魔法／祷告")});
+        AddText(menu,33,new[]{(9500041,"强化护符"),(9500042,"免费更换战灰／质变"),(9500043,"记忆魔法／祷告")});
         var global=BND4.Read(Path.Combine(cache,"m00_00_00_00.talkesdbnd.dcx"));
         for(int service=0;service<3;service++) {
             var esd=Talk(service);var bytes=esd.Write();var verified=ESD.Read(bytes);
@@ -216,8 +216,8 @@ static class NativeAssets {
         }
         SmithAssets.Verify(Read);
         PassiveAssets.Verify(Read("SpEffectParam"),Read("EquipParamGoods"));
-        var epicIds=File.ReadAllLines("outputs/erdtree-tower/scene-assets/epic-weapons.txt").Select(int.Parse).ToArray();
-        var catalogIds=File.ReadAllLines("outputs/erdtree-tower/scene-assets/reward-catalog.txt").Select(l=>l.Split('|')).Where(p=>p[0]=="weapon").Select(p=>int.Parse(p[1])).ToHashSet();
+        var epicIds=File.ReadAllLines(Path.Combine(output,"epic-weapons.txt")).Select(int.Parse).ToArray();
+        var catalogIds=File.ReadAllLines(Path.Combine(output,"reward-catalog.txt")).Select(l=>l.Split('|')).Where(p=>p[0]=="weapon").Select(p=>int.Parse(p[1])).ToHashSet();
         var expectedEpic=Read("EquipParamWeapon").Rows.Where(r=>catalogIds.Contains(r.ID)&&Convert.ToInt32(r["rarity"].Value)==2).Select(r=>r.ID).ToHashSet();
         if(epicIds.Length!=epicIds.Distinct().Count()||!expectedEpic.SetEquals(epicIds))throw new Exception("Epic weapon catalog differs from original rarity");
         Console.WriteLine($"Verified {epicIds.Length} original epic weapons in elite pool");
@@ -267,20 +267,22 @@ static class NativeAssets {
             if(Convert.ToInt32(row["setNum"].Value)!=1 || Convert.ToSingle(row["value_Magnification"].Value)!=1f)throw new Exception("Invalid native shop defaults");
         }
         var item=BND4.Read(Path.Combine(output,"msg","zhocn","item_dlc02.msgbnd.dcx"));
+        var itemText=ItemTextTables.Read(item);
+        bool HasName(int fmg,int id,string name)=>itemText[fmg switch {10=>"GoodsName",11=>"WeaponName",12=>"ProtectorName",13=>"AccessoryName",35=>"GemName",_=>throw new Exception("Unknown item name table")}].Entries.Any(e=>e.ID==id&&EquipmentStyleAssets.SameName(e.Text,name));
         foreach(var line in File.ReadAllLines(Path.Combine(output,"reward-catalog.txt"))) {
             var parts=line.Split('|');var id=int.Parse(parts[1]);
-            var (param,fmg)=parts[0] switch {"weapon"=>("EquipParamWeapon",11),"armor"=>("EquipParamProtector",12),"talisman"=>("EquipParamAccessory",13),"sorcery" or "incantation" or "spirit"=>("EquipParamGoods",10),_=>throw new Exception("Invalid reward category")};
+            var (param,fmg)=parts[0] switch {"weapon"=>("EquipParamWeapon",11),"armor"=>("EquipParamProtector",12),"talisman"=>("EquipParamAccessory",13),"sorcery" or "incantation" or "spirit" or "tool"=>("EquipParamGoods",10),_=>throw new Exception("Invalid reward category")};
             var rows=Read(param);
-            if(!rows.Rows.Any(r=>r.ID==id)||!FMG.Read(item.Files.Single(f=>f.ID==fmg).Bytes).Entries.Any(e=>e.ID==id&&e.Text==parts[2]))throw new Exception($"Reward item/name mismatch: {line}");
+            if(!rows.Rows.Any(r=>r.ID==id)||!HasName(fmg,id,parts[2]))throw new Exception($"Reward item/name mismatch: {line}");
         }
         foreach(var line in File.ReadAllLines(Path.Combine(output,"shop-extras.txt"))) {
             var p=line.Split('|');var param=p[1]=="0"?"EquipParamWeapon":"EquipParamGoods";var fmg=p[1]=="0"?11:10;
             var rows=Read(param);
-            if(!rows.Rows.Any(r=>r.ID==int.Parse(p[2]))||!FMG.Read(item.Files.Single(f=>f.ID==fmg).Bytes).Entries.Any(e=>e.ID==int.Parse(p[2])&&e.Text==p[5]))throw new Exception("Shop extra missing: "+line);
+            if(!rows.Rows.Any(r=>r.ID==int.Parse(p[2]))||!HasName(fmg,int.Parse(p[2]),p[5]))throw new Exception("Shop extra missing: "+line);
         }
         foreach(var line in File.ReadAllLines(Path.Combine(output,"shop-catalog.txt"))) {
             var p=line.Split('|');var param=p[0]=="0"?"EquipParamWeapon":"EquipParamGem";var fmg=p[0]=="0"?11:35;
-            if(!Read(param).Rows.Any(r=>r.ID==int.Parse(p[1]))||!FMG.Read(item.Files.Single(f=>f.ID==fmg).Bytes).Entries.Any(e=>e.ID==int.Parse(p[1])&&e.Text==p[3]))throw new Exception("Shop catalog item missing: "+line);
+            if(!Read(param).Rows.Any(r=>r.ID==int.Parse(p[1]))||!HasName(fmg,int.Parse(p[1]),p[3]))throw new Exception("Shop catalog item missing: "+line);
         }
         var bgm=PARAM.Read(regulation.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name)=="WwiseValueToStrParam_BgmBossChrIdConv").Bytes);
         if(!bgm.Rows.Any(r=>r.ID==203000))throw new Exception("Battle BGM missing");

@@ -1,6 +1,6 @@
-use eldenring::cs::{ChrIns,ChrInsExt,EquipParamWeapon,EquipParamProtector,EquipParamAccessory,ItemCategory,ItemId,PlayerGameData,SoloParamRepository,SpEffectParam,ReinforceParamWeapon};
+use eldenring::cs::{ChrIns,ChrInsExt,EquipParamWeapon,EquipParamProtector,EquipParamAccessory,ItemCategory,ItemId,PlayerGameData,SoloParamRepository,SpEffectParam};
 use fromsoftware_shared::FromStatic;
-use erdtree_tower::{contracts::{Kind,State,reinforcement_level},Run,Phase};
+use erdtree_tower::{contracts::{Kind,State},Run,Phase};
 
 const FIRST:i32=9600000;
 fn effects(kind:Kind)->Vec<i32> {
@@ -73,15 +73,10 @@ pub fn observe_peak(data:&PlayerGameData,state:&mut State) {
     };
     scan(&data.equipment.equip_inventory_data);if let Some(storage)=data.storage.as_ref(){scan(storage);}
 }
-pub fn gift_entries(state:&State,index:usize)->Result<[(u32,u32);2],String> {
+pub fn gift_entries(state:&State,index:usize,data:&PlayerGameData)->Result<[(u32,u32);2],String> {
     let base=*state.gear.get(index).ok_or("装备选择不存在")?;
     let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"装备参数尚未就绪")?;
-    let weapon=params.get::<EquipParamWeapon>(base).ok_or("适配武器不存在")?;
-    let cap=if weapon.origin_equip_wep16()<0{10}else{25};
-    let level=if weapon.origin_equip_wep1()<0{0}else{reinforcement_level(state.peak,cap)};
-    let reinforcement=i32::from(weapon.reinforce_type_id())+i32::from(level);
-    if reinforcement<0||params.get::<ReinforceParamWeapon>(reinforcement as u32).is_none(){return Err("适配装备强化参数不完整，未发放".into());}
-    let id=base+u32::from(level);
+    let id=super::smith::reward_id(data,base)?;
     let extra=match state.chosen {
         Some(Kind::Mystic|Kind::Ascetic) if base/1_000_000==34=>(0x40000000|6000,1),
         Some(Kind::Mystic|Kind::Ascetic) if base/1_000_000==33=>(0x40000000|4000,1),

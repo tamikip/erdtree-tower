@@ -99,7 +99,7 @@ static class AffixTextFix {
         var known=before[npcFile.ID].Select(e=>e.ID).Concat(barNames.Select(b=>b.id)).ToHashSet();
         foreach(var (id,_) in npcCheck)if(!known.Contains(id)&&!(id>=PoolNameFirst&&id<PoolNameFirst+poolNames.Count))throw new Exception($"Unexpected NPC name added: {id}");
         foreach(var line in File.ReadAllLines(Path.Combine(input,"affix-v2-catalog.txt")).Select(l=>l.Split('|')).Where(p=>p[0]=="weapon")) {
-            if(check[11].GetValueOrDefault(int.Parse(line[1]))!=line[4])throw new Exception($"Weapon name differs from catalog: {line[1]}");
+            if(!EquipmentStyleAssets.SameName(check[11].GetValueOrDefault(int.Parse(line[1])),line[4]))throw new Exception($"Weapon name differs from catalog: {line[1]}");
         }
         Console.WriteLine($"Updated {changed} affix weapon text entries (localized scaling labels, captions fit {CaptionLines} lines) and added {added} bar names (enemies {PoolNameFirst}-{PoolNameFirst+poolNames.Count-1}, {barNames.Count} affix boss titles from {BarNameFirst}){(marker?"; wrote regulation.bin with the affix bar name marker":"")}, removed {dropped} retired spell text entries; all other text unchanged");
     }

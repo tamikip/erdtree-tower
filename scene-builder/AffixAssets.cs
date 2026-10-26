@@ -23,10 +23,10 @@ static class AffixAssets {
         else if(kind==6)foreach(var k in new[]{"slash","blow","thrust","neutral"})Set(r,k+"DamageCutRate",1f-(1+tier*0.5f)/100f);
         else Set(r,new[]{"addStrengthStatus","addDexterityStatus","addMagicStatus","addFaithStatus","addLuckStatus"}[kind-7],1+tier);
     }
-    public static void Build(Func<string,PARAM> read,Action<string,PARAM> save,BND4 messages,string input,string output) {
+    public static void Build(Func<string,PARAM> read,Action<string,PARAM> save,BND4 messages,string input,string output,bool append=false) {
         var effects=read("SpEffectParam");
-        if(effects.Rows.Any(r=>r.ID>=EffectFirst&&r.ID<EffectFirst+120))throw new Exception("Affix effect ID collision");
-        for(int kind=0;kind<Names.Length;kind++)for(int tier=0;tier<4;tier++) {
+        if(!append&&effects.Rows.Any(r=>r.ID>=EffectFirst&&r.ID<EffectFirst+120))throw new Exception("Affix effect ID collision");
+        for(int kind=0;!append&&kind<Names.Length;kind++)for(int tier=0;tier<4;tier++) {
             var row=new PARAM.Row(effects.Rows.Single(r=>r.ID==9600011)){ID=EffectFirst+kind*10+tier,Name=$"Tower affix {kind}:{tier}"};
             ApplyEffect(row,kind,tier);effects.Rows.Add(row);
         }
@@ -35,17 +35,28 @@ static class AffixAssets {
         var details=File.ReadAllLines(Path.Combine(input,"reward-details.tsv")).Select(l=>l.Split('\t')).ToDictionary(p=>uint.Parse(p[0]));
         var catalog=File.ReadAllLines(Path.Combine(input,"reward-catalog.txt")).Select(l=>l.Split('|')).Where(p=>p[0] is "weapon" or "armor").ToList();
         var manifest=new List<string>();var detailLines=new List<string>();var rarityLines=new List<string>();
+        if(append) {
+            manifest.AddRange(File.ReadAllLines(Path.Combine(input,"affix-catalog.txt")));
+            detailLines.AddRange(File.ReadAllLines(Path.Combine(input,"affix-details.tsv")));
+            rarityLines.AddRange(File.ReadAllLines(Path.Combine(input,"affix-rarities.tsv")));
+        }
         foreach(var kind in new[]{"weapon","armor"}) {
             bool weapon=kind=="weapon";uint tag=weapon?0u:0x10000000u;
             string param=weapon?"EquipParamWeapon":"EquipParamProtector";
             var p=read(param);var originals=p.Rows.ToArray();var occupied=originals.Select(r=>r.ID).ToHashSet();
-            int ordinal=0;
-            foreach(var entry in catalog.Where(e=>e[0]==kind).OrderBy(e=>int.Parse(e[1]))) {
+            var existing=manifest.Select(l=>l.Split('|')).Where(e=>e[0]==kind).ToArray();
+            var known=existing.Select(e=>int.Parse(e[2])).ToHashSet();
+            var identityFile=Path.Combine(input,"affix-catalog.txt");
+            var identities=(File.Exists(identityFile)?File.ReadAllLines(identityFile):Array.Empty<string>()).Select(l=>l.Split('|')).Where(e=>e[0]==kind)
+                .GroupBy(e=>int.Parse(e[2])).ToDictionary(g=>g.Key,g=>(g.Min(e=>int.Parse(e[1]))-(weapon?WeaponFirst:ArmorFirst))/(4*(weapon?10000:1000)));
+            int ordinal=identities.Values.DefaultIfEmpty(-1).Max()+1;
+            foreach(var entry in catalog.Where(e=>e[0]==kind&&!known.Contains(int.Parse(e[1]))).OrderBy(e=>int.Parse(e[1]))) {
                 int baseId=int.Parse(entry[1]);var source=originals.Single(r=>r.ID==baseId);
+                int itemOrdinal=identities.TryGetValue(baseId,out var savedOrdinal)?savedOrdinal:ordinal++;
                 var family=weapon?originals.Where(r=>r.ID>=baseId&&r.ID<baseId+10000).ToArray():[source];
                 var detail=details[tag|(uint)baseId];
                 for(int tier=0;tier<4;tier++) {
-                    int id=(weapon?WeaponFirst:ArmorFirst)+(ordinal*4+tier)*(weapon?10000:1000);
+                    int id=(weapon?WeaponFirst:ArmorFirst)+(itemOrdinal*4+tier)*(weapon?10000:1000);
                     ulong seed=Mix((ulong)baseId^((ulong)tier<<32)^0xa771f1UL);
                     var choices=Enumerable.Range(0,Names.Length).OrderBy(i=>Mix(seed^(ulong)i)).ToArray();
                     var slotNames=weapon?new[]{"residentSpEffectId","residentSpEffectId1","residentSpEffectId2"}:new[]{"residentSpEffectId","residentSpEffectId2","residentSpEffectId3"};
@@ -91,7 +102,6 @@ static class AffixAssets {
                     detailLines.Add(string.Join('\t',new[]{(tag|(uint)id).ToString(),detail[1],name,description,detail[4]+"\\n\\n"+description,stats,detail[6]}));
                     rarityLines.Add($"{tag|(uint)id}\t{tier}");
                 }
-                ordinal++;
             }
             save(param,p);
         }
@@ -101,9 +111,11 @@ static class AffixAssets {
         File.WriteAllLines(Path.Combine(output,"affix-rarities.tsv"),rarityLines);
         Console.WriteLine($"Built {manifest.Count} affixed equipment variants and {Names.Length*4} effects");
     }
-    public static void Patch(string input,string output,bool advanced=false) {
+    public static void Patch(string input,string output,bool advanced=false,bool append=false) {
         if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging directory required");
         Directory.CreateDirectory(output);
+        File.Copy(Path.Combine(input,"reward-catalog.txt"),Path.Combine(output,"reward-catalog.txt"),true);
+        if(append&&File.Exists(Path.Combine(input,"random-ashes.tsv")))File.Copy(Path.Combine(input,"random-ashes.tsv"),Path.Combine(output,"random-ashes.tsv"),true);
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
         var before=reg.Files.ToDictionary(f=>f.Name,f=>f.Bytes.ToArray());
         var originals=new Dictionary<string,PARAM>();var generated=new Dictionary<string,PARAM>();
@@ -116,7 +128,7 @@ static class AffixAssets {
         void Save(string name,PARAM p) {p.Rows.Sort((a,b)=>a.ID.CompareTo(b.ID));generated[name]=p;reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name)==name).Bytes=p.Write();}
         var messages=BND4.Read(Path.Combine(input,"msg/zhocn/item_dlc02.msgbnd.dcx"));
         var originalText=messages.Files.ToDictionary(f=>f.ID,f=>FMG.Read(f.Bytes).Entries.Select(e=>(e.ID,e.Text)).ToArray());
-        if(advanced)AdvancedAffixAssets.Build(Read,Save,messages,input,output);else Build(Read,Save,messages,input,output);
+        if(advanced)AdvancedAffixAssets.Build(Read,Save,messages,input,output,append);else Build(Read,Save,messages,input,output,append);
         var path=Path.Combine(output,"regulation.bin");SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(path,reg);
         if(new FileInfo(path).Length>4799*1024)throw new Exception("Affixed regulation exceeds the game's regulation size limit");
         var check=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(path);

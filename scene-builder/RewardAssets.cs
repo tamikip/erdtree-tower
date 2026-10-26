@@ -16,7 +16,7 @@ static class RewardAssets {
     }
     public static void Build(string game,string output,string cache) {
         var bundle=BND4.Read(Path.Combine(cache,"item_dlc02.msgbnd.dcx"));
-        var tables=bundle.Files.ToDictionary(f=>Path.GetFileNameWithoutExtension(f.Name),f=>FMG.Read(f.Bytes));
+        var tables=ItemTextTables.Read(bundle);
         string Text(string table,int id)=>tables[table].Entries.FirstOrDefault(e=>e.ID==id)?.Text??"";
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(game,"regulation.bin"));
         var parameters=new Dictionary<string,PARAM>();
@@ -27,12 +27,16 @@ static class RewardAssets {
             }
             return parameters[name];
         }
-        var items=File.ReadAllLines("outputs/erdtree-tower/scene-assets/reward-catalog.txt").Select(line=> {
+        var catalogPath=Path.Combine(output,"reward-catalog.txt");
+        if(!File.Exists(catalogPath))catalogPath="outputs/erdtree-tower/scene-assets/reward-catalog.txt";
+        var items=File.ReadAllLines(catalogPath).Select(line=> {
             var p=line.Split('|');return (kind:p[0],id:int.Parse(p[1]));
         }).ToList();
         items.AddRange(new[]{4000,4001,4002,2130,2180,2060,1150,1030,1032,2160,2080,2081,3000,3001,3070,2020,4021,4022,1000,1001,1002,1020,1021,1022}.Select(id=>("talisman",id)));
         items.Add(("goods",10020));
         items.AddRange(Enumerable.Range(11000,32).Select(id=>("goods",id)));
+        var tearsPath=Path.Combine(output,"crystal-tears.txt");
+        if(File.Exists(tearsPath))items.AddRange(File.ReadAllLines(tearsPath).Select(l=>("goods",int.Parse(l.Split('|')[1]))));
         var lines=new List<string>();var requiredIcons=new HashSet<int>();
         string Escape(string s)=>s.Replace("\r","").Replace("\n","\\n").Replace("\t"," ");
         foreach(var (kind,id) in items.Distinct()) {

@@ -9,6 +9,15 @@ static RARITIES:LazyLock<HashMap<u32,u8>>=LazyLock::new(||include_str!("../../sc
     let (id,rarity)=line.split_once('\t').unwrap();(id.parse().unwrap(),rarity.parse().unwrap())
 }).collect());
 pub fn item_quality(id:u32)->u8 {RARITIES.get(&erdtree_tower::rewards::spirit_base(id)).copied().unwrap_or(0).min(3)}
+fn rarity_color(tier:usize)->[f32;4] {
+    static COLORS:LazyLock<[[f32;4];4]>=LazyLock::new(|| {
+        let rows:Vec<_>=include_str!("../../scene-assets/equipment-colors.txt").lines().enumerate().map(|(index,line)| {
+            let (id,hex)=line.split_once('|').unwrap();assert_eq!(id.parse::<usize>().unwrap(),index);
+            let rgb=u32::from_str_radix(hex,16).unwrap();[(rgb>>16) as f32/255.0,((rgb>>8)&255) as f32/255.0,(rgb&255) as f32/255.0,1.0]
+        }).collect();rows.try_into().unwrap()
+    });
+    COLORS[tier.min(3)]
+}
 #[test]
 fn affixed_equipment_details_and_icons_cover_every_variant() {
     for item in erdtree_tower::affixes::CATALOG.iter() {
@@ -285,7 +294,8 @@ impl Panel {
                 let top=(size[1]-900.0*scale)*0.5;
                 ui.set_window_font_scale(scale*1.45);
                 ui.set_cursor_pos([left,top+48.0*scale]);
-                ui.text_colored(gold,d.map_or("奖励详情",|d|d.name.as_str()));
+                let text_color=rarity_color(quality(run,reward));
+                ui.text_colored(text_color,d.map_or("奖励详情",|d|d.name.as_str()));
                 ui.set_window_font_scale(scale);
                 let _child=ui.push_style_color(StyleColor::ChildBg,[0.035,0.04,0.035,0.92]);
                 ui.set_cursor_pos([left,top+115.0*scale]);
@@ -316,9 +326,14 @@ impl Panel {
                     let _wrap=ui.push_text_wrap_pos_with_pos(750.0*scale);
                     let _text=ui.push_style_color(StyleColor::Text,ink);
                     if let Some(d)=d {
-                        if !d.info.trim().is_empty(){ui.text_colored(gold,"效果");ui.spacing();ui.text_wrapped(&d.info);ui.spacing();ui.separator();ui.spacing();}
+                        if !d.info.trim().is_empty(){ui.text_colored(gold,"效果");ui.spacing();{let _color=ui.push_style_color(StyleColor::Text,text_color);ui.text_wrapped(&d.info);}ui.spacing();ui.separator();ui.spacing();}
                         if matches!(reward,Reward::TalismanBuff(_)){ui.text_wrapped("本局生效，不占护符栏位");ui.spacing();}
-                        ui.text_colored(gold,"物品说明");ui.spacing();ui.text_wrapped(&d.caption);
+                        ui.text_colored(gold,"物品说明");ui.spacing();
+                        if item_id(run,reward).is_some_and(|id|erdtree_tower::affixes::tier(id).is_some()) {
+                            if let Some((lore,affix))=d.caption.rsplit_once("\n\n") {
+                                ui.text_wrapped(lore);ui.spacing();let _color=ui.push_style_color(StyleColor::Text,text_color);ui.text_wrapped(affix);
+                            } else {let _color=ui.push_style_color(StyleColor::Text,text_color);ui.text_wrapped(&d.caption);}
+                        } else {ui.text_wrapped(&d.caption);}
                         if !d.skill.trim().is_empty(){ui.spacing();ui.separator();ui.spacing();ui.text_colored(gold,"战技");ui.spacing();ui.text_wrapped(&d.skill);}
                     } else {ui.text_wrapped(crate::map_ui::reward_description(run,reward));}
                     ui.unindent();
@@ -342,7 +357,7 @@ impl Panel {
                         (category,detail.map_or("未知物品".into(),|v|v.name.clone()),detail.map_or(String::new(),card_summary))
                     },
                     Reward::Blessing(_)=>("护符",detail.map_or("护符".into(),|v|v.name.clone()),detail.map_or(String::new(),|v|v.info.clone())),
-                    Reward::UpgradeWeapon=>("强化","武器强化".into(),"追赶最高强化等级\n至少普通 +2 / 失色 +1".into()),
+                    Reward::UpgradeWeapon=>("强化","武器强化".into(),"背包最高等效等级\n再普通 +3 / 失色 +1".into()),
                     Reward::Gold(n)=>("卢恩",format!("{n} 卢恩"),"获得卢恩".into()),
                     Reward::TalismanBuff(_)=>("护符赐福",detail.map_or("护符效果".into(),|v|v.name.clone()),format!("{}\n本局生效，不占护符栏位",detail.map_or("",|v|v.info.as_str()))),
                     Reward::SacredTear=>("强化材料","圣杯滴露 ×1".into(),"圣杯瓶恢复量 +1\n交给服务 NPC 使用，最高 +12".into()),
@@ -351,7 +366,7 @@ impl Panel {
                     Reward::StarStream=>("增益","星流引导".into(),"彗星亚兹勒随视角左右瞄准\n光束保持水平".into()),
                 };
                 let tier=quality(run,reward);
-                let quality_color=match tier {1=>[0.52,0.75,1.0,1.0],2=>[0.82,0.64,0.96,1.0],3=>gold,_=>[0.80,0.83,0.86,1.0]};
+                let quality_color=rarity_color(tier);
                 if let Some(texture)=if tier==1 {self.rare_blue}else{None} {
                     let light=card_light(tier,selected,hover,now);
                     ui.get_window_draw_list().add_image(texture,[x,y],[x+width,y+height])
@@ -382,11 +397,11 @@ impl Panel {
                 ui.set_window_font_scale(scale*1.2);
                 let title_width=ui.calc_text_size(&title)[0];
                 if title_width>width-40.0*scale {ui.set_window_font_scale(scale*1.2*(width-40.0*scale)/title_width);}
-                center(ui,x+width*0.5,y+278.0*scale,&title,ink);
+                center(ui,x+width*0.5,y+278.0*scale,&title,quality_color);
                 ui.set_window_font_scale(scale*0.90);
                 let summary=if summary.chars().count()>48 {format!("{}…",summary.chars().take(48).collect::<String>())}else{summary};
                 ui.set_cursor_pos([x+40.0*scale,y+329.0*scale]);
-                {let _color=ui.push_style_color(StyleColor::Text,ink);let _wrap=ui.push_text_wrap_pos_with_pos(x+width-40.0*scale);ui.text_wrapped(summary);}
+                {let _color=ui.push_style_color(StyleColor::Text,quality_color);let _wrap=ui.push_text_wrap_pos_with_pos(x+width-40.0*scale);ui.text_wrapped(summary);}
                 ui.set_window_font_scale(scale);
                 if selected {center(ui,x+width*0.5,y+height-76.0*scale,"已选",gold);}
                 ui.set_cursor_pos([x,y]);let _disabled=ui.begin_disabled(!ready||self.selection.details||self.selection.skip);
@@ -466,6 +481,16 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
         }
     }
     for detail in DETAILS.values(){panel.textures.insert(detail.icon,Some(TextureId::new(detail.icon as usize+1)));}
+    if let Some(path)=&output {
+        let mut colored=run.clone();
+        colored.phase=Phase::Reward{id:0,offers:(1..=3).map(|tier|Reward::Item(erdtree_tower::affixes::CATALOG.iter().find(|i|erdtree_tower::affixes::base(i.id)==1000000&&erdtree_tower::affixes::tier(i.id)==Some(tier)&&erdtree_tower::affixes::profile(i.id)==Some(0)).unwrap().id)).collect()};
+        context.io_mut().display_size=[1920.0,1080.0];
+        for details in [false,true] {
+            for _ in 0..4 {panel.draw(context.frame(),&colored,&view);context.render();panel.selection.selected=1;panel.selection.details=details;}
+            panel.draw(context.frame(),&colored,&view);let data=context.render();
+            write_frame(&path.join(if details{"rarity-details-1920.draw"}else{"rarity-1920.draw"}),data,1920,1080);
+        }
+    }
     for (width,height) in [(1280,720),(1920,1080),(3440,1440)] {
         context.io_mut().display_size=[width as f32,height as f32];
         let mut elite=Run::new(42,erdtree_tower::Class::Astrologer);
@@ -612,6 +637,16 @@ pub fn test_pad_frames(context:&mut hudhook::imgui::Context) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn equipment_palette_is_distinct_opaque_and_matches_native_hex_colors() {
+        let colors:Vec<_>=(0..4).map(super::rarity_color).collect();
+        assert!(colors.iter().all(|c|c[3]==1.0&&c.iter().all(|v|(0.0..=1.0).contains(v))));
+        for i in 0..4 {for j in i+1..4 {assert_ne!(colors[i],colors[j]);}}
+        assert_eq!(super::rarity_color(99),colors[3]);
+        assert!(colors[1][2]>colors[1][0]);
+        assert!(colors[2][0]>colors[2][1]&&colors[2][2]>colors[2][1]);
+        assert!(colors[3][0]>colors[3][2]);
+    }
     use super::*;
     #[test]
     fn map_confirm_requires_new_press_and_does_not_carry_from_rewards() {

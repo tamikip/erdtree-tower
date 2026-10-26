@@ -73,8 +73,11 @@ fn reward_item(id:u32)->Result<(eldenring::cs::ItemId,&'static str),String> {
     Ok((item,reward.name))
 }
 fn held(data:&eldenring::cs::PlayerGameData,item:eldenring::cs::ItemId)->u64 {
-    let bag=data.equipment.equip_inventory_data.items_data.items().filter(|e|e.item_id==item).map(|e|e.quantity as u64).sum::<u64>();
-    bag+data.storage.as_ref().map_or(0,|s|s.items_data.items().filter(|e|e.item_id==item).map(|e|e.quantity as u64).sum::<u64>())
+    let bag=data.equipment.equip_inventory_data.items_data.items().filter(|e|same_reward_item(e.item_id,item)).map(|e|e.quantity as u64).sum::<u64>();
+    bag+data.storage.as_ref().map_or(0,|s|s.items_data.items().filter(|e|same_reward_item(e.item_id,item)).map(|e|e.quantity as u64).sum::<u64>())
+}
+pub fn same_reward_item(a:eldenring::cs::ItemId,b:eldenring::cs::ItemId)->bool {
+    a.category()==b.category()&&if a.category()==eldenring::cs::ItemCategory::Weapon {a.param_id()/100==b.param_id()/100}else{a==b}
 }
 pub fn check_reward(data:&eldenring::cs::PlayerGameData,id:u32)->Result<u64,String> {
     let (item,name)=reward_item(id)?;let before=held(data,item);
@@ -83,9 +86,24 @@ pub fn check_reward(data:&eldenring::cs::PlayerGameData,id:u32)->Result<u64,Stri
 }
 pub fn give_reward(data:&mut eldenring::cs::PlayerGameData,id:u32)->Result<(),String> {
     let before=check_reward(data,id)?;
-    give(&[(id as i32,1,-1)])?;
+    let granted=super::smith::reward_id(data,id)?;
+    give(&[(granted as i32,1,-1)])?;
     if held(data,reward_item(id)?.0)<=before {return Err("奖励未进入背包或仓库，请检查容量后重试".into());}
     Ok(())
+}
+
+#[test]
+fn reward_confirmation_counts_weapon_levels_but_keeps_affixes_affinity_and_spirits_distinct() {
+    use eldenring::cs::{ItemId,ItemCategory};
+    let weapon=|id|ItemId::new(ItemCategory::Weapon,id).unwrap();
+    assert!(same_reward_item(weapon(160001215),weapon(160001200)));
+    assert!(!same_reward_item(weapon(160001215),weapon(160001300)));
+    assert!(!same_reward_item(weapon(160001215),weapon(160011200)));
+    assert!(!same_reward_item(weapon(160001215),ItemId::new(ItemCategory::Protector,160001215).unwrap()));
+    assert!(!same_reward_item(ItemId::new(ItemCategory::Goods,2200006).unwrap(),ItemId::new(ItemCategory::Goods,2200000).unwrap()));
+    let wanted=weapon(160001200);
+    let inventory=[weapon(160001203),weapon(160001215),weapon(160011215)];
+    assert_eq!(inventory.iter().filter(|&&id|same_reward_item(id,wanted)).count(),2);
 }
 
 pub fn give_stack(data:&mut eldenring::cs::PlayerGameData,id:u32)->Result<(),String> {

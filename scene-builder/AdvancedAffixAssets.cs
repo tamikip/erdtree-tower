@@ -35,11 +35,11 @@ static class AdvancedAffixAssets {
         if(ArmorMultiplier(0,true)<=ArmorMultiplier(3,true)||ArmorMultiplier(1,false)<=ArmorMultiplier(3,false))throw new Exception("Armor specialization must exceed balanced armor");
         Console.WriteLine("Verified independent physical/magical/rusted/elden armor rules");
     }
-    public static void Build(Func<string,PARAM> read,Action<string,PARAM> save,BND4 messages,string input,string output) {
+    public static void Build(Func<string,PARAM> read,Action<string,PARAM> save,BND4 messages,string input,string output,bool append=false) {
         Test();
         var correction=read("AttackElementCorrectParam");
-        if(correction.Rows.Any(r=>r.ID>CorrectionFirst&&r.ID<=CorrectionFirst+31))throw new Exception("Advanced scaling correction collision");
-        for(int mask=1;mask<32;mask++) {
+        if(!append&&correction.Rows.Any(r=>r.ID>CorrectionFirst&&r.ID<=CorrectionFirst+31))throw new Exception("Advanced scaling correction collision");
+        for(int mask=1;!append&&mask<32;mask++) {
             var row=new PARAM.Row(correction.Rows.Single(r=>r.ID==ScalingCorrectionFix.Template)){ID=CorrectionFirst+mask,Name=$"Tower scaling mask {mask}"};
             for(int stat=0;stat<5;stat++)foreach(var element in Damage)Set(row,$"is{Stats[stat]}Correct_by{element}",(mask>>stat)&1);
             correction.Rows.Add(row);
@@ -50,15 +50,28 @@ static class AdvancedAffixAssets {
         var details=File.ReadAllLines(Path.Combine(input,"reward-details.tsv")).Select(l=>l.Split('\t')).ToDictionary(p=>uint.Parse(p[0]));
         var original=File.ReadAllLines(Path.Combine(input,"reward-catalog.txt")).Select(l=>l.Split('|')).ToArray();
         var catalog=new List<string>();var detailLines=new List<string>();var rarities=new List<string>();var audit=new List<string>{"ID\tBaseID\tKind\tTier\tProfile\tMask\tDamageMode\tStars\tEffects"};
+        if(append) {
+            catalog.AddRange(File.ReadAllLines(Path.Combine(input,"affix-v2-catalog.txt")));
+            detailLines.AddRange(File.ReadAllLines(Path.Combine(input,"affix-v2-details.tsv")));
+            rarities.AddRange(File.ReadAllLines(Path.Combine(input,"affix-v2-rarities.tsv")));
+            audit.AddRange(File.ReadAllLines(Path.Combine(input,"affix-v2-audit.tsv")).Skip(1));
+        }
         foreach(var kind in new[]{"weapon","armor"}) {
             bool weapon=kind=="weapon";uint tag=weapon?0u:0x10000000u;int profiles=weapon?2:4;
             string table=weapon?"EquipParamWeapon":"EquipParamProtector";
-            var p=read(table);var old=p.Rows.ToArray();var occupied=old.Select(r=>r.ID).ToHashSet();int ordinal=0;
-            foreach(var entry in original.Where(e=>e[0]==kind).OrderBy(e=>int.Parse(e[1]))) {
+            var p=read(table);var old=p.Rows.ToArray();var occupied=old.Select(r=>r.ID).ToHashSet();
+            var existing=catalog.Select(l=>l.Split('|')).Where(e=>e[0]==kind).ToArray();
+            var known=existing.Select(e=>int.Parse(e[2])).ToHashSet();
+            var identityFile=Path.Combine(input,"affix-v2-catalog.txt");
+            var identities=(File.Exists(identityFile)?File.ReadAllLines(identityFile):Array.Empty<string>()).Select(l=>l.Split('|')).Where(e=>e[0]==kind)
+                .GroupBy(e=>int.Parse(e[2])).ToDictionary(g=>g.Key,g=>(g.Min(e=>int.Parse(e[1]))-(weapon?WeaponFirst:ArmorFirst))/(profiles*4*(weapon?10000:1000)));
+            int ordinal=identities.Values.DefaultIfEmpty(-1).Max()+1;
+            foreach(var entry in original.Where(e=>e[0]==kind&&!known.Contains(int.Parse(e[1]))).OrderBy(e=>int.Parse(e[1]))) {
                 int baseId=int.Parse(entry[1]);var source=old.Single(r=>r.ID==baseId);var detail=details[tag|(uint)baseId];
+                int itemOrdinal=identities.TryGetValue(baseId,out var savedOrdinal)?savedOrdinal:ordinal++;
                 var family=weapon?old.Where(r=>r.ID>=baseId&&r.ID<baseId+10000).ToArray():[source];
                 for(int profile=0;profile<profiles;profile++)for(int tier=0;tier<4;tier++) {
-                    int id=(weapon?WeaponFirst:ArmorFirst)+(ordinal*profiles*4+profile*4+tier)*(weapon?10000:1000);
+                    int id=(weapon?WeaponFirst:ArmorFirst)+(itemOrdinal*profiles*4+profile*4+tier)*(weapon?10000:1000);
                     ulong seed=Mix((ulong)baseId^((ulong)tier<<32)^((ulong)profile<<40)^0xaff22026UL);
                     double roll=(Mix(seed^43)%10001)/10000.0;int mask=weapon?Mask(source,seed,profile):0;
                     int mode=(int)(Mix(seed^47)%5),stars=roll>=0.995?2:roll>=0.97?1:0;
@@ -110,7 +123,6 @@ static class AdvancedAffixAssets {
                     detailLines.Add(string.Join('\t',new[]{(tag|(uint)id).ToString(),detail[1],name,info,detail[4]+"\\n\\n"+info,stats,detail[6]}));rarities.Add($"{tag|(uint)id}\t{tier}");
                     audit.Add($"{tag|(uint)id}\t{tag|(uint)baseId}\t{kind}\t{tier}\t{profile}\t{(weapon?mask:0)}\t{(weapon?mode:-1)}\t{(weapon?stars:0)}\t{string.Join(',',choices.Select(i=>EffectFirst+i*10+tier))}");
                 }
-                ordinal++;
             }
             save(table,p);
         }
@@ -125,8 +137,11 @@ static class AdvancedAffixAssets {
         var corrections=read("AttackElementCorrectParam").Rows.ToDictionary(r=>r.ID);
         var effects=read("SpEffectParam").Rows.Select(r=>r.ID).ToHashSet();
         var lines=File.ReadAllLines(Path.Combine(output,"affix-v2-audit.tsv")).Skip(1).Select(l=>l.Split('\t')).ToArray();
-        if(lines.Length!=12328)throw new Exception("Advanced variant coverage mismatch");
+        var bases=File.ReadAllLines(Path.Combine(output,"reward-catalog.txt")).Select(l=>l.Split('|')).Where(p=>p[0] is "weapon" or "armor").ToArray();
+        if(lines.Length!=bases.Sum(p=>p[0]=="weapon"?8:16)||bases.Any(p=>!lines.Any(l=>l[2]==p[0]&&(uint.Parse(l[1])&0x0fffffff)==uint.Parse(p[1]))))throw new Exception("Advanced variant coverage mismatch");
         var details=File.ReadAllLines(Path.Combine(output,"affix-v2-details.tsv")).Select(l=>l.Split('\t')).ToDictionary(p=>uint.Parse(p[0]));
+        var ashFile=Path.Combine(output,"random-ashes.tsv");
+        var ashes=File.Exists(ashFile)?File.ReadAllLines(ashFile).Skip(1).Select(l=>l.Split('\t')).ToDictionary(p=>int.Parse(p[0]),p=>int.Parse(p[3])):new Dictionary<int,int>();
         foreach(var line in lines) {
             uint encoded=uint.Parse(line[0]);int id=(int)(encoded&0x0fffffff),baseId=(int)(uint.Parse(line[1])&0x0fffffff);
             int tier=int.Parse(line[3]),profile=int.Parse(line[4]),mask=int.Parse(line[5]);bool weapon=line[2]=="weapon";
@@ -140,7 +155,7 @@ static class AdvancedAffixAssets {
                     if((F(row,Scaling[s])>0)!=enabled)throw new Exception("Advanced displayed scaling mismatch");
                     foreach(var element in Damage)if(I(correction,$"is{Stats[s]}Correct_by{element}")!=(enabled?1:0))throw new Exception("Advanced scaling does not affect damage");
                 }
-                if(I(row,"swordArtsParamId")!=I(source,"swordArtsParamId"))throw new Exception("Original weapon skill changed");
+                if(I(row,"swordArtsParamId")!=ashes.GetValueOrDefault(id,I(source,"swordArtsParamId")))throw new Exception("Weapon skill differs from its manifest");
                 int mode=int.Parse(line[6]);
                 if(mode>0&&Damage.Sum(e=>I(source,"attackBase"+e))>0&&I(row,"attackBase"+Damage[mode])<=0)throw new Exception("Advanced elemental damage missing");
                 int stars=int.Parse(line[7]);if(details[encoded][2].Count(c=>c=='★')!=stars)throw new Exception("Weapon star text mismatch");
@@ -162,7 +177,7 @@ static class AdvancedAffixAssets {
                 if(F(rust,"weight")>F(elden,"weight"))throw new Exception("Rusted armor weight mismatch");
             }
         }
-        Console.WriteLine("Verified advanced scaling masks, damage elements, armor types, stars, native skills and all tier/profile combinations");
+        Console.WriteLine("Verified advanced scaling masks, damage elements, armor types, stars, weapon skill manifests and all tier/profile combinations");
     }
     public static void Verify(string input) {
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));

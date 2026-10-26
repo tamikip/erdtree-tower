@@ -2,10 +2,10 @@ use crate::{Class,Reward,Run};
 use std::sync::LazyLock;
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum ItemKind {Weapon,Armor,Sorcery,Incantation,Spirit,Talisman,Crystal}
+pub enum ItemKind {Weapon,Armor,Sorcery,Incantation,Spirit,Talisman,Crystal,Tool}
 impl ItemKind {
     pub fn label(self)->&'static str {
-        match self {Self::Weapon=>"武器",Self::Armor=>"防具",Self::Sorcery=>"魔法",Self::Incantation=>"祷告",Self::Spirit=>"骨灰",Self::Talisman=>"护符",Self::Crystal=>"结晶露滴"}
+        match self {Self::Weapon=>"武器",Self::Armor=>"防具",Self::Sorcery=>"魔法",Self::Incantation=>"祷告",Self::Spirit=>"骨灰",Self::Talisman=>"护符",Self::Crystal=>"结晶露滴",Self::Tool=>"砥石刀"}
     }
     pub fn allowed(self,class:Class)->bool {
         match self {Self::Sorcery=>class.sorcerer(),Self::Incantation=>class.cleric(),_=>true}
@@ -19,6 +19,10 @@ impl Item {
     }
 }
 pub static CATALOG:LazyLock<Vec<Item>>=LazyLock::new(||parse(include_str!("../scene-assets/reward-catalog.txt")).into_iter().chain(parse(include_str!("../scene-assets/crystal-tears.txt"))).collect());
+pub fn progression_good(id:u32)->bool {
+    static IDS:LazyLock<std::collections::HashSet<u32>>=LazyLock::new(||CATALOG.iter().filter(|i|matches!(i.kind,ItemKind::Tool|ItemKind::Crystal)).map(|i|i.id).collect());
+    IDS.contains(&id)
+}
 /// 公开版移除的 RNG Lands - Ruby 法术，只保留编号用于读取旧存档
 pub static RETIRED_SPELLS:LazyLock<std::collections::HashSet<u32>>=LazyLock::new(||include_str!("../scene-assets/retired-spell-rows.txt").lines().filter_map(|l|l.strip_prefix("EquipParamGoods|")).map(|id|0x40000000|id.parse::<u32>().unwrap()).collect());
 static OLD_CATALOG:LazyLock<Vec<Item>>=LazyLock::new(||parse(include_str!("../scene-assets/reward-catalog-v29.txt")));
@@ -28,6 +32,7 @@ fn parse(text:&'static str)->Vec<Item> {text.lines().map(|line| {
         "weapon"=>(ItemKind::Weapon,0),"armor"=>(ItemKind::Armor,0x10000000),
         "talisman"=>(ItemKind::Talisman,0x20000000),
         "crystal"=>(ItemKind::Crystal,0x40000000),
+        "tool"=>(ItemKind::Tool,0x40000000),
         "sorcery"=>(ItemKind::Sorcery,0x40000000),"incantation"=>(ItemKind::Incantation,0x40000000),"spirit"=>(ItemKind::Spirit,0x40000000),_=>panic!("Invalid reward catalog"),
     };
     Item{id:tag|parts.next().unwrap().parse::<u32>().unwrap(),name:parts.next().unwrap(),kind}
@@ -51,6 +56,11 @@ pub fn offers(run:&Run,node:usize)->Vec<Reward> {
     if owned.is_empty(){return crate::affixes::rewards(run,node,casting_replaced(run,node,true));}
     let mut run=run.clone();run.claimed_items.extend(owned);
     crate::affixes::rewards(&run,node,casting_replaced(&run,node,true))
+}
+pub(crate) fn before_whetblades(run:&Run,node:usize)->Vec<Reward> {
+    let mut run=run.clone();
+    run.claimed_items.extend(CATALOG.iter().filter(|i|i.kind==ItemKind::Tool).map(|i|i.id));
+    offers(&run,node)
 }
 pub(crate) fn before_claimed_bases(run:&Run,node:usize)->Vec<Reward> {
     crate::affixes::rewards(run,node,casting_replaced(run,node,false))
@@ -172,7 +182,8 @@ fn ranked(run:&Run,node:usize,spirits:bool,catalog:&[Item])->Vec<Reward> {
 }
 fn ranked_pool(run:&Run,node:usize,spirits:bool,catalog:&[Item],base_only:bool)->Vec<Reward> {
     let mut categories=if catalog.iter().any(|i|i.kind==ItemKind::Talisman) {vec![]}else{vec![run.legacy_offers(node)[0].clone()]};
-    for (index,kind) in [ItemKind::Weapon,ItemKind::Armor,ItemKind::Sorcery,ItemKind::Incantation,ItemKind::Spirit,ItemKind::Talisman].into_iter().enumerate() {
+    for (index,kind) in [ItemKind::Weapon,ItemKind::Armor,ItemKind::Sorcery,ItemKind::Incantation,ItemKind::Spirit,ItemKind::Talisman,ItemKind::Tool].into_iter().enumerate() {
+        if kind==ItemKind::Tool&&!base_only {continue;}
         if kind==ItemKind::Spirit&&!spirits {continue;}
         let pool:Vec<_>=catalog.iter().filter(|item|item.kind==kind&&kind.allowed(run.class)&&!run.claimed_items.contains(&item.id)&&(!base_only||item.random_eligible())).collect();
         if !pool.is_empty() {
@@ -188,6 +199,16 @@ fn ranked_pool(run:&Run,node:usize,spirits:bool,catalog:&[Item],base_only:bool)-
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pending_rewards_from_before_whetblades_still_load() {
+        for seed in 0..60 {
+            let mut run=Run::new(seed,Class::Samurai);
+            let node=run.start_nodes()[0];run.enter(node).unwrap();run.win_combat().unwrap();
+            run.phase=crate::Phase::Reward{id:node,offers:before_whetblades(&run,node)};
+            let loaded=Run::decode(&run.encode().unwrap()).unwrap();
+            assert_eq!(loaded.phase,crate::Phase::Reward{id:node,offers:offers(&loaded,node)});
+        }
+    }
     #[test]
     fn casting_requirements_are_independent() {
         for tools in [[false,false],[true,false],[false,true],[true,true]] {
@@ -267,7 +288,7 @@ mod tests {
     }
     #[test]
     fn current_currency_fallback_is_1500_and_old_rewards_migrate() {
-        let mut run=(0..100).map(|seed|Run::new(seed,Class::Samurai)).find(|run|offers(run,run.start_nodes()[0]).iter().any(|r|matches!(r,Reward::Gold(_)))).unwrap();
+        let mut run=(0..100).map(|seed|{let mut run=Run::new(seed,Class::Samurai);run.claimed_items.extend(CATALOG.iter().filter(|i|i.kind==ItemKind::Tool).map(|i|i.id));run}).find(|run|offers(run,run.start_nodes()[0]).iter().any(|r|matches!(r,Reward::Gold(_)))).unwrap();
         let node=run.start_nodes()[0];
         run.enter(node).unwrap();run.win_combat().unwrap();
         let old=before_bosses(&run,node);
