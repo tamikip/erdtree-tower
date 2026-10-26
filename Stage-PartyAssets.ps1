@@ -19,6 +19,8 @@ foreach ($required in @((Join-Path $GameDirectory 'oo2core_6_win64.dll'), (Join-
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing staging input: $required" }
 }
 function Invoke-AssetStage([string]$Mode, [string]$InputPath, [string]$OutputPath) {
+    # Windows PowerShell 5.1 drops empty native arguments, which would shift the mode into the cache slot.
+    if ([string]::IsNullOrEmpty($InputPath) -or [string]::IsNullOrEmpty($OutputPath)) { throw "Asset stage needs both paths: $Mode" }
     & dotnet run --project $project --no-restore -- $GameDirectory $OutputPath $InputPath $Mode
     if ($LASTEXITCODE -ne 0) { throw "Asset stage failed: $Mode" }
 }
@@ -27,7 +29,7 @@ try {
     $assets = Join-Path $destination 'scene-assets'
     New-Item -ItemType Directory -Path $destination | Out-Null
     Copy-Item -LiteralPath $source -Destination $assets -Recurse
-    Invoke-AssetStage 'party-enemy-audit' '' (Join-Path $workspace 'work/party-entity-audit')
+    Invoke-AssetStage 'party-enemy-audit' $assets (Join-Path $workspace 'work/party-entity-audit')
     Invoke-AssetStage 'personal-events-patch' $assets $assets
     Invoke-AssetStage 'party-enemy-stage' $assets $assets
     Invoke-AssetStage 'party-hub-stage' (Join-Path $workspace 'work/scene-cache') $assets
@@ -39,7 +41,7 @@ try {
     Invoke-AssetStage 'party-guard-stage' $assets $assets
     Invoke-AssetStage 'party-status-patch' $assets $assets
     Invoke-AssetStage 'party-model-patch' $assets $assets
-    Invoke-AssetStage 'party-placement-audit' $assets ''
+    Invoke-AssetStage 'party-placement-audit' $assets $assets
     $parameters = Join-Path $destination 'parameters'
     Invoke-AssetStage 'party-param-stage' $assets $parameters
     Copy-Item -LiteralPath (Join-Path $parameters 'regulation.bin') -Destination (Join-Path $assets 'regulation.bin')

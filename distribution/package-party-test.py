@@ -5,6 +5,7 @@ import shutil
 import zipfile
 import subprocess
 import os
+import argparse
 from native_build import build_native
 
 project = Path(__file__).resolve().parents[1]
@@ -13,7 +14,17 @@ source = project / 'scene-assets'
 name = 'ErdtreeTower-Multiplayer-Test-06'
 target = project / 'dist' / name
 archive = target.with_suffix('.zip')
-seamless = Path('C:/Users/TamikiP/Downloads/Seamless Co-op v2.0.1 510 2.0.1 2026-09-02T23-30Z luvfLWq6V.zip')
+parser = argparse.ArgumentParser(description='Build the multiplayer test package.')
+parser.add_argument('--seamless-zip', default=os.environ.get('ERDTREE_SEAMLESS_ZIP'),
+                    help='original Seamless Co-op 2.0.1 download (env ERDTREE_SEAMLESS_ZIP)')
+parser.add_argument('--game-dir', default=os.environ.get('ERDTREE_GAME_DIR'),
+                    help='ELDEN RING Game folder used for the launcher check (env ERDTREE_GAME_DIR)')
+args = parser.parse_args()
+if not args.seamless_zip or not Path(args.seamless_zip).is_file():
+    parser.error('pass --seamless-zip or set ERDTREE_SEAMLESS_ZIP to the original Seamless Co-op 2.0.1 zip')
+if not args.game_dir or not (Path(args.game_dir) / 'eldenring.exe').is_file():
+    parser.error('pass --game-dir or set ERDTREE_GAME_DIR to the Game folder containing eldenring.exe')
+seamless = Path(args.seamless_zip)
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 with zipfile.ZipFile(seamless) as original:
@@ -105,7 +116,7 @@ Game\\SeamlessCoop\\locale\\...
 (target/'安装与联机测试.txt').write_text(guide,encoding='utf-8-sig')
 with (target/'THIRD_PARTY_NOTICES.md').open('a',encoding='utf-8') as stream:
     stream.write('\nSeamless Co-op 2.0.1: the user-provided original download archive is included unchanged under dependencies. See its bundled notices. https://www.nexusmods.com/eldenring/mods/510\n')
-subprocess.run([str(Path(os.environ['SystemRoot'])/'System32/WindowsPowerShell/v1.0/powershell.exe'),'-NoProfile','-ExecutionPolicy','Bypass','-File',str(target/'Launch-Tower.ps1'),'-GameDirectory','F:/SteamLibrary/steamapps/common/ELDEN RING/Game','-CheckOnly'],check=True,env={k:v for k,v in os.environ.items() if k.lower()!='psmodulepath'})
+subprocess.run([str(Path(os.environ['SystemRoot'])/'System32/WindowsPowerShell/v1.0/powershell.exe'),'-NoProfile','-ExecutionPolicy','Bypass','-File',str(target/'Launch-Tower.ps1'),'-GameDirectory',str(Path(args.game_dir)),'-CheckOnly'],check=True,env={k:v for k,v in os.environ.items() if k.lower()!='psmodulepath'})
 files=sorted(p for p in target.rglob('*') if p.is_file())
 for p in files:
     assert not p.is_symlink() and not (p.stat().st_file_attributes & 0x400)

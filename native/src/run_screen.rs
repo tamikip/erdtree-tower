@@ -1,31 +1,34 @@
-use std::sync::{Mutex,atomic::{AtomicBool,Ordering}};
+use std::{collections::VecDeque,sync::{Mutex,atomic::{AtomicBool,Ordering}}};
 use erdtree_tower::{Run,Phase};
 use hudhook::imgui::{Ui,Key,Condition,StyleColor};
 
-static SCREEN:Mutex<Option<Screen>>=Mutex::new(None);
+static SCREEN:Mutex<VecDeque<Screen>>=Mutex::new(VecDeque::new());
 static PENDING:Mutex<Option<Run>>=Mutex::new(None);
 static SEED:Mutex<Option<u64>>=Mutex::new(None);
 static ACTIVE:AtomicBool=AtomicBool::new(false);
-enum Screen {Summary(Run),Notice{message:String,opened:Option<f64>},TrialRewards{items:Vec<u32>,opened:Option<f64>},Seed{input:String,error:String,digit:u8}}
-pub fn party_notice(message:String) {
-    if let Ok(mut screen)=SCREEN.lock(){*screen=Some(Screen::Notice{message,opened:None});ACTIVE.store(true,Ordering::Relaxed);}
+enum Screen {Summary{run:Run,opened:Option<f64>},Notice{message:String,opened:Option<f64>},TrialRewards{items:Vec<u32>,opened:Option<f64>},Seed{input:String,error:String,digit:u8}}
+fn show(next:Screen) {
+    let Ok(mut screens)=SCREEN.lock() else{return;};
+    if screens.iter().any(|s|match (s,&next) {(Screen::Notice{message:a,..},Screen::Notice{message:b,..})=>a==b,(Screen::Seed{..},Screen::Seed{..})=>true,_=>false}) {return;}
+    screens.push_back(next);ACTIVE.store(true,Ordering::Relaxed);
 }
+pub fn party_notice(message:String) {show(Screen::Notice{message,opened:None});}
 pub fn trial_rewards(before:&Run,after:&Run) {
     let items=after.elite_buffs.iter().copied().filter(|id|!before.elite_buffs.contains(id)).collect();
-    if let Ok(mut screen)=SCREEN.lock(){*screen=Some(Screen::TrialRewards{items,opened:None});ACTIVE.store(true,Ordering::Relaxed);}
+    show(Screen::TrialRewards{items,opened:None});
 }
 pub fn active()->bool {ACTIVE.load(Ordering::Relaxed)}
-pub fn trial_rewards_active()->bool {SCREEN.lock().is_ok_and(|s|matches!(*s,Some(Screen::TrialRewards{..})))}
+pub fn trial_rewards_active()->bool {SCREEN.lock().is_ok_and(|s|s.iter().any(|s|matches!(s,Screen::TrialRewards{..})))}
 pub fn summary(run:&Run) {if let Ok(mut pending)=PENDING.lock(){*pending=Some(run.clone());}}
 pub fn hub_ready() {
     if let Ok(mut screen)=SCREEN.lock() {
-        if screen.is_some(){return;}
+        if !screen.is_empty(){return;}
         if let Some(run)=PENDING.lock().ok().and_then(|mut pending|pending.take()) {
-            *screen=Some(Screen::Summary(run));ACTIVE.store(true,Ordering::Relaxed);
+            screen.push_back(Screen::Summary{run,opened:None});ACTIVE.store(true,Ordering::Relaxed);
         }
     }
 }
-pub fn seed_entry() {if let Ok(mut screen)=SCREEN.lock(){*screen=Some(Screen::Seed{input:String::new(),error:String::new(),digit:0});ACTIVE.store(true,Ordering::Relaxed);}}
+pub fn seed_entry() {show(Screen::Seed{input:String::new(),error:String::new(),digit:0});}
 pub fn take_seed()->Option<u64> {SEED.lock().ok()?.take()}
 fn parse_seed(text:&str)->Result<u64,&'static str> {
     let text=text.trim();
@@ -34,12 +37,12 @@ fn parse_seed(text:&str)->Result<u64,&'static str> {
 }
 pub fn draw(ui:&Ui)->bool {
     let Ok(mut screen)=SCREEN.lock() else{return false;};
-    let Some(current)=screen.as_mut() else{return false;};
-    if render(ui,current) {*screen=None;ACTIVE.store(false,Ordering::Relaxed);}
+    let Some(current)=screen.front_mut() else{return false;};
+    if render(ui,current) {screen.pop_front();ACTIVE.store(!screen.is_empty(),Ordering::Relaxed);}
     true
 }
 fn render(ui:&Ui,current:&mut Screen)->bool {
-    if let Screen::Summary(run)=current {return summary_page(ui,run);}
+    if let Screen::Summary{run,opened}=current {let opened=*opened.get_or_insert(ui.time());return summary_page(ui,run,ui.time()-opened>=0.35);}
     let size=ui.io().display_size;
     crate::oath_art::background(&ui.get_background_draw_list(),size);
     let mut close=false;
@@ -49,7 +52,7 @@ fn render(ui:&Ui,current:&mut Screen)->bool {
         .size([620.0f32.min(size[0]*0.9),510.0f32.min(size[1]*0.9)],Condition::Always).title_bar(false).resizable(false).movable(false).build(|| {
         ui.dummy([0.0,15.0]);
         match current {
-            Screen::Summary(_)=>unreachable!(),
+            Screen::Summary{..}=>unreachable!(),
             Screen::Notice{message,opened}=>{
                 let opened=*opened.get_or_insert(ui.time());
                 ui.text("暂时无法开始联机旅程");ui.separator();ui.spacing();ui.text_wrapped(message);
@@ -102,19 +105,21 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
     hub_ready();
     assert!(active());
     assert!(PENDING.lock().unwrap().is_none());
-    *SCREEN.lock().unwrap()=None;ACTIVE.store(false,Ordering::Relaxed);
+    SCREEN.lock().unwrap().clear();ACTIVE.store(false,Ordering::Relaxed);
     hub_ready();assert!(!active(),"The result must only open once");
     let before=run.clone();let mut after=before.clone();
     after.elite_buffs=vec![1000,1150];trial_rewards(&before,&after);
     assert!(trial_rewards_active());
-    assert!(matches!(&*SCREEN.lock().unwrap(),Some(Screen::TrialRewards{items,..}) if items==&vec![1000,1150]));
-    *SCREEN.lock().unwrap()=None;ACTIVE.store(false,Ordering::Relaxed);
+    assert!(matches!(SCREEN.lock().unwrap().front(),Some(Screen::TrialRewards{items,..}) if items==&vec![1000,1150]));
+    party_notice("队伍已解散".into());party_notice("队伍已解散".into());
+    {let screens=SCREEN.lock().unwrap();assert!(matches!(screens.front(),Some(Screen::TrialRewards{..}))&&screens.len()==2,"A notice must queue behind unacknowledged rewards");}
+    SCREEN.lock().unwrap().clear();ACTIVE.store(false,Ordering::Relaxed);
     for size in [[1280.0,720.0],[1920.0,1080.0],[3440.0,1440.0]] {
         context.io_mut().display_size=size;
-        for mut screen in [Screen::Notice{message:"爬塔协议版本不匹配：本机 23，对方 22。\n请所有玩家更新同一版爬塔补丁。".into(),opened:None},Screen::Summary(run.clone()),Screen::TrialRewards{items:vec![1000,1150],opened:None},Screen::TrialRewards{items:vec![],opened:None},Screen::Seed{input:u64::MAX.to_string(),error:String::new(),digit:9}] {
+        for mut screen in [Screen::Notice{message:"爬塔协议版本不匹配：本机 23，对方 22。\n请所有玩家更新同一版爬塔补丁。".into(),opened:None},Screen::Summary{run:run.clone(),opened:None},Screen::TrialRewards{items:vec![1000,1150],opened:None},Screen::TrialRewards{items:vec![],opened:None},Screen::Seed{input:u64::MAX.to_string(),error:String::new(),digit:9}] {
             render(context.frame(),&mut screen);
             let data=context.render();assert!(data.total_vtx_count>0);
-            if matches!(screen,Screen::Summary(_)) {if let Ok(path)=std::env::var("ERDTREE_UI_PREVIEW") {
+            if matches!(screen,Screen::Summary{..}) {if let Ok(path)=std::env::var("ERDTREE_UI_PREVIEW") {
                 use std::io::Write;
                 let mut f=std::fs::File::create(std::path::Path::new(&path).join(format!("summary-{}-{}.draw",size[0],size[1]))).unwrap();
                 writeln!(f,"{} {}",size[0],size[1]).unwrap();
@@ -128,7 +133,7 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
         }
     }
 }
-fn summary_page(ui:&Ui,run:&Run)->bool {
+fn summary_page(ui:&Ui,run:&Run,ready:bool)->bool {
     let size=ui.io().display_size;
     let s=(size[0]/1600.0).min(size[1]/900.0);
     let mid=size[0]*0.5;let top=(size[1]-690.0*s)*0.5;
@@ -166,7 +171,7 @@ fn summary_page(ui:&Ui,run:&Run)->bool {
         if button("复制种子  [Y]",mid-340.0*s)||ui.is_key_pressed_no_repeat(Key::GamepadFaceUp){ui.set_clipboard_text(seed.to_string());}
         close=button("返回大赐福  [A]",mid+20.0*s)||ui.is_key_pressed_no_repeat(Key::Enter)||ui.is_key_pressed_no_repeat(Key::GamepadFaceDown);
     });
-    close
+    close&&ready
 }
 #[cfg(test)]
 mod tests {

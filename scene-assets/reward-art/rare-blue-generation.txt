@@ -1,5 +1,5 @@
 Generated with the built-in image generation tool using rarity-cards.png as reference.
-Source: C:/Users/TamikiP/.codex/generated_images/01a10cb7-f47f-7a50-bb4e-8a479ca56df8/exec-ecab02ba-9a6c-4d63-845b-2c29892dea4a.png
+Source: <generated-images>/01a10cb7-f47f-7a50-bb4e-8a479ca56df8/exec-ecab02ba-9a6c-4d63-845b-2c29892dea4a.png
 Actual dimensions: 887 x 1774. PNG unchanged; RGBA format conversion only.
 Prompt:
 Using the attached texture atlas as a style reference, create ONE single rare-quality BLUE card background texture, portrait 512x1024. Match the reference's thin double engraved metallic frame, delicate medieval corner filigree, circular halo at 30 percent height, weathered dark fantasy finish. Blue steel and sapphire BLUE border with a very dark midnight-blue interior. Clearly blue, NOT purple, NOT turquoise. Single card fills the entire image, flat straight-on orthographic, no perspective. Lower 60 percent nearly black and uncluttered for live text. NO text, NO labels, NO item icon, NO mockup, NO extra cards. Frame inset 3 percent from edges. Preserve restrained elegant Elden Ring mood, matching reference geometry.

@@ -81,3 +81,51 @@ fn bounded_output_rejects_oversized_messages_without_losing_connection() {
     host.send(20,HostMessage::Paused("still connected".into())).unwrap();
     pump(&mut host,&mut client,|_,ce|ce.iter().any(|e|matches!(e,ClientEvent::Message(HostMessage::Paused(s)) if s=="still connected")));
 }
+#[test]
+fn version_mismatch_is_reported_to_client_instead_of_silent_drop() {
+    let mut host=host();let mut raw=TcpStream::connect(host.address().unwrap()).unwrap();
+    raw.write_all(&frame(serde_json::json!({"Hello":{"version":VERSION-1,"session":900,"token":TOKEN}}))).unwrap();
+    let start=Instant::now();let mut reply=vec![];raw.set_read_timeout(Some(Duration::from_millis(5))).unwrap();
+    loop {
+        assert!(host.poll().is_empty());
+        let mut buffer=[0;256];match std::io::Read::read(&mut raw,&mut buffer) {Ok(0)=>break,Ok(n)=>reply.extend_from_slice(&buffer[..n]),Err(_)=>{}}
+        assert!(start.elapsed()<Duration::from_secs(2));
+    }
+    let message:serde_json::Value=serde_json::from_slice(&reply[4..]).unwrap();
+    assert_eq!(message["Welcome"]["version"],VERSION);assert_eq!(message["Welcome"]["player"],0);
+}
+#[test]
+fn client_surfaces_host_protocol_version() {
+    let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client=Client::connect(listener.local_addr().unwrap(),900,TOKEN.into()).unwrap();
+    let (mut stream,_)=listener.accept().unwrap();
+    stream.write_all(&frame(serde_json::json!({"Welcome":{"version":VERSION+1,"session":900,"player":20}}))).unwrap();
+    let start=Instant::now();let mut events=vec![];
+    while !events.iter().any(|e|matches!(e,ClientEvent::Disconnected)) {events.extend(client.poll());assert!(start.elapsed()<Duration::from_secs(2));thread::sleep(Duration::from_millis(2));}
+    assert!(matches!(events.as_slice(),[ClientEvent::Mismatch(v),ClientEvent::Disconnected] if *v==VERSION+1));
+}
+#[test]
+fn silent_unauthenticated_sockets_are_dropped_within_two_seconds() {
+    let mut host=host();let mut idle:Vec<_>=(0..16).map(|_|TcpStream::connect(host.address().unwrap()).unwrap()).collect();
+    for stream in &idle {stream.set_read_timeout(Some(Duration::from_millis(1))).unwrap();}
+    let start=Instant::now();let mut closed=0;
+    while closed<idle.len() {
+        assert!(host.poll().is_empty());closed=0;
+        for stream in &mut idle {if matches!(std::io::Read::read(stream,&mut [0;8]),Ok(0)) {closed+=1;}}
+        assert!(start.elapsed()<Duration::from_millis(2600),"idle sockets held past hello timeout");
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(start.elapsed()>=Duration::from_millis(1900));
+    let mut client=client(&host,TOKEN);
+    pump(&mut host,&mut client,|_,ce|ce.iter().any(|e|matches!(e,ClientEvent::Connected(20))));
+}
+#[test]
+fn backlog_coalesces_snapshots_keeps_ordered_items_and_retries_when_full() {
+    let mut backlog=Backlog::new(3);
+    backlog.latest(2,"r2a");assert!(backlog.push("o1"));backlog.latest(3,"r3");backlog.latest(2,"r2b");
+    assert!(backlog.push("o2"));assert!(backlog.push("o3"));assert!(!backlog.push("o4"));assert_eq!(backlog.len(),5);
+    let mut sent=vec![];backlog.flush(|item|if sent.len()<2 {sent.push(item);Ok(())}else{Err(item)});
+    assert_eq!(sent,["o1","o2"]);assert_eq!(backlog.len(),3);
+    let mut rest=vec![];backlog.flush(|item|{rest.push(item);Ok(())});
+    assert_eq!(rest,["o3","r2b","r3"]);assert_eq!(backlog.len(),0);
+}

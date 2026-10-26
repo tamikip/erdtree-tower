@@ -4,6 +4,8 @@ $workspace = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $coreTarget = Join-Path $workspace 'work\erdtree-core-build'
 $nativeTarget = Join-Path $workspace 'work\erdtree-native-build'
 $release = Join-Path $PSScriptRoot 'release-preview'
+$nativeNames = @([regex]::Matches([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'preview.me3')), "path\s*=\s*['""](erdtree_tower_preview_v\d+\.dll)['""]") | ForEach-Object { $_.Groups[1].Value })
+if ($nativeNames.Count -ne 1) { throw 'Expected one versioned native DLL in preview.me3' }
 $rewardCard=Join-Path $PSScriptRoot 'scene-assets\reward-art\card.rgba'
 if ((Get-Item -LiteralPath (Join-Path $PSScriptRoot 'scene-assets\reward-art\rare-blue.rgba')).Length -ne 6294152) {throw 'Invalid blue reward texture'}
 if ((Get-Item -LiteralPath (Join-Path $PSScriptRoot 'scene-assets\reward-art\rarity-cards.rgba')).Length -ne 6291456) {throw 'Invalid reward rarity atlas'}
@@ -57,9 +59,14 @@ foreach ($manifest in @("$PSScriptRoot\Cargo.toml", "$PSScriptRoot\native\Cargo.
 [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'licenses\rust-dependencies.txt'), ($allNotices -join "`n"))
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 Copy-Item -LiteralPath "$coreTarget\release\erdtree-tower.exe" -Destination $release
-Copy-Item -LiteralPath "$nativeTarget\release\erdtree_tower_preview.dll" -Destination (Join-Path $release 'erdtree_tower_preview_v95.dll')
+Copy-Item -LiteralPath "$nativeTarget\release\erdtree_tower_preview.dll" -Destination (Join-Path $release $nativeNames[0])
+$releaseAssets = Join-Path $release 'scene-assets'
+if (Test-Path -LiteralPath $releaseAssets) {
+    if ((Get-Item -LiteralPath $releaseAssets -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "Refusing to clean linked release assets: $releaseAssets" }
+    Remove-Item -LiteralPath $releaseAssets -Recurse -Force
+}
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'scene-assets') -Destination $release -Recurse -Force
-foreach ($name in @('preview.me3', 'Launch-Preview.ps1', 'Launch-Preview.cmd', 'README.md', 'THIRD_PARTY_NOTICES.md')) {
+foreach ($name in @('preview.me3', 'Launch-Preview.ps1', 'Launch-Preview.cmd', 'Launch-Seamless-Tower.ps1', 'New-PartyConfig.ps1', 'README.md', 'THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $release
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses') -Destination $release -Recurse -Force

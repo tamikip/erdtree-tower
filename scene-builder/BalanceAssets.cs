@@ -28,9 +28,9 @@ static class BalanceAssets {
         Apply(npcs,input);
         var once=npcs.Write();Apply(npcs,input);
         if(!once.SequenceEqual(npcs.Write()))throw new Exception("Balance patch is not idempotent");
-        int changed=0;
+        int changed=0;var originals=before.Rows.ToDictionary(r=>r.ID);
         foreach(var row in npcs.Rows)foreach(var cell in row.Cells) {
-            var old=before.Rows.Single(r=>r.ID==row.ID)[cell.Def.InternalName].Value;
+            var old=originals[row.ID][cell.Def.InternalName].Value;
             if(System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(old,cell.Value))continue;
             if(cell.Def.InternalName is not ("hp" or "getSoul")||row.ID<900000000)throw new Exception("Unrelated balance change");
             changed++;

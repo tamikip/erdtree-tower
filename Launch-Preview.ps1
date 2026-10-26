@@ -10,12 +10,22 @@ finally { $exeStream.Dispose(); $sha256.Dispose() }
 if ($exeHash -ne 'f9118fea2cfd8fa3901e8060bfadb1552cb2471771ded8a5b662c4e298ffb328') {
     throw '游戏文件与已核实的版本不匹配'
 }
+function Get-NativeDllName([string]$Root) {
+    $profilePath = Join-Path $Root 'preview.me3'
+    if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) { return $null }
+    $names = @([regex]::Matches([System.IO.File]::ReadAllText($profilePath), "path\s*=\s*['""](erdtree_tower_preview_v\d+\.dll)['""]") | ForEach-Object { $_.Groups[1].Value })
+    if ($names.Count -ne 1) { return $null }
+    return $names[0]
+}
 $packageRoot = $null
+$dllName = $null
 $candidates = @($PSScriptRoot, (Join-Path $PSScriptRoot 'release-preview'))
 foreach ($candidate in $candidates) {
     if (-not (Test-Path -LiteralPath (Join-Path $candidate 'scene-assets\reward-art\rare-blue.rgba'))) { continue }
     if (-not (Test-Path -LiteralPath (Join-Path $candidate 'scene-assets\reward-art\rarity-cards.rgba'))) { continue }
-    $requiredFiles = @('loader\bin\me3.exe', 'erdtree_tower_preview_v95.dll', 'preview.me3', 'scene-assets\regulation.bin', 'scene-assets\msg\zhocn\menu_dlc02.msgbnd.dcx', 'scene-assets\msg\zhocn\item_dlc02.msgbnd.dcx', 'scene-assets\script\talk\m00_00_00_00.talkesdbnd.dcx', 'scene-assets\event\m11_10_00_00.emevd.dcx', 'scene-assets\enemy-pools.txt', 'scene-assets\oath-art\cards.rgba', 'scene-assets\oath-art\background.rgba', 'scene-assets\oath-art\button.rgba')
+    $candidateDll = Get-NativeDllName $candidate
+    if (-not $candidateDll) { continue }
+    $requiredFiles = @('loader\bin\me3.exe', $candidateDll, 'preview.me3', 'scene-assets\regulation.bin', 'scene-assets\msg\zhocn\menu_dlc02.msgbnd.dcx', 'scene-assets\msg\zhocn\item_dlc02.msgbnd.dcx', 'scene-assets\script\talk\m00_00_00_00.talkesdbnd.dcx', 'scene-assets\event\m11_10_00_00.emevd.dcx', 'scene-assets\enemy-pools.txt', 'scene-assets\oath-art\cards.rgba', 'scene-assets\oath-art\background.rgba', 'scene-assets\oath-art\button.rgba')
     foreach ($map in @('m45_00_00_00', 'm45_01_00_00', 'm45_02_00_00')) {
         $requiredFiles += "scene-assets\map\mapstudio\$map.msb.dcx"
         $requiredFiles += "scene-assets\event\$map.emevd.dcx"
@@ -37,11 +47,11 @@ foreach ($candidate in $candidates) {
         }
     }
     $missingFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $candidate $_) -PathType Leaf) })
-    if ($missingFiles.Count -eq 0) { $packageRoot = $candidate; break }
+    if ($missingFiles.Count -eq 0) { $packageRoot = $candidate; $dllName = $candidateDll; break }
 }
 if (-not $packageRoot) { throw "找不到完整验证包，已检查目录：$($candidates -join '；')。请完整解压验证包。" }
 $loader = Join-Path $packageRoot 'loader\bin\me3.exe'
-$dll = Join-Path $packageRoot 'erdtree_tower_preview_v95.dll'
+$dll = Join-Path $packageRoot $dllName
 $profile = Join-Path $packageRoot 'preview.me3'
 if ($CheckOnly) {
     [pscustomobject]@{ PackageDirectory = $packageRoot; LoaderPath = $loader; DllPath = $dll; ProfilePath = $profile }

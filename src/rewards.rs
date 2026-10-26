@@ -46,9 +46,15 @@ pub fn random_spirit_level(id:u32,entropy:u64)->u32 {
 }
 
 pub fn offers(run:&Run,node:usize)->Vec<Reward> {
-    crate::affixes::rewards(run,node,before_affixes(run,node))
+    let owned:Vec<_>=run.claimed_items.iter().map(|id|crate::affixes::base(*id)).filter(|id|!run.claimed_items.contains(id)).collect();
+    if owned.is_empty(){return crate::affixes::rewards(run,node,casting_replaced(run,node,true));}
+    let mut run=run.clone();run.claimed_items.extend(owned);
+    crate::affixes::rewards(&run,node,casting_replaced(&run,node,true))
 }
-pub(crate) fn before_affixes(run:&Run,node:usize)->Vec<Reward> {
+pub(crate) fn before_claimed_bases(run:&Run,node:usize)->Vec<Reward> {
+    crate::affixes::rewards(run,node,casting_replaced(run,node,false))
+}
+fn casting_replaced(run:&Run,node:usize,spread:bool)->Vec<Reward> {
     let mut result=before_spirit_levels(run,node);
     for reward in &mut result {if let Reward::Item(id)=reward {
         *id=random_spirit_level(*id,run.reward_seed()^(node as u64).wrapping_mul(7919));
@@ -65,7 +71,8 @@ pub(crate) fn before_affixes(run:&Run,node:usize)->Vec<Reward> {
                     &&!run.claimed_items.contains(&i.id)&&!result.contains(&Reward::Item(i.id))
                     &&(!crate::elite::LEGENDARY.contains(&id)||crate::elite::LEGENDARY.contains(&i.id))
                     &&(!crate::elite::EPIC.contains(&id)||crate::elite::EPIC.contains(&i.id))).collect();
-                result[index]=if pool.is_empty(){Reward::Gold(1500)}else{Reward::Item(pool[crate::mix(run.reward_seed()^node as u64^index as u64) as usize%pool.len()].id)};
+                let roll=if spread{crate::mix(run.reward_seed()^(node as u64).wrapping_mul(7919)^index as u64^0xca57)}else{crate::mix(run.reward_seed()^node as u64^index as u64)};
+                result[index]=if pool.is_empty(){Reward::Gold(1500)}else{Reward::Item(pool[roll as usize%pool.len()].id)};
             }}
         }
     }
@@ -416,5 +423,18 @@ mod tests {
             let loaded=Run::decode(&run.encode().unwrap()).unwrap();
             assert_eq!(loaded.phase,crate::Phase::Reward{id:0,offers:offers(&run,0)});
         }
+    }
+}
+#[cfg(test)]
+mod claimed_base_tests {
+    use crate::{Class,Phase,Run};
+    #[test]
+    fn pending_page_from_variant_blind_rules_still_loads_and_migrates() {
+        let mut run=Run::new(7,Class::Samurai);
+        let id=run.available()[0];run.enter(id).unwrap();run.win_combat().unwrap();
+        let variant=crate::affixes::roll(&run,3150000,0,true).unwrap();run.claimed_items.push(variant);
+        let old=super::before_claimed_bases(&run,id);run.phase=Phase::Reward{id,offers:old};
+        let loaded=Run::decode(&run.encode().unwrap()).unwrap();
+        assert_eq!(loaded.phase,Phase::Reward{id,offers:super::offers(&run,id)});
     }
 }

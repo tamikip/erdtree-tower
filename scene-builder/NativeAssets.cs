@@ -152,15 +152,11 @@ static class NativeAssets {
         AffixAssets.Build(name=>Read(name,name=="SpEffectParam"?"SpEffect":name),Save,messages,"outputs/erdtree-tower/scene-assets",output);
         AdvancedAffixAssets.Build(name=>Read(name,name=="SpEffectParam"?"SpEffect":name),Save,messages,"outputs/erdtree-tower/scene-assets",output);
         RubySpellAssets.Build(name=>Read(name,name switch {"Magic"=>"MagicParam","Bullet"=>"BulletParam","AtkParam_Pc"=>"AtkParam","SpEffectParam"=>"SpEffect","SpEffectVfxParam"=>"SpEffectVfx","BehaviorParam_PC"=>"BehaviorParam",_=>name}),Save,messages);
-        Directory.CreateDirectory(output);SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(Path.Combine(output,"regulation.bin"),regulation);
-        var shopSource=Path.GetFullPath("outputs/erdtree-tower/scene-assets/shop-catalog.txt");
-        var shopOutput=Path.GetFullPath(Path.Combine(output,"shop-catalog.txt"));
-        if(shopSource!=shopOutput)File.Copy(shopSource,shopOutput,true);
         var menu=BND4.Read(Path.Combine(cache,"menu_dlc02.msgbnd.dcx"));
         PartyStatusText.Add(menu);
         RecoveryText.Add(menu);
         RecoveryText.AddTalismans(menu,regulation,messages);
-        AddText(menu,33,new[]{(9500080,"捕捉粪金龟 · 1000 卢恩"),(9500081,"询问规则"),(9500082,"稍等片刻。"),(9500083,"三次机会已用完，祝你一路顺风。"),(9500084,"需要 1000 卢恩。"),(9500085,"付费后等待三秒，三只粪金龟会现身。你有六秒时间，每击败一只可得一件宝物。每人最多玩三次。")});
+        AddText(menu,33,new[]{(9500080,"捕捉粪金龟 · 1000 卢恩"),(9500081,"询问规则"),(9500082,"稍等片刻。"),(9500083,"三次机会已用完，祝你一路顺风。"),(9500084,"需要 1000 卢恩。")});
         AddText(menu,32,new[]{(9500004,"进入爬塔路线")});
         AddText(menu,32,new[]{(9500005,"打开宝箱")});
         AddText(menu,32,new[]{(9500072,"用石剑钥匙打开")});
@@ -183,13 +179,17 @@ static class NativeAssets {
         campText.Entries.Single(e=>e.ID==9500044).Text="补给：1 红 2 蓝＋灵药";
         menu.Files.Single(f=>f.ID==33).Bytes=campText.Write();
         AddText(menu,33,new[]{(9500041,"强化护符"),(9500042,"更换战灰"),(9500043,"记忆魔法／祷告")});
-        var msgDir=Path.Combine(output,"msg","zhocn");Directory.CreateDirectory(msgDir);menu.Write(Path.Combine(msgDir,"menu_dlc02.msgbnd.dcx"));messages.Write(Path.Combine(msgDir,"item_dlc02.msgbnd.dcx"));
         var global=BND4.Read(Path.Combine(cache,"m00_00_00_00.talkesdbnd.dcx"));
         for(int service=0;service<3;service++) {
             var esd=Talk(service);var bytes=esd.Write();var verified=ESD.Read(bytes);
             if(verified.StateGroups[1].Count!=(service!=2?11:10) || verified.StateGroups[1].Values.SelectMany(s=>s.Conditions).Any(c=>c.TargetState.HasValue&&!verified.StateGroups[1].ContainsKey(c.TargetState.Value)))throw new Exception("ESD roundtrip failed");
             global.Files.Add(new BinderFile(Binder.FileFlags.Flag1,global.Files.Max(f=>f.ID)+1,$"N:\\GR\\data\\INTERROOT_win64\\script\\talk\\m00_00_00_00\\t95000000{service}.esd",bytes));
         }
+        Directory.CreateDirectory(output);SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(Path.Combine(output,"regulation.bin"),regulation);
+        var shopSource=Path.GetFullPath("outputs/erdtree-tower/scene-assets/shop-catalog.txt");
+        var shopOutput=Path.GetFullPath(Path.Combine(output,"shop-catalog.txt"));
+        if(shopSource!=shopOutput)File.Copy(shopSource,shopOutput,true);
+        var msgDir=Path.Combine(output,"msg","zhocn");Directory.CreateDirectory(msgDir);menu.Write(Path.Combine(msgDir,"menu_dlc02.msgbnd.dcx"));messages.Write(Path.Combine(msgDir,"item_dlc02.msgbnd.dcx"));
         var talkDir=Path.Combine(output,"script","talk");Directory.CreateDirectory(talkDir);global.Write(Path.Combine(talkDir,"m00_00_00_00.talkesdbnd.dcx"));
         foreach(var map in new[]{"m45_00_00_00","m45_01_00_00","m45_02_00_00"}) {
             var local=BND4.Read(global.Write());local.Files=local.Files.Where(f=>f.Name.Contains("t95000000")).ToList();

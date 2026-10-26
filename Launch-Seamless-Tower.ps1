@@ -77,6 +77,9 @@ foreach ($section in [regex]::Matches([IO.File]::ReadAllText($customPath),$nativ
 }
 $configPath = Join-Path $runtime ([IO.Path]::GetFileNameWithoutExtension($editableProfile) + '.launch.me3')
 # End custom DLL configuration
+# The editable profile keeps user entries; tower-owned paths always follow this installation.
+$config = [regex]::Replace($config,"(?m)^(\s*path\s*=\s*)['""][^'""\r\n]*[\\/]erdtree_tower_\w+\.dll['""]",('${1}'''+$native.Replace('\','/').Replace('$','$$')+''''))
+$config = [regex]::Replace($config,"(?m)^(\s*path\s*=\s*)['""][^'""\r\n]*[\\/]scene-assets['""]",('${1}'''+$assets.Replace('\','/').Replace('$','$$')+''''))
 [IO.File]::WriteAllText($configPath,$config,(New-Object Text.UTF8Encoding($false)))
 $private = Join-Path $runtime 'SeamlessCoop'
 New-Item -ItemType Directory -Path $private -Force | Out-Null

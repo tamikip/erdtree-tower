@@ -18,3 +18,7 @@ tower-session.*
 tower-*.class
 tower-*.fp
 tower-*.json
+/party-config/
+host.json
+guest.json
+GamePath.txt

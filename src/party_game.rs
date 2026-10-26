@@ -137,7 +137,7 @@ impl Gate {
         if self.events.as_ref().and_then(|q|q.completed()).is_some_and(|j|!self.all(|r|r.event_applied==Some(j.wave))){return Ok(None);}
         let Some(events)=&mut self.events else{return Ok(None);};
         for (player,report) in &self.peers {
-            if let Some(kind)=report.as_ref().and_then(|r|r.event_request){events.request(self.epoch,*player,kind)?;}
+            if let Some(kind)=report.as_ref().and_then(|r|r.event_request){let _=events.request(self.epoch,*player,kind);}
         }
         Ok(events.start().map(Order::EventStart))
     }
@@ -164,6 +164,7 @@ impl Gate {
     pub fn disconnect(&mut self,id:u64){if let Some(p)=self.peers.iter_mut().find(|p|p.0==id){p.1=None;}}
     pub fn report(&mut self,id:u64,report:Report)->RuleResult<()> {
         if report.visited.len()>64||report.act==0||report.act>3||report.epoch!=self.epoch{return Err("队员旅程进度不匹配".into());}
+        if report.event_request.is_some_and(|k|!k.valid()){return Err("队员事件请求无效".into());}
         self.peers.iter_mut().find(|p|p.0==id).ok_or("未知队员")?.1=Some(report);Ok(())
     }
     fn all(&self,f:impl Fn(&Report)->bool)->bool {
@@ -182,10 +183,10 @@ impl Gate {
     pub fn resolve_votes(&mut self,run:&Run,entropy:u64)->RuleResult<Option<Order>> {
         if self.events_unsettled()||!matches!(self.stage,Stage::Map|Stage::Reward|Stage::Service)
             ||!self.all(|r|r.alive&&r.map_ready&&r.seed==run.seed&&r.act==run.act&&r.visited==run.visited){return Ok(None);}
-        let ids:Vec<_>=self.peers.iter().map(|p|p.0).collect();
-        let mut vote=crate::party_vote::Vote::new(self.epoch,&ids,&run.available())?;
+        let ids:Vec<_>=self.peers.iter().map(|p|p.0).collect();let available=run.available();
+        let mut vote=crate::party_vote::Vote::new(self.epoch,&ids,&available)?;
         for (id,report) in &self.peers {
-            let Some(node)=report.as_ref().and_then(|r|r.selected) else{return Ok(None);};
+            let Some(node)=report.as_ref().and_then(|r|r.selected).filter(|n|available.contains(n)) else{return Ok(None);};
             vote.ready(self.epoch,*id,true)?;vote.cast(self.epoch,*id,node)?;
         }
         vote.draw(entropy).map(|node|self.enter(run,node)).transpose()
@@ -521,6 +522,24 @@ mod tests {
         let mut other=report.clone();other.seed=123;gate.report(2,other).unwrap();assert!(gate.enter(&run,node).is_err());
         let mut other=report.clone();other.visited=vec![7];gate.report(2,other).unwrap();assert!(gate.enter(&run,node).is_err());
         gate.report(2,report).unwrap();assert!(gate.enter(&run,node).is_ok());assert!(gate.enter(&run,node).is_err());
+    }
+    #[test]
+    fn invalid_guest_event_request_or_unreachable_vote_never_errors_the_host() {
+        use crate::party_events::Kind;
+        let run=Run::new(42,crate::Class::Samurai);let node=run.available()[0];
+        let mut gate=Gate::new(vec![1,2]);gate.stage=Stage::Service;gate.begin_events().unwrap();
+        let report=Report::new(&run,0,true,false,true);gate.report(1,report.clone()).unwrap();
+        for kind in [Kind::Guards(3),Kind::Scarabs(0),Kind::Scarabs(4)] {
+            let mut bad=report.clone();bad.event_request=Some(kind);assert!(gate.report(2,bad).is_err());
+        }
+        gate.report(2,report.clone()).unwrap();
+        gate.peers[1].1.as_mut().unwrap().event_request=Some(Kind::Guards(3));
+        assert!(gate.event_start().unwrap().is_none());
+        let mut gate=Gate::new(vec![1,2]);let mut host=report.clone();host.arrived=false;host.selected=Some(node);
+        gate.report(1,host.clone()).unwrap();
+        let mut guest=host.clone();guest.selected=Some(usize::MAX);gate.report(2,guest).unwrap();
+        assert!(gate.resolve_votes(&run,0).unwrap().is_none());assert_eq!(gate.epoch,0);
+        gate.report(2,host).unwrap();assert!(matches!(gate.resolve_votes(&run,0).unwrap(),Some(Order::Enter{epoch:1,..})));
     }
     #[test]
     fn generated_config_is_bounded_and_separates_peer_credentials() {

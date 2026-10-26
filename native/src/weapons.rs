@@ -1,6 +1,6 @@
 use eldenring::cs::{
-    CSGaitemImp, CSWepGaitemIns, EquipGameData, EquipParamWeapon, GaitemHandle, ItemCategory,
-    ItemId, PlayerGameData, ReinforceParamWeapon, SoloParamRepository,
+    CSGaitemImp, CSWepGaitemIns, EquipGameData, EquipInventoryData, EquipParamWeapon,
+    GaitemHandle, ItemCategory, ItemId, PlayerGameData, ReinforceParamWeapon, SoloParamRepository,
 };
 use fromsoftware_shared::{FromStatic, Superclass};
 
@@ -36,6 +36,7 @@ pub fn upgrade(data: &mut PlayerGameData) -> Result<(), String> {
             0x40, 0x53, 0x55, 0x56, 0x57, 0x41, 0x56, 0x48, 0x81, 0xec, 0x90, 0, 0, 0,
         ],
     )?;
+    let remove_fn = super::items::checked_function(0x24d1e0, &[0x48, 0x89, 0x5c, 0x24, 0x20, 0x89, 0x54, 0x24, 0x10, 0x55, 0x56, 0x57, 0x41, 0x56, 0x41, 0x57])?;
     let manager = unsafe { CSGaitemImp::instance() }.map_err(|_| "武器实例未就绪")?;
     let handle = data.equipment.chr_asm.gaitem_handles[slot];
     if handle.index() as usize >= manager.gaitems.len() {
@@ -103,7 +104,25 @@ pub fn upgrade(data: &mut PlayerGameData) -> Result<(), String> {
     super::log(format!(
         "Weapon upgraded copy: {old} -> {next}, slot={slot}, gem={gem}"
     ));
+    remove_original(data, handle, gem_handle, remove_fn);
     Ok(())
+}
+
+fn remove_original(data: &mut PlayerGameData, weapon: GaitemHandle, gem: GaitemHandle, function: usize) {
+    if data.equipment.chr_asm.gaitem_handles.contains(&weapon) {
+        return super::log("Weapon upgrade kept original: still equipped in another slot");
+    }
+    let remove: unsafe extern "C" fn(*mut EquipInventoryData, u32, i32) -> usize = unsafe { std::mem::transmute(function) };
+    let inventory = &mut data.equipment.equip_inventory_data;
+    let items = &inventory.items_data;
+    let mut slots: Vec<u32> = items.normal_entries().iter().enumerate()
+        .filter_map(|(i, e)| e.as_option().filter(|e| e.gaitem_handle == weapon || gem.is_indexed() && e.gaitem_handle == gem).map(|_| items.key_items_capacity + i as u32))
+        .collect();
+    slots.sort_unstable();
+    for &slot in slots.iter().rev() {
+        unsafe { remove(inventory, slot, 1); }
+    }
+    super::log(format!("Weapon upgrade removed original: entries={}", slots.len()));
 }
 
 fn matching_copy(data: &PlayerGameData, id: ItemId, gem: i32) -> Option<u32> {

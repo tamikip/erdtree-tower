@@ -189,6 +189,9 @@ foreach ($section in [regex]::Matches([IO.File]::ReadAllText($customPath),$nativ
 }
 $profilePath = Join-Path $runtime ([IO.Path]::GetFileNameWithoutExtension($editableProfile) + '.launch.me3')
 # End custom DLL configuration
+# The editable profile keeps user entries; tower-owned paths always follow this installation.
+$profile = [regex]::Replace($profile,"(?m)^(\s*path\s*=\s*)['""][^'""\r\n]*[\\/]erdtree_tower_\w+\.dll['""]",('${1}'''+$native.Replace('\','/').Replace('$','$$')+''''))
+$profile = [regex]::Replace($profile,"(?m)^(\s*path\s*=\s*)['""][^'""\r\n]*[\\/]scene-assets['""]",('${1}'''+$assets.Replace('\','/').Replace('$','$$')+''''))
 [IO.File]::WriteAllText($profilePath,$profile,[Text.UTF8Encoding]::new($false))
 $environment = @{ERDTREE_TOWER_PARTY=$null;ERDTREE_TOWER_SEAMLESS_ENTRY='1';ERDTREE_TOWER_PREVIEW='1';ERDTREE_TOWER_SEAMLESS_PROBE='0';ERDTREE_TOWER_LOG_DIR=$runtime}
 $previous = @{}

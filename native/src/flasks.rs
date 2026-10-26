@@ -4,6 +4,7 @@ use erdtree_tower::Class;
 pub struct Flasks {
     pub remaining: [u8; 2],
     capacity: [u8; 2],
+    synced: Option<([(ItemId, u32); 2], [u8; 2], std::time::Instant)>,
 }
 
 fn capacity(_class:Class,bonus:u8)->Result<[u8;2],String> {
@@ -39,6 +40,7 @@ impl Flasks {
         let ledger = Self {
             remaining: capacity,
             capacity,
+            synced: None,
         };
         ledger.write(data)?;
         Ok(ledger)
@@ -63,7 +65,10 @@ impl Flasks {
         }
         let [red, blue] = current_flasks(data)?;
         self.remaining = observed_remaining(self.remaining, [red.1, blue.1], loading);
-        self.write(data)
+        if self.synced.is_some_and(|(seen,remaining,at)|seen==[red,blue]&&remaining==self.remaining&&at.elapsed()<std::time::Duration::from_secs(1)) {return Ok(());}
+        self.write(data)?;
+        self.synced=current_flasks(data).ok().map(|seen|(seen,self.remaining,std::time::Instant::now()));
+        Ok(())
     }
 
     pub fn refill(&mut self, data: &mut PlayerGameData) -> Result<(), String> {

@@ -103,8 +103,21 @@ impl Selection {
     }
 }
 #[derive(Default)]
-pub struct Panel {selection:Selection,textures:HashMap<u32,TextureId>,card:Option<TextureId>,rarity_cards:Option<TextureId>,rare_blue:Option<TextureId>}
+pub struct Panel {selection:Selection,textures:HashMap<u32,Option<TextureId>>,wanted:Vec<u32>,card:Option<TextureId>,rarity_cards:Option<TextureId>,rare_blue:Option<TextureId>,story:Option<(Run,u32,[Option<String>;3])>}
 impl Panel {
+    fn icon(&mut self,icon:u32)->Option<TextureId> {
+        let texture=self.textures.get(&icon).copied();if texture.is_none()&&!self.wanted.contains(&icon){self.wanted.push(icon);}texture.flatten()
+    }
+    pub fn load_icons(&mut self,renderer:&mut dyn RenderContext) {
+        let root=crate::LOG_PATH.with_file_name("scene-assets").join("reward-icons");
+        for icon in self.wanted.drain(..self.wanted.len().min(6)).collect::<Vec<_>>() {
+            let texture=match std::fs::read(root.join(format!("{icon}.rgba"))) {
+                Ok(data) if data.len()==160*160*4=>renderer.load_texture(&data,160,160).map_err(|e|crate::log(format!("Reward texture upload failed: {icon} {e:?}"))).ok(),
+                _=>{crate::log(format!("Reward icon missing: {icon}"));None},
+            };
+            self.textures.insert(icon,texture);
+        }
+    }
     pub fn draw_contract(&mut self,ui:&Ui,run:&Run,view:&View) {
         let Some(contract)=run.contract.as_ref().filter(|c|c.selection_pending())else{return;};
         let now=ui.time();
@@ -164,6 +177,11 @@ impl Panel {
             if key(&[Key::A,Key::LeftArrow,Key::GamepadDpadLeft]){self.selection.step(-1,3);}
             if key(&[Key::D,Key::RightArrow,Key::GamepadDpadRight]){self.selection.step(1,3);}
         }
+        if !self.story.as_ref().is_some_and(|(cached,runes,_)|*runes==view.runes&&cached==run) {
+            let errors=std::array::from_fn(|i|{let mut preview=run.clone();preview.gold=view.runes;preview.resolve_story(i).err()});
+            self.story=Some((run.clone(),view.runes,errors));
+        }
+        let errors=&self.story.as_ref().unwrap().2;
         let size=ui.io().display_size;
         let s=(size[0]/1600.0).min(size[1]/900.0).min(1.7);
         let gold=[0.86,0.72,0.43,1.0];let ink=[0.18,0.15,0.10,1.0];
@@ -190,10 +208,7 @@ impl Panel {
                 4=>["研读魔法","追随火焰","合上禁书"],
                 _=>["帮助铁匠","委托锻造","继续前行"],
             };
-            let mut errors=Vec::new();
             for i in 0..3 {
-                let mut preview=run.clone();preview.gold=view.runes;
-                errors.push(preview.resolve_story(i).err());
                 let x=mid-(3.0*w+2.0*gap)*0.5+i as f32*(w+gap);
                 ui.set_cursor_pos([x,top]);
                 {let _disabled=ui.begin_disabled(!ready);if ui.invisible_button(format!("story-card-{i}"),[w,h]){self.selection.selected=i;}}
@@ -228,6 +243,7 @@ impl Panel {
         });
     }
     pub fn initialize(&mut self,renderer:&mut dyn RenderContext) {
+        self.textures.clear();self.wanted.clear();self.rare_blue=None;self.rarity_cards=None;self.card=None;
         let path=crate::LOG_PATH.with_file_name("scene-assets").join("reward-art/rare-blue.rgba");
         match std::fs::read(path) {
             Ok(bytes) if bytes.len()==887*1774*4=>self.rare_blue=renderer.load_texture(&bytes,887,1774).ok(),
@@ -243,17 +259,7 @@ impl Panel {
             Ok(bytes) if bytes.len()==1024*1536*4=>self.card=renderer.load_texture(&bytes,1024,1536).ok(),
             _=>crate::log("Reward card texture missing or invalid"),
         }
-        let root=crate::LOG_PATH.with_file_name("scene-assets").join("reward-icons");
-        for detail in DETAILS.values() {
-            if self.textures.contains_key(&detail.icon){continue;}
-            match std::fs::read(root.join(format!("{}.rgba",detail.icon))) {
-                Ok(data) if data.len()==160*160*4=>match renderer.load_texture(&data,160,160) {
-                    Ok(texture)=>{self.textures.insert(detail.icon,texture);},
-                    Err(e)=>crate::log(format!("Reward texture upload failed: {} {e:?}",detail.icon)),
-                },
-                _=>crate::log(format!("Reward icon missing: {}",detail.icon)),
-            }
-        }
+        std::thread::spawn(||{LazyLock::force(&DETAILS);LazyLock::force(&RARITIES);});
     }
     pub fn draw(&mut self,ui:&Ui,run:&Run,view:&View) {
         let gift=run.contract.as_ref().filter(|c|c.chosen.is_some()&&!c.gear_done);
@@ -299,9 +305,9 @@ impl Panel {
                 ui.child_window("物品属性").size([540.0*scale,640.0*scale]).build(|| {
                     ui.set_window_font_scale(scale);
                     if let Some(d)=d {
-                        if let Some(texture)=self.textures.get(&d.icon) {
+                        if let Some(texture)=self.icon(d.icon) {
                             ui.set_cursor_pos([150.0*scale,18.0*scale]);
-                            hudhook::imgui::Image::new(*texture,[240.0*scale,240.0*scale]).build(ui);
+                            hudhook::imgui::Image::new(texture,[240.0*scale,240.0*scale]).build(ui);
                         }
                         ui.set_cursor_pos([24.0*scale,285.0*scale]);
                         let _indent=ui.push_style_var(hudhook::imgui::StyleVar::IndentSpacing(24.0*scale));ui.indent();
@@ -381,8 +387,8 @@ impl Panel {
                     }
                 }
                 center(ui,x+width*0.5,y+61.0*scale,category,quality_color);
-                if let Some(texture)=card_icon(run,reward).and_then(|icon|self.textures.get(&icon)) {
-                    let side=175.0*scale;ui.get_window_draw_list().add_image(*texture,[x+(width-side)*0.5,y+91.0*scale],[x+(width+side)*0.5,y+266.0*scale]).build();
+                if let Some(texture)=card_icon(run,reward).and_then(|icon|self.icon(icon)) {
+                    let side=175.0*scale;ui.get_window_draw_list().add_image(texture,[x+(width-side)*0.5,y+91.0*scale],[x+(width+side)*0.5,y+266.0*scale]).build();
                 } else {
                     center(ui,x+width*0.5,y+145.0*scale,match reward {Reward::UpgradeWeapon=>"强化",Reward::FlaskCapacity=>"圣杯",Reward::MemorySlot=>"记忆",Reward::StarStream=>"星流",_=>"卢恩"},gold);
                 }
@@ -472,7 +478,7 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
             assert!(context.render().total_vtx_count>0);
         }
     }
-    for detail in DETAILS.values(){panel.textures.insert(detail.icon,TextureId::new(detail.icon as usize+1));}
+    for detail in DETAILS.values(){panel.textures.insert(detail.icon,Some(TextureId::new(detail.icon as usize+1)));}
     for (width,height) in [(1280,720),(1920,1080),(3440,1440)] {
         context.io_mut().display_size=[width as f32,height as f32];
         let mut elite=Run::new(42,erdtree_tower::Class::Astrologer);
@@ -565,9 +571,17 @@ thread_local! {static MAP_CONFIRM:std::cell::RefCell<MapConfirm>=std::cell::RefC
 pub fn map_command()->Option<(Option<[f32;2]>,bool)> {
     MAP_CONFIRM.with(|state|{let state=state.borrow();state.active.then(||(MAP_POINTER.with(|p|p.borrow().position),state.pressed))})
 }
+thread_local! {static PAD_RETRY:std::cell::Cell<[Option<std::time::Instant>;4]>=const {std::cell::Cell::new([None;4])};}
 pub fn poll_pad(io:&mut Io,active:bool,map:bool) {
     let mut state=PadState::default();let mut found=false;
-    if active {for i in 0..4 {if unsafe{XInputGetState(i,&mut state)}==0 {found=true;break;}}}
+    if active {PAD_RETRY.with(|retry| {
+        let mut slots=retry.get();let now=std::time::Instant::now();
+        for i in 0..4 {
+            if slots[i].is_some_and(|at|now<at){continue;}
+            match unsafe{XInputGetState(i as u32,&mut state)} {0=>{slots[i]=None;found=true;break;},1167=>slots[i]=Some(now+std::time::Duration::from_secs(2)),_=>slots[i]=None}
+        }
+        retry.set(slots);
+    });}
     feed_pad(io,&state.pad,found,map);
 }
 fn feed_pad(io:&mut Io,pad:&Gamepad,found:bool,map:bool) {

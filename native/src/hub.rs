@@ -157,7 +157,6 @@ impl Hub {
         let settled=resume.as_ref().is_some_and(|r|matches!(r.phase,Phase::Dead|Phase::Won));
         Ok(Self {active:true,paused,owner,room:None,clock:Instant::now(),warp:WarpGate::default(),reset,start:false,chosen,resume,seed:None,settled})
     }
-    pub fn suspend(&mut self,run:Run) {self.active=true;self.paused=true;self.reset=false;self.start=false;self.resume=Some(run);self.seed=None;self.warp=WarpGate::default();self.clock=Instant::now();}
     pub fn finish(&mut self) { self.active=true;self.paused=false;self.settled=true;self.reset=true;self.start=false;self.resume=None;self.seed=None;self.warp=WarpGate::default(); }
     pub fn ready_for_party_restart(&self)->bool {self.active&&!self.reset&&!self.start&&matches!(self.warp,WarpGate::Ready)}
     pub fn settling(&self)->bool {self.active&&self.settled}

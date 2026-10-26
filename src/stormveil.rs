@@ -23,8 +23,7 @@ impl Run {
                 let mut pool:Vec<_>=crate::elite::BUFFS.iter().copied().filter(|id|!self.elite_buffs.contains(id)).collect();
                 for slot in 0..2 {
                     if pool.is_empty(){break;}
-                    let salt=if self.regional_event.chariot{0x3009_0000}else{0x570_0000};
-                    let index=crate::mix(self.reward_seed()^node as u64^salt^slot) as usize%pool.len();
+                    let index=crate::mix(self.reward_seed()^node as u64^0x570_0000^slot) as usize%pool.len();
                     self.grant(Reward::TalismanBuff(pool.remove(index)))?;
                 }
                 self.regional_event.stormveil=Some(Progress::Complete);

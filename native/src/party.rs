@@ -2,6 +2,12 @@ use std::{sync::{Arc,atomic::{AtomicBool,Ordering},mpsc::{self,SyncSender,Receiv
 use erdtree_tower::{Run,party_game::{Config,Gate,Order,Report},party_link::*};
 fn config_path(value:Option<std::ffi::OsString>)->Option<std::ffi::OsString> {value.filter(|path|!path.is_empty())}
 pub fn manual_config()->Option<std::ffi::OsString> {config_path(std::env::var_os("ERDTREE_TOWER_PARTY"))}
+const QUEUE:usize=1024;
+fn ignored(peer:u64,error:&str) {
+    static SEEN:std::sync::Mutex<Vec<String>>=std::sync::Mutex::new(vec![]);
+    let key=format!("player={peer} {error}");let mut seen=SEEN.lock().unwrap_or_else(|e|e.into_inner());
+    if seen.len()<32&&!seen.contains(&key){super::log(format!("PARTY_IGNORED {key}"));seen.push(key);}
+}
 enum Send {Broadcast(Order),Report(Report),Fault(String)}
 enum Receive {Order(Order),Report(u64,Report),Disconnected(u64),Fault(String)}
 struct Steam {
@@ -50,7 +56,7 @@ impl EventSync {
 }
 pub struct Link {
     pub drawing:erdtree_tower::map_drawing::Sync,
-    drawing_sent:Option<(u64,Instant)>,
+    drawing_sent:Option<(erdtree_tower::map_drawing::Scope,u64,Instant)>,
     pub event:EventSync,
     steam:Option<Steam>,
     queued:std::collections::VecDeque<Receive>,
@@ -80,12 +86,12 @@ impl Departure {
 impl Link {
     pub fn poll_force_end(&mut self,lobby:bool)->bool {
         if self.host(){return false;}
-        if let Err(error)=self.receive_steam(lobby){if self.queued.len()<64 {self.queued.push_back(Receive::Fault(error));}}
+        if let Err(error)=self.receive_steam(lobby){if !self.queued.iter().any(|e|matches!(e,Receive::Fault(_))) {self.queued.push_back(Receive::Fault(error));}}
         if self.steam.is_none() {
-            for _ in 0..64 {
+            while self.queued.len()<QUEUE {
                 match self.rx.try_recv(){
                     Ok(Receive::Order(Order::ForceEnd))=>{self.queued.clear();return true;},
-                    Ok(event)=>{if self.queued.len()<64 {self.queued.push_back(event);}},
+                    Ok(event)=>self.queued.push_back(event),
                     Err(_)=>break,
                 }
             }
@@ -116,7 +122,7 @@ impl Link {
         let (tx,_commands)=mpsc::sync_channel(1);let (_events,rx)=mpsc::sync_channel(1);
         let mut link=Self{gate:Gate::new(roster.members.clone()),config,epoch:0,arrived:false,bound:false,spawn:false,fighting:false,victory:false,rewards:false,defeated:false,stopped:None,
             drawing:Default::default(),drawing_sent:None,event:Default::default(),steam:Some(Steam{transport,handshake,roster}),queued:Default::default(),selected:None,ballots:vec![],tx,rx,running:Arc::new(AtomicBool::new(false)),last_report:Instant::now()-Duration::from_secs(1),last_seen:vec![],encounter:None};
-        for (peer,packet) in packets {if let Some(event)=steam_event(&link.config,peer,packet)?{link.queued.push_back(event);}}
+        for (peer,packet) in packets {match steam_event(&link.config,peer,packet){Ok(Some(event))=>link.queued.push_back(event),Ok(None)=>{},Err(e)=>ignored(peer,&e)}}
         Ok(link)
     }
     pub fn roster(&self)->Option<&erdtree_tower::party_roster::Roster> {self.steam.as_ref().map(|s|&s.roster)}
@@ -139,7 +145,7 @@ impl Link {
         let session=self.config.session;
         match command {
             Send::Broadcast(order) if self.host()=>{
-                let suspend=matches!(order,Order::ForceEnd);
+                let suspend=matches!(order,Order::ForceEnd|Order::MapDrawing(_));
                 let bytes=Payload::Order{session,order}.encode()?;
                 let mut failure=None;
                 for peer in &self.config.peers {
@@ -284,8 +290,9 @@ impl Link {
                 Ok(Receive::Order(order))=>orders.push(order),
                 Ok(Receive::Report(id,report))=>{
                     if report.epoch==self.gate.epoch {
-                        if self.gate.report(id,report).is_ok(){
-                            if let Some(p)=self.last_seen.iter_mut().find(|p|p.0==id){p.1=Instant::now();}else{self.last_seen.push((id,Instant::now()));}
+                        match self.gate.report(id,report) {
+                            Ok(())=>if let Some(p)=self.last_seen.iter_mut().find(|p|p.0==id){p.1=Instant::now();}else{self.last_seen.push((id,Instant::now()));},
+                            Err(e)=>ignored(id,&e),
                         }
                     }
                 },
@@ -300,17 +307,20 @@ impl Link {
     fn receive_steam(&mut self,lobby:bool)->Result<(),String> {
         if let Some(steam)=&mut self.steam {
                 use erdtree_tower::party_handshake::Payload;
+                let host=self.config.host;let guest=self.config.player!=host;
                 for (peer,bytes) in steam.transport.receive()? {
-                    match Payload::decode(&bytes)? {
+                    if guest&&peer!=host {ignored(peer,"非房主队员向队友发送消息");continue;}
+                    let packet=match Payload::decode(&bytes){Ok(packet)=>packet,Err(e)=>{ignored(peer,&e);continue;}};
+                    match packet {
                         Payload::Handshake(message)=>for (target,response) in if lobby{steam.handshake.receive_lobby(peer,message)?}else{steam.handshake.receive(peer,message)?} {
                             steam.transport.send(target,&Payload::Handshake(response).encode()?)?;
                         },
-                        packet=>if let Some(event)=steam_event(&self.config,peer,packet)? {
+                        packet=>if let Some(event)=steam_event(&self.config,peer,packet).unwrap_or_else(|e|{ignored(peer,&e);None}) {
                             if matches!(event,Receive::Order(Order::ForceEnd)) {
                                 self.queued.clear();self.queued.push_back(event);continue;
                             }
                             if self.queued.iter().any(|e|matches!(e,Receive::Order(Order::ForceEnd))){continue;}
-                            if self.queued.len()>=64 {return Err("队伍接收队列已满".into());}
+                            if self.queued.len()>=QUEUE {return Err("队伍接收队列已满".into());}
                             self.queued.push_back(event);
                         },
                     }
@@ -343,12 +353,17 @@ impl Link {
             }
         }
         if self.host()&&self.stopped.is_none() {
-            for (player,request) in self.gate.drawing_requests() {self.drawing.apply(player,&request);}
-            if let Some(canvas)=self.drawing.canvas.clone() {
-                if self.drawing_sent.is_none_or(|(revision,at)|at.elapsed()>=Duration::from_millis(if revision!=canvas.revision{100}else{1000})) {
-                    let revision=canvas.revision;
-                    if let Err(error)=self.send(Send::Broadcast(Order::MapDrawing(canvas))){self.stop(error);}
-                    else {self.drawing_sent=Some((revision,Instant::now()));}
+            let mut stale=false;
+            for (player,request) in self.gate.drawing_requests() {
+                if !self.drawing.apply(player,&request) {stale|=self.drawing.canvas.as_ref().is_some_and(|c|c.scope==request.scope&&c.acknowledged.iter().any(|a|a.0==player&&a.1>=request.sequence));}
+            }
+            if let Some(canvas)=self.drawing.canvas.clone().filter(|c|c.revision>0) {
+                let (scope,revision)=(canvas.scope,canvas.revision);
+                if drawing_due(self.drawing_sent,scope,revision,stale) {
+                    match self.send(Send::Broadcast(Order::MapDrawing(canvas))) {
+                        Ok(())=>self.drawing_sent=Some((scope,revision,Instant::now())),
+                        Err(e)=>{ignored(0,&format!("地图标记发送失败，稍后重试：{e}"));self.drawing_sent=Some(self.drawing_sent.map_or((scope,0,Instant::now()),|(s,r,_)|(s,r,Instant::now())));},
+                    }
                 }
             }
 
@@ -395,6 +410,10 @@ impl Link {
         }
         if let Some(error)=&self.stopped {vec![Order::Stop(error.clone())]}else{orders}
     }
+}
+fn drawing_due(sent:Option<(erdtree_tower::map_drawing::Scope,u64,Instant)>,scope:erdtree_tower::map_drawing::Scope,revision:u64,stale:bool)->bool {
+    let Some((s,r,at))=sent else{return true;};
+    at.elapsed()>=Duration::from_millis(if s!=scope||r!=revision{500}else if stale{1000}else{10_000})
 }
 fn steam_event(config:&Config,peer:u64,packet:erdtree_tower::party_handshake::Payload)->Result<Option<Receive>,String> {
     use erdtree_tower::party_handshake::Payload;
@@ -455,6 +474,26 @@ mod tests {
         let (tx,commands)=mpsc::sync_channel(64);let (events,rx)=mpsc::sync_channel(64);
         (Link{config,gate:Gate::new(vec![1,2]),epoch:4,arrived:true,bound:true,spawn:true,fighting:true,victory:false,rewards:false,defeated:false,stopped:None,
             drawing:Default::default(),drawing_sent:None,event:Default::default(),steam:None,queued:Default::default(),selected:None,ballots:vec![],tx,rx,running:Arc::new(AtomicBool::new(true)),last_report:Instant::now(),last_seen:vec![],encounter:None},events,commands)
+    }
+    #[test]
+    fn malformed_guest_report_is_ignored_without_stopping_session() {
+        use super::*;
+        let run=Run::new(42,erdtree_tower::Class::Samurai);
+        let (mut host,events,_commands)=test_link(1);
+        let mut report=Report::new(&run,0,false,false,true);report.event_request=Some(erdtree_tower::party_events::Kind::Guards(3));
+        events.send(Receive::Report(2,report)).unwrap();
+        assert!(!host.poll(Some(&run),true,false,false).iter().any(|o|matches!(o,Order::Stop(_))));
+        assert!(host.stopped.is_none());
+    }
+    #[test]
+    fn unchanged_canvas_is_resent_only_as_slow_keepalive() {
+        use super::*;
+        let scope=erdtree_tower::map_drawing::Scope{seed:1,act:1};let at=|ms|Some((scope,3,Instant::now()-Duration::from_millis(ms)));
+        assert!(drawing_due(None,scope,3,false));
+        assert!(!drawing_due(at(9_000),scope,3,false));assert!(drawing_due(at(10_000),scope,3,false));
+        assert!(!drawing_due(at(400),scope,4,false));assert!(drawing_due(at(500),scope,4,false));
+        assert!(!drawing_due(at(900),scope,3,true));assert!(drawing_due(at(1000),scope,3,true));
+        assert!(drawing_due(at(500),erdtree_tower::map_drawing::Scope{seed:1,act:2},3,false));
     }
     #[test]
     fn home_suspend_overrides_stopped_and_stale_room_orders() {
@@ -713,18 +752,21 @@ mod tests {
         assert!(replayed&&entered,"snapshot or subsequent travel was lost");
     }
 }
-fn emit(events:&SyncSender<Receive>,event:Receive)->Result<(),String>{events.try_send(event).map_err(|_|"游戏线程未及时处理队伍消息".into())}
+fn emit(backlog:&mut Backlog<Receive>,event:Receive)->Result<(),String>{if backlog.push(event){Ok(())}else{Err("游戏线程未及时处理队伍消息".into())}}
+fn deliver(backlog:&mut Backlog<Receive>,events:&SyncSender<Receive>) {
+    backlog.flush(|event|events.try_send(event).map_err(|e|match e{mpsc::TrySendError::Full(v)|mpsc::TrySendError::Disconnected(v)=>v}));
+}
 fn worker(config:Config,commands:Receiver<Send>,events:&SyncSender<Receive>,running:Arc<AtomicBool>)->Result<(),String> {
     if config.player==config.host {
         let mut host=Host::bind(config.address,config.session,config.peers.iter().map(|p|Credential{player:p.player,token:p.token.clone()}).collect()).map_err(|_|"队伍监听端口无法打开")?;
         let mut connected=std::collections::HashSet::new();
-        let mut votes:Option<Order>=None;
+        let mut votes:Option<Order>=None;let mut backlog=Backlog::new(QUEUE);
         while running.load(Ordering::Acquire) {
             for event in host.poll(){match event{
-                HostEvent::Message{player,message:ClientMessage::Game(report)}=>emit(events,Receive::Report(player,report))?,
-                HostEvent::Message{message:ClientMessage::Fault(_),..}=>emit(events,Receive::Fault("队友报告游戏执行失败，请查看队友日志".into()))?,
-                HostEvent::Message{..}=>return Err("队伍协议不匹配".into()),
-                HostEvent::Disconnected(id)=>{connected.remove(&id);emit(events,Receive::Disconnected(id))?;},
+                HostEvent::Message{player,message:ClientMessage::Game(report)}=>backlog.latest(player,Receive::Report(player,report)),
+                HostEvent::Message{message:ClientMessage::Fault(_),..}=>emit(&mut backlog,Receive::Fault("队友报告游戏执行失败，请查看队友日志".into()))?,
+                HostEvent::Message{player,..}=>ignored(player,"队伍协议不匹配"),
+                HostEvent::Disconnected(id)=>{connected.remove(&id);emit(&mut backlog,Receive::Disconnected(id))?;},
                 HostEvent::Connected(id)=>{
                     connected.insert(id);
                     if let Some(order)=&votes {host.send(id,HostMessage::Game(order.clone())).map_err(|_|"无法补发队伍选路状态")?;}
@@ -737,23 +779,36 @@ fn worker(config:Config,commands:Receiver<Send>,events:&SyncSender<Receive>,runn
                 for p in &config.peers{
                     if snapshot&&!connected.contains(&p.player) {continue;}
                     if let Err(error)=host.send(p.player,HostMessage::Game(order.clone())) {
+                        if matches!(order,Order::MapDrawing(_)){ignored(p.player,&format!("地图标记发送失败，稍后重试：{error}"));continue;}
                         if !matches!(order,Order::ForceEnd){return Err("队员未连接，指令未送达".into());}
                         super::log(format!("HOME_SYNC player={} send failed: {error}",p.player));
                     }
                 }
             }}
+            deliver(&mut backlog,events);
             thread::sleep(Duration::from_millis(10));
         }
     }else {
-        let mut client=Client::connect(config.address,config.session,config.token).map_err(|_|"无法连接爬塔房主")?;
-        let mut connected=false;
+        let mut attempt=0;
+        let connect=|attempt:&mut u32|->Result<Client,String>{loop{
+            if *attempt>0{thread::sleep(Duration::from_millis(500<<(*attempt-1)));}
+            *attempt+=1;
+            match Client::connect(config.address,config.session,config.token.clone()) {Ok(client)=>return Ok(client),Err(_) if *attempt<3=>{},Err(_)=>return Err("无法连接爬塔房主（已重试 3 次）".into())}
+        }};
+        let mut client=connect(&mut attempt)?;
+        let mut connected=false;let mut backlog=Backlog::new(QUEUE);
         while running.load(Ordering::Acquire) {
             for event in client.poll(){match event{
                 ClientEvent::Connected(id) if id==config.player=>connected=true,
-                ClientEvent::Message(HostMessage::Game(order))=>emit(events,Receive::Order(order))?,
+                ClientEvent::Message(HostMessage::Game(order@Order::MapDrawing(_)))=>backlog.latest(0,Receive::Order(order)),
+                ClientEvent::Message(HostMessage::Game(order))=>emit(&mut backlog,Receive::Order(order))?,
+                ClientEvent::Mismatch(version)=>return Err(format!("爬塔协议版本不匹配：本机 {VERSION}，房主 {version}。请所有玩家更新同一版爬塔补丁。")),
+                ClientEvent::Disconnected if !connected&&attempt<3=>{client=connect(&mut attempt)?;break;},
+                ClientEvent::Disconnected if !connected=>return Err("爬塔房主拒绝连接或未响应（已重试 3 次）".into()),
                 ClientEvent::Disconnected=>return Err("爬塔房主已断开".into()),
                 _=>return Err("房主协议或队员身份不匹配".into()),
             }}
+            deliver(&mut backlog,events);
             for command in commands.try_iter(){if connected{
                 let message=match command{Send::Report(r)=>ClientMessage::Game(r),Send::Fault(e)=>ClientMessage::Fault(e),_=>return Err("队友不能发送房主指令".into())};
                 client.send(message).map_err(|_|"无法发送队伍状态")?;

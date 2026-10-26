@@ -98,8 +98,9 @@ static class ContractAssets {
         foreach(var f in reg.Files)if(!f.Bytes.SequenceEqual(check.Files.Single(c=>c.Name==f.Name).Bytes))throw new Exception("Regulation roundtrip mismatch");
         var actual=PARAM.Read(check.Files.Single(f=>f.Name==file.Name).Bytes);actual.ApplyParamdef(def);VerifyExpanded(actual);
         if(actual.Rows.Count!=original.Rows.Count+ExpandedOffsets.Length)throw new Exception("Unexpected effect count");
+        var actualRows=actual.Rows.ToDictionary(r=>r.ID);
         foreach(var row in original.Rows) {
-            var match=actual.Rows.Single(r=>r.ID==row.ID);
+            var match=actualRows[row.ID];
             foreach(var cell in row.Cells)if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(cell.Value,match[cell.Def.InternalName].Value))throw new Exception($"Existing effect changed: {row.ID}");
         }
         Console.WriteLine("Verified seven new effect rows: critical filter, conditional boons, flask multipliers; all existing regulation data preserved");

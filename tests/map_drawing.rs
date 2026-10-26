@@ -68,3 +68,15 @@ fn invalid_snapshot_and_mismatched_report_scope_cannot_change_shared_ink() {
     let mut bad=host.canvas.unwrap();bad.strokes.push(bad.strokes[0].clone());
     assert!(!guest.receive(bad,2));assert!(guest.request().is_some());assert!(guest.canvas.unwrap().strokes.is_empty());
 }
+#[test]
+fn restarted_guest_continues_after_the_host_acknowledgement() {
+    let mut host=Sync::default();let mut guest=Sync::default();
+    host.set_scope(Some(scope()));guest.set_scope(Some(scope()));
+    for _ in 0..3 {guest.submit(2,line(),false);let request=guest.request().unwrap();assert!(host.apply(2,&request));guest.receive(host.canvas.clone().unwrap(),2);}
+    let mut restarted=Sync::default();restarted.set_scope(Some(scope()));
+    assert!(restarted.receive(host.canvas.clone().unwrap(),2));
+    assert!(restarted.submit(2,line(),false));
+    assert!(host.apply(2,&restarted.request().unwrap()));
+    assert!(restarted.receive(host.canvas.clone().unwrap(),2));
+    assert!(restarted.request().is_none());assert_eq!(host.canvas.as_ref().unwrap().strokes.len(),4);
+}

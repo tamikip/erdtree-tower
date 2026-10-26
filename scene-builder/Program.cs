@@ -1,11 +1,15 @@
 using SoulsFormats;
 using System.Numerics;
+string[] modes=["advanced-affix-patch","advanced-affix-verify","affix-patch","archer-patch","archer-verify","arena-chariot-build","arena-chariot-loading","arena-inspect","arrow-shop-inspect","arrow-shop-stage","balance-patch","bandit-fix","battlefield-inspect","battlefields","bgm-audit","bolus-audit","boss-affix-patch","boss-export","camp-inspect","catalog-assets","chariot-build","chest-text","comet-inspect","contract-audit","contract-patch","descent-patch","descent-verify","full-build","game-version-rebase","hub-standing-patch","inspect","level-inspect","melina-inspect","melina-patch","music-inspect","native-inspect","party-camp-stage","party-collision-inspect","party-completion-patch","party-enemy-audit","party-enemy-events-test","party-enemy-load-patch","party-enemy-stage","party-entity-inspect","party-guard-flags","party-guard-stage","party-guard-test","party-hub-stage","party-model-audit","party-model-patch","party-param-audit","party-param-stage","party-placement-audit","party-scarab-stage","party-service-inspect","party-service-load-patch","party-service-load-test","party-service-stage","party-status-patch","passive-patch","personal-chest-patch","personal-chest-test","personal-events-patch","personal-events-test","pool-inspect","portal-inspect","rarity-assets","recovery-text","resistance-shop-stage","reward-assets","reward-inspect","ruby-spells-export","ruby-spells-patch","rune-audit","scarab-inspect","shop-inspect","shop-order-patch","stormveil-build","stormveil-inspect","talisman-inspect","talisman-menu-text","text-inspect","trial-stage","trial-verify","verify-native","weapon-sale-patch"];
+if(args.Length<4||!modes.Contains(args[3])||args.Length!=(args[3]=="ruby-spells-export"?5:4)||args.Take(3).Any(modes.Contains)){Console.Error.WriteLine("Usage: SceneBuilder <game> <output> <cache> <mode>"+(args.Length>3?" (rejected: "+string.Join(" ",args.Skip(3))+")":"")+"\nModes: "+string.Join(" ",modes));Environment.Exit(2);}
 var game=args[0];var output=args[1];var cache=args[2];
 if(args.Contains("personal-events-test")){PersonalEvents.Test();return;}
 if(args.Contains("party-enemy-events-test")){PartyEnemyEvents.Test();return;}
 Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(game,"oo2core_6_win64.dll"));
 if(args.Contains("ruby-spells-export")){RubySpellAssets.Export(game,args[4],output);return;}
 if(args.Contains("ruby-spells-patch")){RubySpellAssets.Patch(cache,output);return;}
+if(args.Contains("shop-order-patch")){ShopOrderAssets.Patch(cache,output);return;}
+if(args.Contains("boss-affix-patch")){BossAffixAssets.Patch(cache,output);return;}
 if(args.Contains("affix-patch")){AffixAssets.Patch(cache,output);return;}
 if(args.Contains("advanced-affix-patch")){AffixAssets.Patch(cache,output,true);return;}
 if(args.Contains("advanced-affix-verify")){AdvancedAffixAssets.Verify(cache);return;}
@@ -334,6 +338,7 @@ if(args.Contains("inspect")) {
     }
     return;
 }
+if(args[3]!="full-build")throw new Exception("Unhandled mode "+args[3]);
 NativeAssets.Build(game,output,cache);
 var hubEvents=EMEVD.Read(Path.Combine(cache,"m11_10_00_00.emevd.dcx"));
 var resetEvent=new EMEVD.Event(11100980,EMEVD.Event.RestBehaviorType.Restart);

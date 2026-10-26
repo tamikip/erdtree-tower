@@ -2,9 +2,10 @@ use crate::party_rewards::Request;
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, io::{self, Read, Write}, net::{SocketAddr, TcpListener, TcpStream}, time::{Duration, Instant}};
 
-pub const VERSION: u32 = 15;
+pub const VERSION: u32 = 17;
 const MAX_FRAME: usize = 256 * 1024;
 const MAX_QUEUE: usize = 1024 * 1024;
+const HELLO_TIMEOUT: Duration = Duration::from_secs(2);
 fn invalid() -> io::Error { io::Error::new(io::ErrorKind::InvalidData, "invalid party link message") }
 
 pub struct Credential { pub player: u64, pub token: String }
@@ -22,7 +23,7 @@ pub enum HostMessage {
 #[derive(Debug)]
 pub enum HostEvent { Connected(u64), Disconnected(u64), Message { player: u64, message: ClientMessage } }
 #[derive(Debug)]
-pub enum ClientEvent { Connected(u64), Disconnected, Message(HostMessage) }
+pub enum ClientEvent { Connected(u64), Disconnected, Message(HostMessage), Mismatch(u32) }
 #[derive(Serialize, Deserialize)]
 enum Wire {
     Hello { version: u32, session: u64, token: String },
@@ -52,20 +53,7 @@ impl Socket {
     fn poll(&mut self) -> io::Result<Vec<Wire>> {
         if self.received.elapsed() > Duration::from_secs(30) { return Err(io::ErrorKind::TimedOut.into()); }
         if self.ping.elapsed() > Duration::from_secs(5) { self.send(Wire::Ping)?; self.ping = Instant::now(); }
-        // Bound each poll so a noisy connection cannot starve other players.
-        for _ in 0..64 {
-            let Some(frame) = self.output.front() else { break };
-            match self.stream.write(&frame[self.offset..]) {
-                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
-                Ok(n) => {
-                    self.offset += n; self.queued -= n;
-                    if self.offset == frame.len() { self.output.pop_front(); self.offset = 0; }
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(e),
-            }
-        }
+        self.flush()?;
         let mut messages = vec![];
         let mut buffer = [0; 8192];
         for _ in 0..64 {
@@ -91,6 +79,23 @@ impl Socket {
             }
         }
         Ok(messages)
+    }
+    // Bound each flush so a noisy connection cannot starve other players.
+    fn flush(&mut self) -> io::Result<()> {
+        for _ in 0..64 {
+            let Some(frame) = self.output.front() else { break };
+            match self.stream.write(&frame[self.offset..]) {
+                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+                Ok(n) => {
+                    self.offset += n; self.queued -= n;
+                    if self.offset == frame.len() { self.output.pop_front(); self.offset = 0; }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
     }
 }
 pub struct Host { listener: TcpListener, session: u64, credentials: Vec<Credential>, peers: Vec<(Socket, Option<u64>)> }
@@ -120,7 +125,7 @@ impl Host {
         }
         let mut i = 0;
         while i < self.peers.len() {
-            let mut valid = self.peers[i].1.is_some() || self.peers[i].0.created.elapsed() < Duration::from_secs(5);
+            let mut valid = self.peers[i].1.is_some() || self.peers[i].0.created.elapsed() < HELLO_TIMEOUT;
             match self.peers[i].0.poll() {
                 Err(_) => valid = false,
                 Ok(messages) => for message in messages {
@@ -132,6 +137,11 @@ impl Host {
                                 valid = self.peers[i].0.send(Wire::Welcome { version: VERSION, session, player: id }).is_ok();
                                 if valid { self.peers[i].1 = Some(id); events.push(HostEvent::Connected(id)); }
                             } else { valid = false; }
+                        }
+                        (None,Wire::Hello { version, session, .. }) if version != VERSION => {
+                            let socket = &mut self.peers[i].0;
+                            if socket.send(Wire::Welcome { version: VERSION, session, player: 0 }).is_ok() { let _ = socket.flush(); }
+                            valid = false;
                         }
                         (Some(player),Wire::Client(message)) => events.push(HostEvent::Message { player, message }),
                         _ => valid = false,
@@ -169,6 +179,7 @@ impl Client {
                 if !valid { break; }
                 match (self.player,message) {
                     (None, Wire::Welcome { version, session, player }) if version == VERSION && session == self.session && player != 0 => { self.player = Some(player); events.push(ClientEvent::Connected(player)); }
+                    (None, Wire::Welcome { version, .. }) if version != VERSION => { events.push(ClientEvent::Mismatch(version)); valid = false; }
                     (Some(_),Wire::Host(message)) => events.push(ClientEvent::Message(message)),
                     _ => valid = false,
                 }
@@ -176,5 +187,27 @@ impl Client {
         }
         if !valid { self.socket = None; self.player = None; events.push(ClientEvent::Disconnected); }
         events
+    }
+}
+// Reports are snapshots: only the latest per key matters. Queued items keep order and are never coalesced.
+pub struct Backlog<T> { latest: Vec<(u64, T)>, queue: VecDeque<T>, limit: usize }
+impl<T> Backlog<T> {
+    pub fn new(limit: usize) -> Self { Self { latest: vec![], queue: VecDeque::new(), limit } }
+    pub fn len(&self) -> usize { self.latest.len() + self.queue.len() }
+    pub fn latest(&mut self, key: u64, item: T) {
+        if let Some(slot) = self.latest.iter_mut().find(|(k,_)| *k == key) { slot.1 = item; } else { self.latest.push((key, item)); }
+    }
+    pub fn push(&mut self, item: T) -> bool {
+        if self.queue.len() >= self.limit { return false; }
+        self.queue.push_back(item); true
+    }
+    pub fn flush(&mut self, mut send: impl FnMut(T) -> Result<(), T>) {
+        while let Some(item) = self.queue.pop_front() {
+            if let Err(item) = send(item) { self.queue.push_front(item); return; }
+        }
+        while !self.latest.is_empty() {
+            let (key, item) = self.latest.remove(0);
+            if let Err(item) = send(item) { self.latest.insert(0, (key, item)); return; }
+        }
     }
 }

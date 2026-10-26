@@ -42,6 +42,7 @@ mod native_talk;
 mod reward_delay;
 mod rebirth;
 mod elite;
+mod boss_affixes;
 mod reward_ui;
 mod contracts;
 mod rooms;
@@ -90,6 +91,15 @@ static LOG_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 
 fn log(message: impl std::fmt::Display) {
     diagnostics::write(message);
+}
+fn log_repeating(message: impl std::fmt::Display) {
+    static SEEN:std::sync::Mutex<Vec<(String,std::time::Instant)>>=std::sync::Mutex::new(Vec::new());
+    let message=message.to_string();let now=std::time::Instant::now();
+    let Ok(mut seen)=SEEN.lock() else{return log(message);};
+    seen.retain(|(_,at)|now.duration_since(*at)<std::time::Duration::from_secs(30));
+    if seen.iter().any(|(m,_)|*m==message){return;}
+    if seen.len()<32{seen.push((message.clone(),now));}
+    log(message);
 }
 
 enum SupportedVersion {
@@ -169,14 +179,14 @@ impl TowerPreview {
 }
 
 impl ImguiRenderLoop for TowerPreview {
-    fn before_render(&mut self, ctx: &mut Context, _: &mut dyn RenderContext) {
+    fn before_render(&mut self, ctx: &mut Context, renderer: &mut dyn RenderContext) {
+        self.rewards.load_icons(renderer);
         let player_present = SNAPSHOT.lock().is_ok_and(|snapshot| snapshot.is_some());
-        let capture = runtime::view()
-            .is_some_and(|view| input::capture_route(self.visible, player_present, &view));
+        let capture = runtime::with_view(|view| input::capture_route(self.visible, player_present, view)).unwrap_or(false);
         input::CAPTURE.store(capture, Ordering::Relaxed);
         ctx.io_mut().mouse_draw_cursor = capture;
-        let map=runtime::view().is_some_and(|view|view.run.as_ref().is_some_and(|run|
-            matches!(run.phase,Phase::Map)&&!run.contract_pending()));
+        let map=runtime::with_view(|view|view.run.as_ref().is_some_and(|run|
+            matches!(run.phase,Phase::Map)&&!run.contract_pending())).unwrap_or(false);
         reward_ui::poll_pad(ctx.io_mut(),capture&&input::active(),map);
         let io = ctx.io_mut();
         if capture {
@@ -208,8 +218,7 @@ impl ImguiRenderLoop for TowerPreview {
 
     fn message_filter(&self, _: &Io) -> MessageFilter {
         let player_present = SNAPSHOT.lock().is_ok_and(|snapshot| snapshot.is_some());
-        if runtime::view()
-            .is_some_and(|view| input::capture_route(self.visible, player_present, &view))
+        if runtime::with_view(|view| input::capture_route(self.visible, player_present, view)).unwrap_or(false)
         {
             MessageFilter::InputAll
         } else {
@@ -240,8 +249,10 @@ impl ImguiRenderLoop for TowerPreview {
     fn render(&mut self, ui: &mut Ui) {
         diagnostics::frame();
         if ui.is_key_pressed_no_repeat(Key::Home) {
-            runtime::QUICK_END.store(true,Ordering::Relaxed);
-            log("Home: quick settlement requested");
+            if runtime::PLAYER_READY.load(Ordering::Relaxed) {
+                runtime::QUICK_END.store(true,Ordering::Relaxed);
+                log("Home: quick settlement requested");
+            }else{log("Home: ignored before a character is loaded");}
         }
         static FIRST_FRAME: AtomicBool = AtomicBool::new(true);
         if FIRST_FRAME.swap(false, Ordering::Relaxed) {
@@ -262,6 +273,11 @@ impl ImguiRenderLoop for TowerPreview {
             log(format!("Class binding: archetype={}", snapshot.archetype));
         }
         let run_screen=run_screen::draw(ui);
+        if self.visible&&!run_screen&&let Some(title)=view.as_ref().filter(|v|v.run.as_ref().is_some_and(|r|matches!(r.phase,Phase::Combat{..}))).and_then(|v|v.boss_affixes.as_ref()) {
+            let draw=ui.get_foreground_draw_list();let size=ui.calc_text_size(title);let x=(ui.io().display_size[0]-size[0])*0.5;
+            draw.add_text([x+1.5,31.5],hudhook::imgui::ImColor32::from_rgba(0,0,0,200),title);
+            draw.add_text([x,30.0],hudhook::imgui::ImColor32::from_rgb(232,190,92),title);
+        }
         let key=format!("UI visible={} snapshot={} capture={} settlement={} view={:?}",self.visible,snapshot.is_some(),input::CAPTURE.load(Ordering::Relaxed),run_screen,view.as_ref().map(|v|(v.ready,v.busy,v.travelling,v.room.is_some(),v.shared_event,v.prompt)));
         if self.diagnostics.due(key.clone(),std::time::Instant::now()){log(key);}
         if run_screen {return;}

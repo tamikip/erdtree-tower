@@ -765,6 +765,9 @@ struct TextureHeap {
     device: ID3D12Device,
     srv_heap: ID3D12DescriptorHeap,
     srv_staging_heap: ID3D12DescriptorHeap,
+    // Shader-visible heaps replaced by `resize_heap` may still be referenced by
+    // in-flight frames when textures are created after initialization.
+    retired_heaps: Vec<ID3D12DescriptorHeap>,
     textures: Vec<Texture>,
     command_queue: ID3D12CommandQueue,
     command_allocator: ID3D12CommandAllocator,
@@ -817,6 +820,7 @@ impl TextureHeap {
             device: device.clone(),
             srv_heap,
             srv_staging_heap,
+            retired_heaps: Vec::new(),
             textures: Vec::new(),
             command_queue,
             command_allocator,
@@ -850,7 +854,7 @@ impl TextureHeap {
                 srv_staging_heap.GetCPUDescriptorHandleForHeapStart(),
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
             );
-            self.srv_heap = srv_heap;
+            self.retired_heaps.push(mem::replace(&mut self.srv_heap, srv_heap));
             self.srv_staging_heap = srv_staging_heap;
 
             // Adjust texture GPU pointers.

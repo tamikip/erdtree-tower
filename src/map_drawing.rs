@@ -79,7 +79,7 @@ impl Sync {
     pub fn receive(&mut self,canvas:Canvas,player:u64)->bool {
         if !canvas.valid()||self.canvas.as_ref().is_none_or(|current|current.scope!=canvas.scope||current.revision>=canvas.revision){return false;}
         let ack=canvas.ack(player);
-        self.pending.retain(|r|r.sequence>ack);self.canvas=Some(canvas);true
+        self.pending.retain(|r|r.sequence>ack);self.sequence=self.sequence.max(ack);self.canvas=Some(canvas);true
     }
 }
 pub fn near_segment(p:[f32;2],a:[f32;2],b:[f32;2],radius:f32)->bool {

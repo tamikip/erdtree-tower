@@ -26,15 +26,14 @@ fn conditional_services(block:i32,kind:NodeKind)->Vec<(u32,i32,i32,u32)> {
     if block==0x2d000000 && kind==NodeKind::Camp {
         return vec![(45001800,0,523200079,0),(45001801,3451,34510179,1),(45001802,2180,21801034,5)];
     }
-    include_str!("../../scene-assets/party-services.txt").lines().filter_map(|line| {
+    static SERVICES:std::sync::LazyLock<Vec<(i32,NodeKind,(u32,i32,i32,u32))>>=std::sync::LazyLock::new(||include_str!("../../scene-assets/party-services.txt").lines().filter_map(|line| {
         let p:Vec<_>=line.split('|').collect();
         let map:Vec<u8>=p[0][1..].split('_').map(|v|v.parse().unwrap()).collect();
-        let matches=match p[1]{"Shop"=>kind==NodeKind::Shop,"Chest"=>kind==NodeKind::Chest,"Event"=>kind==NodeKind::Event,"Monster"=>kind==NodeKind::Monster,_=>false};
-        (matches&&i32::from_be_bytes([map[0],map[1],map[2],map[3]])==block).then(|| {
-            let role=p[7].parse().unwrap();
-            (p[2].parse().unwrap(),if role==5{2180}else{p[3].parse().unwrap()},if role==5{21801034}else{p[4].parse().unwrap()},role)
-        })
-    }).collect()
+        let kind=match p[1]{"Shop"=>NodeKind::Shop,"Chest"=>NodeKind::Chest,"Event"=>NodeKind::Event,"Monster"=>NodeKind::Monster,_=>return None};
+        let role=p[7].parse().unwrap();
+        Some((i32::from_be_bytes([map[0],map[1],map[2],map[3]]),kind,(p[2].parse().unwrap(),if role==5{2180}else{p[3].parse().unwrap()},if role==5{21801034}else{p[4].parse().unwrap()},role)))
+    }).collect());
+    SERVICES.iter().filter(|(b,k,_)|*b==block&&*k==kind).map(|(_,_,service)|*service).collect()
 }
 fn camp_service_matches(slot:usize,entity:u32,model:i32,param:i32,status:ChrLoadStatus,hp:i32)->bool {
     let expected=match slot {0=>(0,523200079),1=>(3451,34510179),2=>(2180,21801034),_=>return false};

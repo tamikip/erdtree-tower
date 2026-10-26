@@ -63,6 +63,7 @@ static class AffixAssets {
                         if(weapon) {
                             foreach(var f in new[]{"attackBasePhysics","attackBaseMagic","attackBaseFire","attackBaseThunder","attackBaseDark"})
                                 Set(row,f,Math.Clamp((int)Math.Round(I(original,f)*(0.96+roll*0.08+tier*0.04)),0,ushort.MaxValue));
+                            // Seeded by name length, so INT and FAI share a roll; frozen because v1 variants are already in released runs.
                             foreach(var f in new[]{"correctStrength","correctAgility","correctMagic","correctFaith","correctLuck"})
                                 Set(row,f,Math.Round(Convert.ToDouble(original[f].Value)*(0.92+(Mix(seed^(ulong)f.Length)%1001)/1000.0*0.16+tier*0.03),2));
                             foreach(var f in row.Cells.Where(c=>c.Def.InternalName.StartsWith("originEquipWep")).Select(c=>c.Def.InternalName)) {

@@ -296,18 +296,19 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
     let mut reachable = vec![false; run.nodes.len()];
     for id in run.start_nodes() {reachable[id]=true;}
     for id in 0..run.nodes.len() {if reachable[id] {for &next in &run.nodes[id].next {reachable[next]=true;}}}
-    let point = |id: usize| {
-        let layer=run.nodes[id].layer;
-        let peers:Vec<_>=run.nodes.iter().enumerate().filter(|(i,n)|reachable[*i]&&n.layer==layer).map(|(i,_)|i).collect();
-        let rank=peers.iter().position(|&i|i==id).unwrap_or(0);
-        let center=if peers.len()==1 {0.5}else{0.13+rank as f32*0.74/(peers.len()-1) as f32};
+    let mut peers=vec![0usize;run.nodes.iter().map(|n|n.layer+1).max().unwrap_or(0)];let mut ranks=vec![0usize;run.nodes.len()];
+    for (i,n) in run.nodes.iter().enumerate() {if reachable[i] {ranks[i]=peers[n.layer];peers[n.layer]+=1;}}
+    let points:Vec<[f32;2]>=(0..run.nodes.len()).map(|id| {
+        let layer=run.nodes[id].layer;let count=peers[layer];let rank=ranks[id];
+        let center=if count<=1 {0.5}else{0.13+rank as f32*0.74/(count-1) as f32};
         let jitter = ((run.seed.wrapping_add(id as u64 * 7919) % 101) as f32 / 100.0 - 0.5) * 0.065;
         let sway = ((layer as f32 * 1.7).sin()) * 0.045;
         [
-            origin[0] + (content[0]-span)*0.5+span * (if peers.len()==1 {0.5}else{center+jitter+sway}),
+            origin[0] + (content[0]-span)*0.5+span * (if count<=1 {0.5}else{center+jitter+sway}),
             origin[1] + 70.0 + (last - layer) as f32 * row,
         ]
-    };
+    }).collect();
+    let point=|id:usize|points[id];
     let draw = ui.get_window_draw_list();
     let ink = ImColor32::from_rgb(64, 54, 38);
     let mut hovered=None;let mut pressed=None;
@@ -446,12 +447,21 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
             draw.add_text([x-5.0,y-10.0],ImColor32::WHITE,(index+1).to_string());
         }
         if hovered==Some(id) {
-                let label=if node.kind==NodeKind::Boss {
+                let mut lines=vec![if node.kind==NodeKind::Boss {
                     crate::enemies::node_roster(run,id).first().map_or("首领",|enemy|enemy.name).to_owned()
-                } else {node.kind.label().to_owned()};
-                let width=ui.calc_text_size(&label)[0];
-                draw.add_rect([pos[0]-width*0.5-9.0,pos[1]+39.0],[pos[0]+width*0.5+9.0,pos[1]+69.0],ImColor32::from_rgb(77,57,29)).rounding(5.0).filled(true).build();
-                draw.add_text([pos[0]-width*0.5,pos[1]+43.0],ImColor32::from_rgb(255,231,168),label);
+                } else {node.kind.label().to_owned()}];
+                let affixes=erdtree_tower::boss_affixes::roll(run,id);
+                if !affixes.is_empty() {
+                    lines[0]=format!("{} {}",erdtree_tower::boss_affixes::title(&affixes),lines[0]);
+                    lines.extend(affixes.iter().map(|a|format!("{}：{}",a.name(),a.description())));
+                    lines.push(format!("胜利额外获得 {} 卢恩",erdtree_tower::boss_affixes::bonus_runes(run,id)));
+                }
+                let width=lines.iter().map(|l|ui.calc_text_size(l)[0]).fold(0.0,f32::max);
+                draw.add_rect([pos[0]-width*0.5-9.0,pos[1]+39.0],[pos[0]+width*0.5+9.0,pos[1]+69.0+22.0*(lines.len()-1) as f32],ImColor32::from_rgb(77,57,29)).rounding(5.0).filled(true).build();
+                for (row,line) in lines.iter().enumerate() {
+                    let x=if row==0 {pos[0]-ui.calc_text_size(line)[0]*0.5}else{pos[0]-width*0.5};
+                    draw.add_text([x,pos[1]+43.0+22.0*row as f32],if row==0 {ImColor32::from_rgb(255,231,168)}else{ImColor32::from_rgb(232,214,180)},line);
+                }
                 draw.add_circle(pos, radius + 5.0, ImColor32::from_rgb(143, 95, 22))
                     .thickness(2.0)
                     .build();

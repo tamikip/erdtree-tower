@@ -64,8 +64,9 @@ static class PassiveAssets {
         var actual=PARAM.Read(check.Files.Single(f=>f.Name==file.Name).Bytes);actual.ApplyParamdef(effects.AppliedParamdef);
         Verify(actual,goods);
         if(actual.Rows.Count!=original.Rows.Count+3)throw new Exception("Unexpected effect row count");
+        var actualRows=actual.Rows.ToDictionary(r=>r.ID);
         foreach(var row in original.Rows) {
-            var match=actual.Rows.Single(r=>r.ID==row.ID);
+            var match=actualRows[row.ID];
             foreach(var cell in row.Cells)if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(cell.Value,match[cell.Def.InternalName].Value))throw new Exception($"Existing effect changed: {row.ID}");
         }
         Console.WriteLine("Added only three effects; all existing rows and other regulation entries preserved");
@@ -86,8 +87,9 @@ static class PassiveAssets {
         foreach(var f in reg.Files)if(!f.Bytes.SequenceEqual(check.Files.Single(c=>c.Name==f.Name).Bytes))throw new Exception("Regulation roundtrip mismatch");
         var actual=PARAM.Read(check.Files.Single(f=>f.Name==file.Name).Bytes);actual.ApplyParamdef(def);
         if(actual.Rows.Count!=original.Rows.Count)throw new Exception("Unexpected row count");
+        var actualRows=actual.Rows.ToDictionary(r=>r.ID);
         foreach(var row in original.Rows) {
-            var after=actual.Rows.Single(r=>r.ID==row.ID);
+            var after=actualRows[row.ID];
             foreach(var cell in row.Cells) {
                 var expected=row.ID==First+3&&cell.Def.InternalName=="soulRate"?1.1f:cell.Value;
                 if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(expected,after[cell.Def.InternalName].Value))throw new Exception($"Unexpected change: {row.ID} {cell.Def.InternalName}");

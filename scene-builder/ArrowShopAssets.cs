@@ -17,7 +17,7 @@ static class ArrowShopAssets {
             Set("sellQuantity",i==24?100:20);Set("setNum",1);Set("eventFlag_forStock",flag);
             p.Rows.Add(row);
         }
-        file.Bytes=p.Write();Directory.CreateDirectory(output);
+        p.Rows.Sort((a,b)=>a.ID.CompareTo(b.ID));file.Bytes=p.Write();Directory.CreateDirectory(output);
         var path=Path.Combine(output,"regulation.bin");SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(path,reg);
         var check=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(path);
         foreach(var f in reg.Files)if(!f.Bytes.SequenceEqual(check.Files.Single(c=>c.Name==f.Name).Bytes))throw new Exception("Regulation roundtrip mismatch");

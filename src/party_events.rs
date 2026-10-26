@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub enum Kind { Guards(u8), Scarabs(u8) }
 impl Kind {
-    fn valid(self)->bool {match self {Self::Guards(slot)=>slot<3,Self::Scarabs(attempt)=>(1..=3).contains(&attempt)}}
+    pub fn valid(self)->bool {match self {Self::Guards(slot)=>slot<3,Self::Scarabs(attempt)=>(1..=3).contains(&attempt)}}
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct Job {pub epoch:u64,pub wave:u8,pub player:u64,pub kind:Kind}

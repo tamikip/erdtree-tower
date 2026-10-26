@@ -72,7 +72,7 @@ impl Hunt {
     pub fn poll(&mut self,world:&mut WorldChrMan)->Result<(),String> {
         let Some(clock)=self.clock else{return Ok(());};
         let phase=stage(clock.elapsed());
-        if phase==Stage::Waiting {return Ok(());}
+        if self.finished||phase==Stage::Waiting {return Ok(());}
         if !self.revealed {
             for &(handle,address) in &self.bugs {
                 let chr=world.chr_ins_by_handle_mut(&handle).filter(|c|std::ptr::from_ref(*c) as usize==address).ok_or("粪金龟已卸载")?;
@@ -83,15 +83,12 @@ impl Hunt {
             self.clock=Some(Instant::now()-Duration::from_secs(3));
             return Ok(());
         }
-        if phase==Stage::Hunting {
-            for (slot,&(handle,address)) in self.bugs.iter().enumerate() {
-                if world.chr_ins_by_handle(&handle).is_some_and(|c|std::ptr::from_ref(c) as usize==address && (c.modules.data.hp<=0||c.chr_flags1c5.death_flag())) {
-                    self.killed|=1<<slot;
-                }
+        for (slot,&(handle,address)) in self.bugs.iter().enumerate() {
+            if world.chr_ins_by_handle(&handle).is_some_and(|c|std::ptr::from_ref(c) as usize==address && (c.modules.data.hp<=0||c.chr_flags1c5.death_flag())) {
+                self.killed|=1<<slot;
             }
-        } else if phase==Stage::Finished {
-            self.retire(world);self.finished=true;
         }
+        if phase==Stage::Finished {self.retire(world);self.finished=true;}
         Ok(())
     }
     pub fn rewards(&self)->Vec<usize> {(0..3).filter(|i|self.finished&&self.killed&(1<<i)!=0&&self.rewarded&(1<<i)==0).collect()}

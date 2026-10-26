@@ -63,21 +63,28 @@ pub fn give(entries: &[(i32, i32, i32)]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn give_reward(data:&mut eldenring::cs::PlayerGameData,id:u32)->Result<(),String> {
+fn reward_item(id:u32)->Result<(eldenring::cs::ItemId,&'static str),String> {
     use eldenring::cs::{ItemCategory,ItemId};
     let reward=erdtree_tower::rewards::lookup(id).ok_or("未知奖励物品")?;
     let category=match id>>28 {0=>ItemCategory::Weapon,1=>ItemCategory::Protector,2=>ItemCategory::Accessory,4=>ItemCategory::Goods,_=>return Err("无效奖励类型".into())};
     let item=ItemId::new(category,id&0x0fffffff).map_err(|e|e.to_string())?;
     let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"奖励物品参数未就绪")?;
     if params.get_equip_param(item).is_none(){return Err("奖励物品参数不存在".into());}
-    let count=|data:&eldenring::cs::PlayerGameData| {
-        let bag=data.equipment.equip_inventory_data.items_data.items().filter(|e|e.item_id==item).map(|e|e.quantity as u64).sum::<u64>();
-        bag+data.storage.as_ref().map_or(0,|s|s.items_data.items().filter(|e|e.item_id==item).map(|e|e.quantity as u64).sum::<u64>())
-    };
-    let before=count(data);
-    if category==ItemCategory::Goods&&before>0 {return Err(format!("已拥有{}，请选择其他奖励",reward.name));}
+    Ok((item,reward.name))
+}
+fn held(data:&eldenring::cs::PlayerGameData,item:eldenring::cs::ItemId)->u64 {
+    let bag=data.equipment.equip_inventory_data.items_data.items().filter(|e|e.item_id==item).map(|e|e.quantity as u64).sum::<u64>();
+    bag+data.storage.as_ref().map_or(0,|s|s.items_data.items().filter(|e|e.item_id==item).map(|e|e.quantity as u64).sum::<u64>())
+}
+pub fn check_reward(data:&eldenring::cs::PlayerGameData,id:u32)->Result<u64,String> {
+    let (item,name)=reward_item(id)?;let before=held(data,item);
+    if item.category()==eldenring::cs::ItemCategory::Goods&&before>0 {return Err(format!("已拥有{name}，请选择其他奖励"));}
+    Ok(before)
+}
+pub fn give_reward(data:&mut eldenring::cs::PlayerGameData,id:u32)->Result<(),String> {
+    let before=check_reward(data,id)?;
     give(&[(id as i32,1,-1)])?;
-    if count(data)<=before {return Err("奖励未进入背包或仓库，请检查容量后重试".into());}
+    if held(data,reward_item(id)?.0)<=before {return Err("奖励未进入背包或仓库，请检查容量后重试".into());}
     Ok(())
 }
 

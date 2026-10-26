@@ -170,21 +170,26 @@ fn ensure_pots(data:&mut PlayerGameData)->Result<(),String> {
     }
     Ok(())
 }
-pub fn prepare(run: &Run, refresh: bool, data:&mut PlayerGameData) -> Result<(), String> {
-    let tools=super::loot::casting_tools(data);
+pub fn prepare(run: &Run, node: usize, refresh: bool, data:&mut PlayerGameData) -> Result<erdtree_tower::ShopStock, String> {
     let params = unsafe { SoloParamRepository::instance_mut() }.map_err(|_| "商店参数未加载")?;
-    let mut stock = stock(run);
-    filter_spells(&mut stock,tools,run.reward_seed());
-    affix_stock(run,run.visited.iter().filter(|&&i|run.nodes[i].kind==NodeKind::Shop).count(),&mut stock);
-    for item in &mut stock {
-        let rarity=if item.kind==0&&(item.id<50000000||erdtree_tower::affixes::tier(item.id as u32).is_some()) {
-            Some(params.get::<EquipParamWeapon>(item.id as u32).ok_or("商店武器参数不存在")?.rarity())
-        } else if is_spell(item) {
-            Some(params.get::<EquipParamGoods>(item.id as u32).ok_or("商店法术参数不存在")?.rarity())
-        } else {None};
-        if let Some(rarity)=rarity {item.price=weapon_price(rarity);}
-    }
-    for item in &mut stock {item.price=super::passives::shop_price(run.class,item.price);}
+    let saved=run.shop_stock.as_ref().filter(|saved|!refresh&&saved.node==node&&saved.items.len()==STOCK_COUNT as usize);
+    let stock=if let Some(saved)=saved {saved.items.iter().map(|[kind,id,price,quantity]|Stock{kind:*kind as u8,id:*id,price:*price,quantity:*quantity as i16}).collect()}else{
+        let tools=super::loot::casting_tools(data);
+        let mut stock = stock(run);
+        filter_spells(&mut stock,tools,run.reward_seed());
+        affix_stock(run,run.visited.iter().filter(|&&i|run.nodes[i].kind==NodeKind::Shop).count(),&mut stock);
+        for item in &mut stock {
+            let rarity=if item.kind==0&&(item.id<50000000||erdtree_tower::affixes::tier(item.id as u32).is_some()) {
+                Some(params.get::<EquipParamWeapon>(item.id as u32).ok_or("商店武器参数不存在")?.rarity())
+            } else if is_spell(item) {
+                Some(params.get::<EquipParamGoods>(item.id as u32).ok_or("商店法术参数不存在")?.rarity())
+            } else {None};
+            if let Some(rarity)=rarity {item.price=weapon_price(rarity);}
+        }
+        for item in &mut stock {item.price=super::passives::shop_price(run.class,item.price);}
+        stock
+    };
+    if stock.len()!=STOCK_COUNT as usize {return Err("商店货单数量与原生商品槽位不符".into());}
     for i in 0..STOCK_COUNT {
         if params.get::<ShopLineupParam>(GOODS + i).is_none() {
             return Err("缺少原生商店参数，请使用完整启动包".into());
@@ -222,7 +227,7 @@ pub fn prepare(run: &Run, refresh: bool, data:&mut PlayerGameData) -> Result<(),
         row.set_value_magnification(1.0);
     }
     super::log(format!("Native rune shop stock: {stock:?}"));
-    Ok(())
+    Ok(erdtree_tower::ShopStock{node,items:stock.iter().map(|s|[i32::from(s.kind),s.id,s.price,i32::from(s.quantity)]).collect()})
 }
 fn filter_spells(stock:&mut [Stock],tools:[bool;2],seed:u64) {
     use erdtree_tower::rewards::{CATALOG,ItemKind,castable};

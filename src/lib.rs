@@ -18,6 +18,7 @@ pub mod regional_events;
 pub mod stormveil;
 pub mod rewards;
 pub mod affixes;
+pub mod boss_affixes;
 
 pub type RuleResult<T> = Result<T, String>;
 
@@ -170,6 +171,8 @@ pub struct Run {
     pub affix_rules: u8,
     #[serde(default)]
     pub ruby_spells: bool,
+    #[serde(default)]
+    pub boss_affixes: bool,
     #[serde(default="first_act")]
     pub act:u8,
     pub seed: u64,
@@ -217,8 +220,13 @@ pub struct Run {
     #[serde(default)]
     pub elite_buffs: Vec<u32>,
     shop_purchased: u8,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub shop_stock: Option<ShopStock>,
     checkpoint: Option<CombatCheckpoint>,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShopStock {pub node:usize,pub items:Vec<[i32;4]>}
 
 fn first_act()->u8 {1}
 fn mix(mut value: u64) -> u64 {
@@ -445,6 +453,7 @@ impl Run {
             affix_equipment: true,
             affix_rules: 2,
             ruby_spells: true,
+            boss_affixes: true,
             act:1,
             seed,
             initial_seed: Some(seed),
@@ -475,6 +484,7 @@ impl Run {
             larval_gift: Default::default(),
             elite_buffs: vec![],
             shop_purchased: 0,
+            shop_stock: None,
             checkpoint: None,
         }
     }
@@ -520,7 +530,7 @@ impl Run {
             return Err("节点不可达".into());
         }
         self.reached_layer=self.nodes[id].layer+1;
-        self.shop_purchased = 0;
+        self.shop_purchased = 0;self.shop_stock=None;
         if self.nodes[id].kind==NodeKind::Event {
             let event_roll=mix(self.seed ^ id as u64 ^ 0x10cced)%8;
             self.regional_event.scarabs=event_roll==3;
@@ -555,7 +565,7 @@ impl Run {
         self.regional_event=Default::default();
         self.visited.push(id);
         self.checkpoint = None;
-        self.shop_purchased = 0;
+        self.shop_purchased = 0;self.shop_stock=None;
         if self.nodes[id].kind==NodeKind::Boss && self.act<3 {
             self.act+=1;
             self.reached_layer=0;
@@ -837,7 +847,7 @@ impl Run {
         }
         run.validate()?;
         if let Phase::Reward{id,ref offers}=run.phase {
-            if *offers==rewards::before_spirit_levels(&run,id)||*offers==rewards::before_currency_1500(&run,id)||*offers==rewards::before_chest_boosts(&run,id)||*offers==rewards::before_bosses(&run,id)||*offers==rewards::before_elites(&run,id)||*offers==rewards::before_base_talismans(&run,id)||*offers==rewards::before_spirit_weight(&run,id)||*offers==rewards::previous_offers(&run,id)||*offers==run.legacy_offers(id)||*offers==rewards::before_spirits(&run,id)||*offers==rewards::before_expansion(&run,id) {
+            if *offers==rewards::before_claimed_bases(&run,id)||*offers==rewards::before_spirit_levels(&run,id)||*offers==rewards::before_currency_1500(&run,id)||*offers==rewards::before_chest_boosts(&run,id)||*offers==rewards::before_bosses(&run,id)||*offers==rewards::before_elites(&run,id)||*offers==rewards::before_base_talismans(&run,id)||*offers==rewards::before_spirit_weight(&run,id)||*offers==rewards::previous_offers(&run,id)||*offers==run.legacy_offers(id)||*offers==rewards::before_spirits(&run,id)||*offers==rewards::before_expansion(&run,id) {
                 run.phase=Phase::Reward{id,offers:run.offers(id)};
             }
         }
@@ -917,7 +927,7 @@ impl Run {
                     .nodes
                     .get(*id)
                     .is_some_and(|n| n.kind.combat() || n.kind == NodeKind::Chest)
-                    || (*offers != self.offers(*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
+                    || (*offers != self.offers(*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
                 {
                     return fail();
                 }
@@ -947,6 +957,8 @@ impl Run {
             || (self.hp == 0 && self.phase != Phase::Dead)
             || (self.shop_purchased != 0
                 && !matches!(self.phase, Phase::Node { id } if self.nodes[id].kind == NodeKind::Shop))
+            || self.shop_stock.as_ref().is_some_and(|stock|stock.items.len()>64
+                || !matches!(self.phase, Phase::Node { id } if id==stock.node&&self.nodes[id].kind == NodeKind::Shop))
         {
             return fail();
         }

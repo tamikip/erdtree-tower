@@ -20,9 +20,13 @@ fn enemy(name: &'static str, model: i32,act:u8,kind:NodeKind) -> Enemy {
         act,kind,bar:0,
     }
 }
-pub fn preview_texts(group:&[Enemy])->Vec<i32> {
+static PREVIEW_NAMES:LazyLock<Vec<&'static str>>=LazyLock::new(|| {
     let mut names=Vec::new();
     for name in POOLS.iter().map(|e|e.name).chain(BOSSES.iter().map(|(_,e)|e.name)) {if !names.contains(&name){names.push(name);}}
+    names
+});
+pub fn preview_texts(group:&[Enemy])->Vec<i32> {
+    let names=&*PREVIEW_NAMES;
     let mut counts:Vec<(&str,usize)>=Vec::new();
     for enemy in group {
         if let Some((_,count))=counts.iter_mut().find(|(name,_)|*name==enemy.name){*count+=1;}else{counts.push((enemy.name,1));}

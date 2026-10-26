@@ -27,14 +27,15 @@ static class ResistanceShopAssets {
             Set("equipId",item);Set("equipType",3);Set("value",int.Parse(medicine[3]));
             Set("sellQuantity",10);Set("setNum",1);Set("eventFlag_forStock",flag);
         }
-        file.Bytes=p.Write();Directory.CreateDirectory(output);
+        p.Rows.Sort((a,b)=>a.ID.CompareTo(b.ID));file.Bytes=p.Write();Directory.CreateDirectory(output);
         var path=Path.Combine(output,"regulation.bin");SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(path,reg);
         var check=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(path);
         foreach(var f in reg.Files)if(!f.Bytes.SequenceEqual(check.Files.Single(c=>c.Name==f.Name).Bytes))throw new Exception("Regulation roundtrip mismatch");
         var restored=PARAM.Read(check.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name)=="ShopLineupParam").Bytes);restored.ApplyParamdef(def);
         restored.Rows.RemoveAll(r=>ids.Contains(r.ID)&&!originals.Any(old=>old.ID==r.ID));
         foreach(var old in originals.Where(r=>ids.Contains(r.ID)))restored.Rows[restored.Rows.FindIndex(r=>r.ID==old.ID)]=new PARAM.Row(old);
-        if(!restored.Write().SequenceEqual(before))throw new Exception("Unrelated shop data changed");
+        var baseline=PARAM.Read(before);baseline.ApplyParamdef(def);baseline.Rows.Sort((a,b)=>a.ID.CompareTo(b.ID));
+        if(!restored.Write().SequenceEqual(baseline.Write()))throw new Exception("Unrelated shop data changed");
         Console.WriteLine("Verified 11 medicine rows, stock flags, item IDs and regulation roundtrip; unrelated data preserved");
     }
 }

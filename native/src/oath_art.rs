@@ -1,9 +1,11 @@
 use std::sync::atomic::{AtomicUsize,Ordering};
 use hudhook::{RenderContext,imgui::{DrawListMut,ImColor32,TextureId}};
-static TEXTURES:[AtomicUsize;3]=[AtomicUsize::new(0),AtomicUsize::new(0),AtomicUsize::new(0)];
+static TEXTURES:[AtomicUsize;3]=[AtomicUsize::new(usize::MAX),AtomicUsize::new(usize::MAX),AtomicUsize::new(usize::MAX)];
+fn texture(index:usize)->Option<TextureId> {Some(TEXTURES[index].load(Ordering::Relaxed)).filter(|&id|id!=usize::MAX).map(TextureId::new)}
 pub const ASSETS:[(&str,u32,u32);3]=[("cards",1254,1254),("background",1672,941),("button",2172,724)];
 pub fn initialize(renderer:&mut dyn RenderContext) {
     for (index,(name,w,h)) in ASSETS.into_iter().enumerate() {
+        TEXTURES[index].store(usize::MAX,Ordering::Relaxed);
         let path=crate::LOG_PATH.with_file_name("scene-assets").join("oath-art").join(format!("{name}.rgba"));
         match std::fs::read(path) {
             Ok(data) if data.len()==w as usize*h as usize*4=>match renderer.load_texture(&data,w,h) {
@@ -14,10 +16,10 @@ pub fn initialize(renderer:&mut dyn RenderContext) {
         }
     }
 }
-pub fn ready()->bool {TEXTURES.iter().all(|t|t.load(Ordering::Relaxed)!=0)}
+pub fn ready()->bool {(0..TEXTURES.len()).all(|i|texture(i).is_some())}
 fn image(draw:&DrawListMut<'_>,index:usize,min:[f32;2],max:[f32;2],uv:([f32;2],[f32;2]),light:u8) {
-    let id=TEXTURES[index].load(Ordering::Relaxed);if id==0{return;}
-    draw.add_image(TextureId::new(id),min,max).uv_min(uv.0).uv_max(uv.1).col(ImColor32::from_rgba(light,light,light,255)).build();
+    let Some(id)=texture(index) else{return;};
+    draw.add_image(id,min,max).uv_min(uv.0).uv_max(uv.1).col(ImColor32::from_rgba(light,light,light,255)).build();
 }
 pub fn background(draw:&DrawListMut<'_>,size:[f32;2]) {
     let ratio=size[0]/size[1];let native=1672.0/941.0;
