@@ -5,23 +5,10 @@ use crate::runtime::{self,Action,View};
 
 #[derive(Clone)]
 struct Detail {icon:u32,name:String,info:String,caption:String,stats:String,skill:String}
-static RARITIES:LazyLock<HashMap<u32,u8>>=LazyLock::new(||include_str!("../../scene-assets/reward-rarities.tsv").lines().chain(include_str!("../../scene-assets/affix-rarities.tsv").lines()).chain(include_str!("../../scene-assets/affix-v2-rarities.tsv").lines()).chain(include_str!("../../scene-assets/ruby-spells-rarities.tsv").lines()).map(|line| {
+static RARITIES:LazyLock<HashMap<u32,u8>>=LazyLock::new(||include_str!("../../scene-assets/reward-rarities.tsv").lines().chain(include_str!("../../scene-assets/affix-rarities.tsv").lines()).chain(include_str!("../../scene-assets/affix-v2-rarities.tsv").lines()).map(|line| {
     let (id,rarity)=line.split_once('\t').unwrap();(id.parse().unwrap(),rarity.parse().unwrap())
 }).collect());
 pub fn item_quality(id:u32)->u8 {RARITIES.get(&erdtree_tower::rewards::spirit_base(id)).copied().unwrap_or(0).min(3)}
-#[test]
-fn ruby_spell_cards_have_localized_details_rarity_and_available_icons() {
-    let entries:Vec<_>=include_str!("../../scene-assets/ruby-spells-details.tsv").lines().collect();
-    assert_eq!(entries.len(),101);
-    for line in entries {
-        let p:Vec<_>=line.split('\t').collect();assert_eq!(p.len(),7);
-        let id:u32=p[0].parse().unwrap();let detail=&DETAILS[&id];
-        assert_eq!(detail.name,erdtree_tower::rewards::lookup(id).unwrap().name);
-        assert!(!detail.info.is_empty());assert!(detail.stats.contains("施法工具：法杖"));
-        assert!(RARITIES.contains_key(&id));
-        assert_eq!(std::fs::metadata(format!("../scene-assets/reward-icons/{}.rgba",detail.icon)).unwrap().len(),102400);
-    }
-}
 #[test]
 fn affixed_equipment_details_and_icons_cover_every_variant() {
     for item in erdtree_tower::affixes::CATALOG.iter() {
@@ -42,7 +29,7 @@ fn card_light(tier:usize,selected:bool,hover:bool,time:f64)->u8 {
     (base+if tier==3 {15.0*(time*std::f64::consts::TAU/3.6).sin()}else{0.0}) as u8
 }
 static DETAILS:LazyLock<HashMap<u32,Detail>>=LazyLock::new(|| {
-    let mut result:HashMap<u32,Detail>=include_str!("../../scene-assets/reward-details.tsv").lines().chain(include_str!("../../scene-assets/affix-details.tsv").lines()).chain(include_str!("../../scene-assets/affix-v2-details.tsv").lines()).chain(include_str!("../../scene-assets/ruby-spells-details.tsv").lines()).map(|line| {
+    let mut result:HashMap<u32,Detail>=include_str!("../../scene-assets/reward-details.tsv").lines().chain(include_str!("../../scene-assets/affix-details.tsv").lines()).chain(include_str!("../../scene-assets/affix-v2-details.tsv").lines()).map(|line| {
         let p:Vec<_>=line.split('\t').collect();
         (p[0].parse().unwrap(),Detail{icon:p[1].parse().unwrap(),name:p[2].into(),info:p[3].replace("\\n","\n"),caption:p[4].replace("\\n","\n"),stats:p[5].replace("\\n","\n"),skill:p[6].replace("\\n","\n")})
     }).collect();

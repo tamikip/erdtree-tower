@@ -1,6 +1,6 @@
 # 仓库与运行包
 
-此仓库保存黄金树爬塔 Mod 的源码、测试和场景资源，包含随机装备词条与101种 Ruby 新法术。最新可运行包放在本仓库的私有 GitHub Release 附件中。
+此仓库保存黄金树爬塔 Mod 的源码、测试和场景资源，包含随机装备词条、Boss 词条与爬塔玩法。可运行包发布在本仓库的 GitHub Release 中。
 
 下载 Release ZIP 后完整解压，运行 `Launch-Preview.cmd`。游戏目录不同于启动脚本默认值时，通过 `Launch-Preview.ps1 -GameDir <游戏Game目录>` 启动。游戏版本检查与现有启动器一致。新词条、新法术请新开旅程体验。
 

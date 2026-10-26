@@ -151,7 +151,6 @@ static class NativeAssets {
         EliteAssets.Build(Read("SpEffectParam","SpEffect"),Read("EquipParamAccessory"),Save);
         AffixAssets.Build(name=>Read(name,name=="SpEffectParam"?"SpEffect":name),Save,messages,"outputs/erdtree-tower/scene-assets",output);
         AdvancedAffixAssets.Build(name=>Read(name,name=="SpEffectParam"?"SpEffect":name),Save,messages,"outputs/erdtree-tower/scene-assets",output);
-        RubySpellAssets.Build(name=>Read(name,name switch {"Magic"=>"MagicParam","Bullet"=>"BulletParam","AtkParam_Pc"=>"AtkParam","SpEffectParam"=>"SpEffect","SpEffectVfxParam"=>"SpEffectVfx","BehaviorParam_PC"=>"BehaviorParam",_=>name}),Save,messages);
         var menu=BND4.Read(Path.Combine(cache,"menu_dlc02.msgbnd.dcx"));
         PartyStatusText.Add(menu);
         RecoveryText.Add(menu);

@@ -452,7 +452,7 @@ impl Run {
             schema: 6,
             affix_equipment: true,
             affix_rules: 2,
-            ruby_spells: true,
+            ruby_spells: false,
             boss_affixes: true,
             act:1,
             seed,
@@ -841,6 +841,11 @@ impl Run {
             return Err("存档过大".into());
         }
         let mut run: Self = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        if run.ruby_spells {
+            run.ruby_spells=false;
+            if let Phase::Reward{id,..}=run.phase {run.phase=Phase::Reward{id,offers:run.offers(id)};}
+            if run.shop_stock.as_ref().is_some_and(|s|s.items.iter().any(|[kind,id,..]|*kind==3&&rewards::RETIRED_SPELLS.contains(&(0x40000000|*id as u32)))) {run.shop_stock=None;}
+        }
         if run.flask_bonus<=4&&run.flask_limit==5+run.flask_bonus*2 {
             if run.flasks>run.flask_limit||run.checkpoint.as_ref().is_some_and(|c|c.flasks>run.flask_limit) {return Err("旧存档圣杯瓶数量无效".into());}
             run.flask_limit=10+run.flask_bonus*2;
@@ -894,7 +899,7 @@ impl Run {
         }
         if self.claimed_items.len()>rewards::CATALOG.len()+affixes::CATALOG.len() {return fail();}
         for (i,id) in self.claimed_items.iter().enumerate() {
-            if !rewards::lookup(*id).is_some_and(|item|item.kind.allowed(self.class)||elite::LEGENDARY.contains(&affixes::base(*id)))||self.claimed_items[..i].contains(id) {return fail();}
+            if !(rewards::lookup(*id).is_some_and(|item|item.kind.allowed(self.class)||elite::LEGENDARY.contains(&affixes::base(*id)))||rewards::RETIRED_SPELLS.contains(id))||self.claimed_items[..i].contains(id) {return fail();}
         }
         let mut route = self.start_nodes();
         for id in &self.visited {

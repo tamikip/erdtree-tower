@@ -18,8 +18,9 @@ impl Item {
             &&!matches!(self.id&0x0fffffff,1100|2140|4060|6040|6060|6070|6080|6090)))
     }
 }
-pub static CATALOG:LazyLock<Vec<Item>>=LazyLock::new(||parse(include_str!("../scene-assets/reward-catalog.txt")).into_iter().chain(parse(include_str!("../scene-assets/crystal-tears.txt"))).chain(parse(include_str!("../scene-assets/ruby-spells-catalog.txt"))).collect());
-static RUBY_SPELL_IDS:LazyLock<std::collections::HashSet<u32>>=LazyLock::new(||parse(include_str!("../scene-assets/ruby-spells-catalog.txt")).iter().map(|i|i.id).collect());
+pub static CATALOG:LazyLock<Vec<Item>>=LazyLock::new(||parse(include_str!("../scene-assets/reward-catalog.txt")).into_iter().chain(parse(include_str!("../scene-assets/crystal-tears.txt"))).collect());
+/// 公开版移除的 RNG Lands - Ruby 法术，只保留编号用于读取旧存档
+pub static RETIRED_SPELLS:LazyLock<std::collections::HashSet<u32>>=LazyLock::new(||include_str!("../scene-assets/retired-spell-rows.txt").lines().filter_map(|l|l.strip_prefix("EquipParamGoods|")).map(|id|0x40000000|id.parse::<u32>().unwrap()).collect());
 static OLD_CATALOG:LazyLock<Vec<Item>>=LazyLock::new(||parse(include_str!("../scene-assets/reward-catalog-v29.txt")));
 fn parse(text:&'static str)->Vec<Item> {text.lines().map(|line| {
     let mut parts=line.split('|');
@@ -173,7 +174,7 @@ fn ranked_pool(run:&Run,node:usize,spirits:bool,catalog:&[Item],base_only:bool)-
     let mut categories=if catalog.iter().any(|i|i.kind==ItemKind::Talisman) {vec![]}else{vec![run.legacy_offers(node)[0].clone()]};
     for (index,kind) in [ItemKind::Weapon,ItemKind::Armor,ItemKind::Sorcery,ItemKind::Incantation,ItemKind::Spirit,ItemKind::Talisman].into_iter().enumerate() {
         if kind==ItemKind::Spirit&&!spirits {continue;}
-        let pool:Vec<_>=catalog.iter().filter(|item|item.kind==kind&&kind.allowed(run.class)&&!run.claimed_items.contains(&item.id)&&(!base_only||item.random_eligible())&&(run.ruby_spells||!RUBY_SPELL_IDS.contains(&item.id))).collect();
+        let pool:Vec<_>=catalog.iter().filter(|item|item.kind==kind&&kind.allowed(run.class)&&!run.claimed_items.contains(&item.id)&&(!base_only||item.random_eligible())).collect();
         if !pool.is_empty() {
             let roll=crate::mix(run.reward_seed()^(node as u64*97+index as u64+1234));
             categories.push(Reward::Item(pool[roll as usize%pool.len()].id));

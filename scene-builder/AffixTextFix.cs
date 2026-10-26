@@ -67,6 +67,10 @@ static class AffixTextFix {
             foreach(var entry in fmg.Entries) {var text=Expected(file.ID,entry.ID,entry.Text);if(text!=entry.Text){entry.Text=text;changed++;}}
             file.Bytes=fmg.Write();
         }
+        var retired=File.ReadAllLines(Path.Combine(input,"retired-spell-rows.txt")).Where(l=>l.StartsWith("EquipParamGoods|")).Select(l=>int.Parse(l.Split('|')[1])).ToHashSet();var dropped=0;
+        foreach(var file in messages.Files.Where(f=>f.ID is 10 or 20 or 24)) {
+            var fmg=FMG.Read(file.Bytes);dropped+=fmg.Entries.RemoveAll(e=>retired.Contains(e.ID));file.Bytes=fmg.Write();
+        }
         var poolNames=PoolNames(input);var npcFile=messages.Files.First(f=>f.Name.Contains("NpcName"));var npcNames=FMG.Read(npcFile.Bytes);
         for(int i=0;i<poolNames.Count;i++) {
             var existing=npcNames.Entries.FirstOrDefault(e=>e.ID==PoolNameFirst+i);
@@ -81,10 +85,11 @@ static class AffixTextFix {
         }
         npcNames.Entries.Sort((a,b)=>a.ID.CompareTo(b.ID));npcFile.Bytes=npcNames.Write();
         bool marker=AddMarker(input,output);
-        if(changed==0&&added==0){Console.WriteLine(marker?"Item text already updated; wrote regulation.bin with the affix bar name marker":"Item text and affix bar name marker already present; nothing written");return;}
+        if(changed==0&&added==0&&dropped==0){Console.WriteLine(marker?"Item text already updated; wrote regulation.bin with the affix bar name marker":"Item text and affix bar name marker already present; nothing written");return;}
         var dir=Path.Combine(output,"msg/zhocn");Directory.CreateDirectory(dir);var path=Path.Combine(dir,"item_dlc02.msgbnd.dcx");messages.Write(path);
         var written=BND4.Read(path).Files;var check=written.ToDictionary(f=>f.ID,f=>FMG.Read(f.Bytes).Entries.ToDictionary(e=>e.ID,e=>e.Text));
         foreach(var (fmg,entries) in before)foreach(var (id,text) in entries) {
+            if((fmg is 10 or 20 or 24)&&retired.Contains(id)){if(check[fmg].ContainsKey(id))throw new Exception($"Retired spell text remains: {fmg}/{id}");continue;}
             if(check[fmg][id]!=((fmg is 11 or 21 or 25)?Expected(fmg,id,text):text))throw new Exception($"Unexpected text change: {fmg}/{id}");
             if(fmg==25&&Variant(id)&&check[fmg][id]?.Split('\n').Length>CaptionLines)throw new Exception($"Weapon caption still exceeds {CaptionLines} lines: {id}");
         }
@@ -96,6 +101,6 @@ static class AffixTextFix {
         foreach(var line in File.ReadAllLines(Path.Combine(input,"affix-v2-catalog.txt")).Select(l=>l.Split('|')).Where(p=>p[0]=="weapon")) {
             if(check[11].GetValueOrDefault(int.Parse(line[1]))!=line[4])throw new Exception($"Weapon name differs from catalog: {line[1]}");
         }
-        Console.WriteLine($"Updated {changed} affix weapon text entries (localized scaling labels, captions fit {CaptionLines} lines) and added {added} bar names (enemies {PoolNameFirst}-{PoolNameFirst+poolNames.Count-1}, {barNames.Count} affix boss titles from {BarNameFirst}){(marker?"; wrote regulation.bin with the affix bar name marker":"")}; all other text unchanged");
+        Console.WriteLine($"Updated {changed} affix weapon text entries (localized scaling labels, captions fit {CaptionLines} lines) and added {added} bar names (enemies {PoolNameFirst}-{PoolNameFirst+poolNames.Count-1}, {barNames.Count} affix boss titles from {BarNameFirst}){(marker?"; wrote regulation.bin with the affix bar name marker":"")}, removed {dropped} retired spell text entries; all other text unchanged");
     }
 }

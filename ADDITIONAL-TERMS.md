@@ -13,7 +13,7 @@ Copyright (C) 2026 tamikip
 **不适用本协议的部分**（保留其原有权利或许可）：
 
 1. **艾尔登法环游戏数据**：`scene-assets/` 中基于游戏文件修改或提取的参数（`regulation.bin`）、地图、事件、对话、文本包、物品图标与游戏原文文本等，其权利属于 FromSoftware 与 Bandai Namco。本项目不授予这些内容的任何权利，使用者须自行拥有正版游戏。
-2. **其他 mod 的派生内容**：`scene-assets/ruby-spells*` 等基于 RNG Lands - Ruby 的内容，原作者未授予再分发许可，不在本协议范围内。
+2. **其他 mod 的内容**：本项目早期私有版本曾集成 RNG Lands - Ruby，公开版已全部移除；`scene-assets/retired-spell-rows.txt` 只记录被移除参数的编号。若今后引入其他 mod 的内容，适用其原作者的许可。
 3. **第三方代码与工具**：`native/vendor/` 中的 fromsoftware-rs、hudhook，以及 Mod Engine 3、Rust 依赖等，适用各自许可证，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 `licenses/`。
 
 ## 二、附加条款（GPL-3.0 第 7 条）
@@ -45,7 +45,7 @@ The parts of this project written by the author are released under the **GNU Gen
 **Not covered** (these keep their original rights or licenses):
 
 1. **ELDEN RING game data:** parameters (`regulation.bin`), maps, events, talk scripts, text archives, item icons and original game text in `scene-assets/` that are modified from or extracted from game files belong to FromSoftware and Bandai Namco. No rights to them are granted; users must own the game.
-2. **Content derived from other mods:** content based on RNG Lands - Ruby (`scene-assets/ruby-spells*` and similar) is not covered; its author has not granted redistribution rights.
+2. **Content from other mods:** earlier private builds included RNG Lands - Ruby; it is entirely removed from this public version, and `scene-assets/retired-spell-rows.txt` only lists the IDs of the removed parameters. Any content from other mods added later keeps its original author's license.
 3. **Third-party code and tools:** fromsoftware-rs and hudhook in `native/vendor/`, Mod Engine 3 and the Rust dependencies keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/`.
 
 ## 2. Additional terms (GPL-3.0 section 7)
