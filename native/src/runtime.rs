@@ -230,6 +230,7 @@ struct Runtime {
     ashes_checked: Option<Instant>,
     larval_retry: Option<Instant>,
     boss_fight: super::boss_affixes::Fight,
+    growth: super::scaling::Growth,
     pending: Option<Pending>,
     spawn_used: bool,
     last_player_probe: Option<(u32, i32, i32, u8, bool)>,
@@ -274,6 +275,7 @@ fn fresh_runtime()->Runtime {
         ashes_checked: None,
         larval_retry: None,
         boss_fight: Default::default(),
+        growth: Default::default(),
         pending: None,
         spawn_used: false,
         last_player_probe: None,
@@ -1563,6 +1565,7 @@ fn tick_locked() {
             let authority=runtime.party.as_ref().is_none_or(|p|p.host());
             let flasks=runtime.flasks.as_ref().map(|f|f.total());
             runtime.boss_fight.tick(world,&handles,authority,flasks);
+            runtime.growth.tick(world,(run.seed,run.act,id),erdtree_tower::scaling::growth_step(run,id),&handles,authority);
             runtime.view.boss_affixes=runtime.boss_fight.title();
         }
         let runtime=&mut *state;

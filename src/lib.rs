@@ -19,6 +19,7 @@ pub mod stormveil;
 pub mod rewards;
 pub mod affixes;
 pub mod boss_affixes;
+pub mod scaling;
 
 pub type RuleResult<T> = Result<T, String>;
 
@@ -173,6 +174,8 @@ pub struct Run {
     pub ruby_spells: bool,
     #[serde(default)]
     pub boss_affixes: bool,
+    #[serde(default)]
+    pub scaling_rules: u8,
     #[serde(default="first_act")]
     pub act:u8,
     pub seed: u64,
@@ -454,6 +457,7 @@ impl Run {
             affix_rules: 2,
             ruby_spells: false,
             boss_affixes: true,
+            scaling_rules: 1,
             act:1,
             seed,
             initial_seed: Some(seed),
@@ -865,7 +869,7 @@ impl Run {
 
     pub fn validate(&self) -> RuleResult<()> {
         let fail = || Err("存档状态不合法或版本不受支持".into());
-        if ![1,2,3,4,5,6].contains(&self.schema)||self.affix_rules>2
+        if ![1,2,3,4,5,6].contains(&self.schema)||self.affix_rules>2||self.scaling_rules>1
             || self.contract.as_ref().is_some_and(|c|!c.valid(self.act))
             || !self.larval_gift.valid(self.act)
             || self.elite_buffs.iter().any(|id|!elite::BUFFS.contains(id))

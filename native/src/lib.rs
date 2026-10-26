@@ -43,6 +43,7 @@ mod reward_delay;
 mod rebirth;
 mod elite;
 mod boss_affixes;
+mod scaling;
 mod reward_ui;
 mod contracts;
 mod rooms;
