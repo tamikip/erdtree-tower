@@ -1,12 +1,14 @@
 using SoulsFormats;
 using System.Numerics;
 string[] modes=["advanced-affix-patch","advanced-affix-verify","affix-patch","affix-text-test","archer-patch","archer-verify","arena-chariot-build","arena-chariot-loading","arena-inspect","arrow-shop-inspect","arrow-shop-stage","balance-patch","bandit-fix","battlefield-inspect","battlefields","bgm-audit","bolus-audit","boss-affix-patch","boss-export","camp-inspect","catalog-assets","chariot-build","chest-text","comet-inspect","contract-audit","contract-patch","descent-patch","descent-verify","full-build","game-version-rebase","hub-standing-patch","inspect","level-inspect","melina-inspect","melina-patch","music-inspect","native-inspect","party-camp-stage","party-collision-inspect","party-completion-patch","party-enemy-audit","party-enemy-events-test","party-enemy-load-patch","party-enemy-stage","party-entity-inspect","party-guard-flags","party-guard-stage","party-guard-test","party-hub-stage","party-model-audit","party-model-patch","party-param-audit","party-param-stage","party-placement-audit","party-scarab-stage","party-service-inspect","party-service-load-patch","party-service-load-test","party-service-stage","party-status-patch","passive-patch","personal-chest-patch","personal-chest-test","personal-events-patch","personal-events-test","pool-inspect","portal-inspect","rarity-assets","recovery-text","resistance-shop-stage","retired-spell-strip","reward-assets","reward-inspect","rune-audit","scaling-correction-fix","scarab-inspect","shop-inspect","shop-order-patch","stormveil-build","stormveil-inspect","talisman-inspect","talisman-menu-text","text-update","tower-scaling-patch","text-inspect","trial-stage","trial-verify","verify-native","weapon-sale-patch"];
+modes=modes.Append("bgm-patch").ToArray();
 if(args.Length<4||!modes.Contains(args[3])||args.Length!=4||args.Take(3).Any(modes.Contains)){Console.Error.WriteLine("Usage: SceneBuilder <game> <output> <cache> <mode>"+(args.Length>3?" (rejected: "+string.Join(" ",args.Skip(3))+")":"")+"\nModes: "+string.Join(" ",modes));Environment.Exit(2);}
 var game=args[0];var output=args[1];var cache=args[2];
 if(args.Contains("personal-events-test")){PersonalEvents.Test();return;}
 if(args.Contains("party-enemy-events-test")){PartyEnemyEvents.Test();return;}
 if(args.Contains("affix-text-test")){AffixTextFix.Test(cache);return;}
 Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(game,"oo2core_6_win64.dll"));
+if(args.Contains("bgm-patch")){MusicAssets.Patch(cache,output);return;}
 if(args.Contains("shop-order-patch")){ShopOrderAssets.Patch(cache,output);return;}
 if(args.Contains("boss-affix-patch")){BossAffixAssets.Patch(cache,output);return;}
 if(args.Contains("tower-scaling-patch")){TowerScalingAssets.Patch(cache,output);return;}
@@ -465,6 +467,7 @@ PartyScarabAssets.Build(output,output);
 MelinaAssets.Patch(output,output);
 StormveilAssets.Build(output);
 ChariotAssets.Build(output);
+MusicAssets.Patch(output,output);
 static void AddAsset(MSBE map,MSBE source,MSBE.Part.Asset donor,uint id,Vector3 pos,Vector3 rot) {
     if(map.Parts.GetEntries().Any(p=>p.EntityID==id))throw new Exception($"Entity ID {id} already occupied");
     var part=(MSBE.Part.Asset)donor.DeepCopy();part.Name=donor.ModelName+"_twr_"+id;part.EntityID=id;part.Position=pos;part.Rotation=rot;

@@ -86,7 +86,7 @@ mod tests {
     }
     #[test]
     fn every_roll_has_a_bar_name_and_the_combo_table_is_current() {
-        assert_eq!(include_str!("../scene-assets/boss-affix-combos.txt"),combo_table(),"regenerate scene-assets/boss-affix-combos.txt from boss_affixes::combo_table()");
+        assert_eq!(include_str!("../scene-assets/boss-affix-combos.txt").replace("\r\n","\n"),combo_table(),"regenerate scene-assets/boss-affix-combos.txt from boss_affixes::combo_table()");
         assert!(BAR_NAME_FIRST+combos().len() as i32*BAR_NAME_STRIDE<9800000);
         for seed in 0..500 {for act in 1..=3 {
             let mut run=Run::new(seed,Class::Samurai);run.act=act;let affixes=roll(&run,boss(&run));

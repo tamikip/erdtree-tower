@@ -21,6 +21,8 @@ pub mod affixes;
 pub mod boss_affixes;
 pub mod scaling;
 
+pub mod music;
+
 pub type RuleResult<T> = Result<T, String>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

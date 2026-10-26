@@ -1,0 +1,14 @@
+{
+  "tracks": 100,
+  "maps": 9,
+  "flagBase": 45020400,
+  "eventBase": 95050000,
+  "pools": {
+    "boss": 28,
+    "battle": 29,
+    "explore": 37,
+    "calm": 6
+  },
+  "unrelatedEventsPreserved": true,
+  "regulationUnchanged": true
+}

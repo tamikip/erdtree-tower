@@ -6,6 +6,8 @@ $nativeTarget = Join-Path $workspace 'work\erdtree-native-build'
 $release = Join-Path $PSScriptRoot 'release-preview'
 $nativeNames = @([regex]::Matches([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'preview.me3')), "path\s*=\s*['""](erdtree_tower_preview_v\d+\.dll)['""]") | ForEach-Object { $_.Groups[1].Value })
 if ($nativeNames.Count -ne 1) { throw 'Expected one versioned native DLL in preview.me3' }
+$hubMap = Join-Path $PSScriptRoot 'scene-assets\map\mapstudio\m11_10_00_00.msb.dcx'
+if (-not (Test-Path -LiteralPath $hubMap -PathType Leaf)) { throw 'Missing hub map patch; service NPCs cannot load.' }
 $rewardCard=Join-Path $PSScriptRoot 'scene-assets\reward-art\card.rgba'
 if ((Get-Item -LiteralPath (Join-Path $PSScriptRoot 'scene-assets\reward-art\rare-blue.rgba')).Length -ne 6294152) {throw 'Invalid blue reward texture'}
 if ((Get-Item -LiteralPath (Join-Path $PSScriptRoot 'scene-assets\reward-art\rarity-cards.rgba')).Length -ne 6291456) {throw 'Invalid reward rarity atlas'}
@@ -34,6 +36,8 @@ Invoke-Cargo (@('test', '--locked', '--release', '--manifest-path', "$PSScriptRo
 Invoke-Cargo (@('test', '--locked', '--manifest-path', "$PSScriptRoot\native\vendor\hudhook\Cargo.toml", '--target-dir', $nativeTarget, '--no-default-features', '--features', 'dx12', '--lib', 'dx12_queue_tests') + $networkArgs)
 & python (Join-Path $PSScriptRoot 'tests\package-native.py')
 if ($LASTEXITCODE -ne 0) { throw 'Native packaging regression checks failed' }
+& python (Join-Path $PSScriptRoot 'tests\hub-assets.py')
+if ($LASTEXITCODE -ne 0) { throw 'Hub map packaging regression checks failed' }
 Invoke-Cargo (@('build', '--locked', '--release', '--manifest-path', "$PSScriptRoot\Cargo.toml", '--target-dir', $coreTarget) + $networkArgs)
 Invoke-Cargo (@('build', '--locked', '--release', '--manifest-path', "$PSScriptRoot\native\Cargo.toml", '--target-dir', $nativeTarget) + $networkArgs)
 $allNotices = [System.Collections.Generic.List[string]]::new()

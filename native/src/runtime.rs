@@ -976,6 +976,11 @@ fn tick_locked() {
     let party_music=state.party.as_ref().is_some_and(|p|p.event.combat_active()||(p.fighting&&p.bound&&!p.victory&&!p.defeated));
     music.active=super::bgm::playing(world.main_player.as_ref().is_some_and(|p|p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()),
         game.warp_requested,state.view.travelling,solo_music&&music_active,party_music&&local_combat);
+    let music_run=state.party_scene.as_ref().filter(|_|state.party.as_ref().is_some_and(|p|p.event.combat_active())).map(|s|&s.run).or(state.view.run.as_ref());
+    let music_wave=state.party.as_ref().and_then(|p|p.event.job.filter(|_|p.event.combat_active())).map_or_else(||music_run.and_then(|r|r.regional_event.guard_slot).unwrap_or(0),|j|j.wave);
+    if let Some(player)=world.main_player.as_ref() {
+        music.track=super::bgm::selection(music_run,i32::from(player.current_block_id),player.chr_ins.modules.data.hp>0&&!player.chr_ins.chr_flags1c5.death_flag(),game.warp_requested,state.view.travelling,music.active,music_wave);
+    }
     super::spirits::set_active(local_combat);
     if let Some(spirits)=encounter_state(&mut state.party_spirits,summon_scope,summon_available) {
         if let Err(error)=spirits.poll(world,summon_scope.unwrap().2,true){super::log(format!("Party spirit registration: {error}"));}

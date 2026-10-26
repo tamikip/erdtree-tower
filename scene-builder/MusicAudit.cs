@@ -14,5 +14,6 @@ static class MusicAudit {
             if(waits.Length!=2||waits.Any(i=>BitConverter.ToUInt32(i.ArgData,4)!=45020969)||waits[0].ArgData[1]!=1||waits[1].ArgData[1]!=0)throw new Exception("Music flag mismatch");
         }
         Console.WriteLine("Verified three arena BGM constructors, local playback and start/stop gates");
+        MusicAssets.Verify(input);
     }
 }

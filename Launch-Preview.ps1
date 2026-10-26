@@ -26,6 +26,7 @@ foreach ($candidate in $candidates) {
     $candidateDll = Get-NativeDllName $candidate
     if (-not $candidateDll) { continue }
     $requiredFiles = @('loader\bin\me3.exe', $candidateDll, 'preview.me3', 'scene-assets\regulation.bin', 'scene-assets\msg\zhocn\menu_dlc02.msgbnd.dcx', 'scene-assets\msg\zhocn\item_dlc02.msgbnd.dcx', 'scene-assets\script\talk\m00_00_00_00.talkesdbnd.dcx', 'scene-assets\event\m11_10_00_00.emevd.dcx', 'scene-assets\enemy-pools.txt', 'scene-assets\oath-art\cards.rgba', 'scene-assets\oath-art\background.rgba', 'scene-assets\oath-art\button.rgba')
+    $requiredFiles += 'scene-assets\map\mapstudio\m11_10_00_00.msb.dcx'
     foreach ($map in @('m45_00_00_00', 'm45_01_00_00', 'm45_02_00_00')) {
         $requiredFiles += "scene-assets\map\mapstudio\$map.msb.dcx"
         $requiredFiles += "scene-assets\event\$map.emevd.dcx"
