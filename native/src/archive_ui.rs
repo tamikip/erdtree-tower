@@ -163,18 +163,22 @@ pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<Texture
         match archive.tab {0=>history(ui,archive,icon,&mut action,moved,ready,s,ox,oy),1=>codex(ui,archive,&layout,icon,moved,s,ox,oy),2=>legacy(ui,archive,icon,moved,ready,s,ox,oy),3=>titles(ui,archive,moved,ready,s,ox,oy),4=>auras(ui,archive,moved,ready,s,ox,oy),5=>weapons(ui,archive,icon,ready,s,ox,oy),_=>crate::transmog_ui::draw(ui,&mut archive.appearance,icon,ready,s,ox,oy)}
         archive.follow=false;
         // 底部：操作提示与返回
-        let hint=match archive.tab {0=>"上下键选择 · Enter / A 查看结算 · Q / E 或 LB / RB 切换分页",1=>"方向键选择 · 鼠标悬停查看 · Q / E 或 LB / RB 切换分页",
-            2=>"上下键选择 · 右键进入护符列表 · Enter / A 或点击选用 · 每个职业单独计算，从下一局开始生效",
-            3=>"上下键选择 · Enter / A 或点击佩戴，再选一次摘下 · 联机时队友头顶的名牌会显示你的称号",
-            4=>"上下键选择 · Enter / A 或点击换上，再选一次摘下 · 只有光效、不加数值，联机时队友也看得到",
-            5=>"PgUp / PgDn 或 LT / RT 分类 · 方向键选择 · Enter / A 开关 · 空格 / Y 升级",
-            _=>"选择部位 · 点击防具立即幻化 · PgUp / PgDn 或 LT / RT 翻页 · 外观按角色保存"};
-        text(60.0,846.0,hint,DIM,0.8,0.0);
+        use crate::pad::{self,Input,Pad};
+        let pages=Input::new(Pad::Triggers,"PgUp / PgDn");
+        let hint:&[(Option<Input>,&str)]=match archive.tab {
+            0=>&[(Some(pad::MOVE_Y),"选择"),(Some(pad::CONFIRM),"查看结算"),(Some(pad::TABS),"切换分页")],
+            1=>&[(Some(pad::MOVE),"选择"),(None,"鼠标悬停查看"),(Some(pad::TABS),"切换分页")],
+            2=>&[(Some(pad::MOVE_Y),"选择"),(Some(Input::new(Pad::DpadX,"→")),"护符列表"),(Some(pad::CONFIRM),"选用"),(None,"每个职业单独计算，下一局生效")],
+            3=>&[(Some(pad::MOVE_Y),"选择"),(Some(pad::CONFIRM),"佩戴 / 摘下"),(None,"联机时队友头顶的名牌会显示你的称号")],
+            4=>&[(Some(pad::MOVE_Y),"选择"),(Some(pad::CONFIRM),"换上 / 摘下"),(None,"只有光效、不加数值，联机时队友也看得到")],
+            5=>&[(Some(pages),"分类"),(Some(pad::MOVE),"选择"),(Some(pad::CONFIRM),"开关"),(Some(Input::new(Pad::Y,"Space")),"升级")],
+            _=>&[(Some(pages),"翻页"),(None,"点击防具立即幻化 · 外观按角色保存")]};
+        pad::hints(ui,p(60.0,856.0),0.0,hint,22.0*s,15.0*s,DIM,pad::Tone::Light);
         let pos=p(1220.0,822.0);let extent=[320.0*s,60.0*s];
         ui.set_cursor_screen_pos(pos);ui.set_window_font_scale(s);
         if ui.invisible_button("archive-close",extent)&&ready {action=Some(ArchiveAction::Close);}
         crate::oath_art::button(&ui.get_window_draw_list(),pos,[pos[0]+extent[0],pos[1]+extent[1]],if ui.is_item_hovered(){255}else{215});
-        text(1380.0,840.0,"返回  [Esc / B]",GOLD,1.0,0.5);
+        crate::pad::label_in(ui,pos,[pos[0]+extent[0],pos[1]+extent[1]],Some(crate::pad::BACK),"返回",GOLD,s,crate::pad::Tone::Light);
     });
     action
 }

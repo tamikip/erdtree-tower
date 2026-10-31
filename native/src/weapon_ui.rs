@@ -96,10 +96,10 @@ pub fn draw(ui:&Ui,data:&Legacy,group:usize,row:usize,notice:Option<&str>,icon:&
     wrapped(ui,p(1128.0,494.0),ox+1494.0*s,"只影响武器类型的相对出率，不提高金紫品质。每类独立升级，下一局生效。",MUTED,0.9*s);
     let can_upgrade=cost.is_some_and(|c|data.training_balance()>=c);
     let label=match cost {None=>"研习已满级".to_string(),Some(c)=>format!("研习升级  ·  {c} 传承点")};
-    if style::button(ui,"weapon-training-upgrade",&label,p(1128.0,580.0),p(1492.0,634.0),if can_upgrade{Tone::Primary}else{Tone::Disabled},s)&&ready {action=Some(WeaponAction::Upgrade);}
+    if style::button_pad(ui,"weapon-training-upgrade",&label,Some(crate::pad::Input::new(crate::pad::Pad::Y,"Space")),p(1128.0,580.0),p(1492.0,634.0),if can_upgrade{Tone::Primary}else{Tone::Disabled},s)&&ready {action=Some(WeaponAction::Upgrade);}
     if let Some(c)=cost.filter(|_|!can_upgrade) {style::centered(ui,&format!("传承点不足 · 还差 {}",c.saturating_sub(data.training_balance())),p(left,640.0),p(right,668.0),RED,0.88,s);}
-    let (toggle,tone)=if level==0 {("升级后即可启用偏好",Tone::Disabled)}else if active {("● 已启用偏好 · 点击关闭",Tone::Normal)}else{("启用此类偏好  [Enter / A]",Tone::Normal)};
-    if style::button(ui,"weapon-training-toggle",toggle,p(1128.0,676.0),p(1492.0,722.0),tone,s)&&ready {action=Some(WeaponAction::Toggle);}
+    let (toggle,tone)=if level==0 {("升级后即可启用偏好",Tone::Disabled)}else if active {("● 已启用偏好 · 关闭",Tone::Normal)}else{("启用此类偏好",Tone::Normal)};
+    if style::button_pad(ui,"weapon-training-toggle",toggle,Some(crate::pad::CONFIRM),p(1128.0,676.0),p(1492.0,722.0),tone,s)&&ready {action=Some(WeaponAction::Toggle);}
     match notice {
         Some(message)=>wrapped(ui,p(1128.0,742.0),ox+1494.0*s,message,GOLD,0.86*s),
         None=>wrapped(ui,p(1128.0,742.0),ox+1494.0*s,"完成旅程获得传承点，花费不扣职业经验。",DIM,0.82*s),

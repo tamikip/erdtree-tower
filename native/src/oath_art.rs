@@ -18,9 +18,10 @@ pub fn initialize(renderer:&mut dyn RenderContext) {
     }
 }
 pub fn ready()->bool {(0..TEXTURES.len()).all(|i|texture(i).is_some())}
-fn image(draw:&DrawListMut<'_>,index:usize,min:[f32;2],max:[f32;2],uv:([f32;2],[f32;2]),light:u8) {
+fn image(draw:&DrawListMut<'_>,index:usize,min:[f32;2],max:[f32;2],uv:([f32;2],[f32;2]),light:u8) {image_alpha(draw,index,min,max,uv,light,255);}
+fn image_alpha(draw:&DrawListMut<'_>,index:usize,min:[f32;2],max:[f32;2],uv:([f32;2],[f32;2]),light:u8,alpha:u8) {
     let Some(id)=texture(index) else{return;};
-    draw.add_image(id,min,max).uv_min(uv.0).uv_max(uv.1).col(ImColor32::from_rgba(light,light,light,255)).build();
+    draw.add_image(id,min,max).uv_min(uv.0).uv_max(uv.1).col(ImColor32::from_rgba(light,light,light,alpha)).build();
 }
 pub fn background(draw:&DrawListMut<'_>,size:[f32;2]) {
     let ratio=size[0]/size[1];let native=1672.0/941.0;
@@ -42,8 +43,10 @@ pub fn class_art(draw:&DrawListMut<'_>,index:usize,min:[f32;2],max:[f32;2],light
     let (u,v)=((1.0-w)*0.5,(1.0-h)*0.3);
     image(draw,3,min,max,([(col+u)/3.0,(row+v)/2.0],[(col+u+w)/3.0,(row+v+h)/2.0]),light);
 }
-pub fn button(draw:&DrawListMut<'_>,min:[f32;2],max:[f32;2],light:u8) {
-    image(draw,2,min,max,([0.0,0.20],[1.0,0.80]),light);
+pub fn button(draw:&DrawListMut<'_>,min:[f32;2],max:[f32;2],light:u8) {button_alpha(draw,min,max,light,255);}
+/// 同 button，可以半透明（入场 / 离场动画用）
+pub fn button_alpha(draw:&DrawListMut<'_>,min:[f32;2],max:[f32;2],light:u8,alpha:u8) {
+    image_alpha(draw,2,min,max,([0.0,0.20],[1.0,0.80]),light,alpha);
 }
 #[cfg(test)]
 pub fn preview(){for (i,t) in TEXTURES.iter().enumerate(){t.store(200000+i,Ordering::Relaxed);}}

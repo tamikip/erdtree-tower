@@ -133,7 +133,7 @@ fn render(ui:&Ui,current:&mut Screen,icon:&mut dyn FnMut(u32)->Option<TextureId>
                 let opened=*opened.get_or_insert(ui.time());
                 ui.text("暂时无法开始联机旅程");ui.separator();ui.spacing();crate::fancy_text::text_wrapped(ui,message);
                 ui.spacing();ui.text("详细原因已记录到 tower-preview.log。");ui.spacing();
-                if (ui.button("确定 [Enter / A]")||ui.is_key_pressed(Key::Enter)||ui.is_key_pressed(Key::GamepadFaceDown)||ui.is_key_pressed(Key::Escape)||ui.is_key_pressed(Key::GamepadFaceRight))&&ui.time()-opened>=0.35 {close=true;}
+                if (crate::pad::button(ui,"notice-ok","确定",Some(crate::pad::CONFIRM),[0.0,0.0])||ui.is_key_pressed(Key::Enter)||ui.is_key_pressed(Key::GamepadFaceDown)||ui.is_key_pressed(Key::Escape)||ui.is_key_pressed(Key::GamepadFaceRight))&&ui.time()-opened>=0.35 {close=true;}
             },
             Screen::TrialRewards{items,opened}=>{
                 let opened=*opened.get_or_insert(ui.time());
@@ -146,7 +146,7 @@ fn render(ui:&Ui,current:&mut Screen,icon:&mut dyn FnMut(u32)->Option<TextureId>
                 if items.is_empty(){crate::fancy_text::text_wrapped(ui,"已拥有全部可获得的护符赐福，本次没有新增赐福。");}
                 crate::fancy_text::text_wrapped(ui,"本局持续生效，不占护符栏位，无需装备。");ui.spacing();
                 let ready=ui.time()-opened>=0.35;
-                if (ui.button("确定，继续选路  [Enter / A]")||ui.is_key_pressed(Key::Enter)||ui.is_key_pressed(Key::GamepadFaceDown))&&ready {close=true;}
+                if (crate::pad::button(ui,"trial-ok","确定，继续选路",Some(crate::pad::CONFIRM),[0.0,0.0])||ui.is_key_pressed(Key::Enter)||ui.is_key_pressed(Key::GamepadFaceDown))&&ready {close=true;}
             },
             Screen::Summary{..}|Screen::Seed{..}|Screen::Law{..}|Screen::Class{..}|Screen::Archive(_)=>unreachable!(),
         }
@@ -250,16 +250,21 @@ fn seed_page(ui:&Ui,input:&mut String,error:&mut String,selected:&mut u8,ready:b
             ui.set_cursor_pos([x+extent[0]*0.5-ui.calc_text_size(label)[0]*0.5,pos[1]+(extent[1]-ui.text_line_height())*0.5]);
             ui.text_colored(if focus{white}else{gold},label);
         }
-        text(mid,556.0,"手柄：方向键选择  ·  A 按下  ·  Y 退格  ·  X 开始  ·  B 取消",muted,0.85);
+        {
+            use crate::pad::{self,Input,Pad};
+            let items:&[(Option<Input>,&str)]=if pad::using_pad() {&[(Some(pad::MOVE),"选择"),(Some(Input::new(Pad::A,"")),"按下"),(Some(Input::new(Pad::Y,"")),"退格"),(Some(pad::START),"开始"),(Some(pad::BACK),"取消")]}
+                else {&[(None,"直接输入数字"),(Some(Input::new(Pad::Y,"Backspace")),"退格"),(Some(pad::START),"开始"),(Some(pad::BACK),"取消")]};
+            pad::hints(ui,[mid,top+566.0*s],0.5,items,24.0*s,16.0*s,muted,pad::Tone::Light);
+        }
         ui.set_window_font_scale(s);
-        let button=|label:&str,x:f32| {
+        let button=|label:&str,input:crate::pad::Input,x:f32| {
             let pos=[x,top+602.0*s];let extent=[320.0*s,65.0*s];
             ui.set_cursor_screen_pos(pos);let clicked=ui.invisible_button(label,extent);
             crate::oath_art::button(&ui.get_window_draw_list(),pos,[pos[0]+extent[0],pos[1]+extent[1]],if ui.is_item_hovered(){255}else{215});
-            text(x+extent[0]*0.5,622.0,label,gold,1.0);clicked
+            crate::pad::label_in(ui,pos,[pos[0]+extent[0],pos[1]+extent[1]],Some(input),label,gold,s,crate::pad::Tone::Light);clicked
         };
-        start|=button("开始旅程  [Enter / X]",mid-340.0*s)&&ready;
-        close|=button("取消  [Esc / B]",mid+20.0*s)&&ready;
+        start|=button("开始旅程",crate::pad::START,mid-340.0*s)&&ready;
+        close|=button("取消",crate::pad::BACK,mid+20.0*s)&&ready;
     });
     if let Some(i)=pressed {seed_key(input,error,SEED_KEYS[i]);}
     if start&&!close {
@@ -345,25 +350,26 @@ fn clip<R>(min:[f32;2],max:[f32;2],f:impl FnOnce()->R)->R {
 }
 /// 大号数字与评级字母：思源黑体粗体按 220 像素加载的那份（fancy_text::display_font）；字体缺失时退回几何笔画
 #[derive(Clone,Copy)]
-struct Big {font:Option<hudhook::imgui::FontId>,top:f32,height:f32,advance:f32,size:f32}
+pub(crate) struct Big {font:Option<hudhook::imgui::FontId>,top:f32,height:f32,advance:f32,size:f32}
 impl Big {
-    fn new(ui:&Ui)->Self {
+    pub(crate) fn new(ui:&Ui)->Self {
         let fallback=Self{font:None,top:0.0,height:1.0,advance:GLYPH_WIDTH+GLYPH_GAP,size:1.0};
         let Some(font)=crate::fancy_text::display_font() else {return fallback};
         let _font=ui.push_font(font);
         use hudhook::imgui::sys::{ImFont_FindGlyphNoFallback,igGetFont};
         unsafe {
+            // 显示字号要乘上全局缩放（正文按屏幕密度加载、全局缩放为 1/密度）
             let f=igGetFont();let size=(*f).FontSize;
             let zero=ImFont_FindGlyphNoFallback(f,'0' as _);if zero.is_null()||size<=0.0 {return fallback;}
             let advance=('0'..='9').map(|c|{let g=ImFont_FindGlyphNoFallback(f,c as _);if g.is_null(){0.0}else{(*g).AdvanceX}}).fold(0.0f32,f32::max);
-            Self{font:Some(font),top:(*zero).Y0/size,height:((*zero).Y1-(*zero).Y0)/size,advance:advance/size,size}
+            Self{font:Some(font),top:(*zero).Y0/size,height:((*zero).Y1-(*zero).Y0)/size,advance:advance/size,size:size*ui.io().font_global_scale}
         }
     }
     /// 字高为 h 时一个字的格宽（与 h 同单位）
-    fn cell(&self,h:f32)->f32 {if self.font.is_some() {self.advance/self.height*h}else{(GLYPH_WIDTH+GLYPH_GAP)*h}}
-    fn width(&self,count:usize,h:f32)->f32 {self.cell(h)*count as f32-if self.font.is_some(){0.0}else{GLYPH_GAP*h}}
+    pub(crate) fn cell(&self,h:f32)->f32 {if self.font.is_some() {self.advance/self.height*h}else{(GLYPH_WIDTH+GLYPH_GAP)*h}}
+    pub(crate) fn width(&self,count:usize,h:f32)->f32 {self.cell(h)*count as f32-if self.font.is_some(){0.0}else{GLYPH_GAP*h}}
     /// 在格子里居中画一个字：x 为格子左边，top 为字顶，h 为字高（都是屏幕像素）
-    fn draw(&self,ui:&Ui,c:char,x:f32,top:f32,h:f32,color:[f32;4]) {
+    pub(crate) fn draw(&self,ui:&Ui,c:char,x:f32,top:f32,h:f32,color:[f32;4]) {
         if color[3]<=0.0 {return;}
         let piece=c.to_string();
         match self.font {
@@ -380,7 +386,7 @@ impl Big {
             },
         }
     }
-    fn draw_text(&self,ui:&Ui,text:&str,x:f32,top:f32,h:f32,color:[f32;4]) {for (i,c) in text.chars().enumerate() {self.draw(ui,c,x+i as f32*self.cell(h),top,h,color);}}
+    pub(crate) fn draw_text(&self,ui:&Ui,text:&str,x:f32,top:f32,h:f32,color:[f32;4]) {for (i,c) in text.chars().enumerate() {self.draw(ui,c,x+i as f32*self.cell(h),top,h,color);}}
 }
 /// 结算页的音效与交互进度：一次性音效、分数滚动上一次“嗒”的时间、每一位是否已停、上一帧悬停的按钮、
 /// 余烬下划线的当前位置、按钮悬停的过渡、离场开始的时间
@@ -718,7 +724,7 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
         text(110.0,828.0,seed_label,fade(muted,k),1.05,0.0);
         typed(110.0+measure(seed_label,1.05)+14.0,828.0,&record.seed.to_string(),white,1.05,buttons,80.0);
         // 按钮：黑体粗体、字距拉开（参考危机合约）；悬停时亮色从左往右铺满
-        let button=|label:&str,key:&str,x0:f32,x1:f32,primary:bool,appear:f32,hover_k:f32|->(bool,bool) {
+        let button=|label:&str,key:crate::pad::Input,x0:f32,x1:f32,primary:bool,appear:f32,hover_k:f32|->(bool,bool) {
             let lift=(1.0-appear)*18.0;let (min,max)=(p(x0,816.0+lift),p(x1,868.0+lift));
             ui.set_cursor_screen_pos(min);ui.set_window_font_scale(s);let clicked=ui.invisible_button(label,[max[0]-min[0],max[1]-min[1]]);
             let hover=ui.is_item_hovered();let draw=ui.get_window_draw_list();let a=appear.min(1.0);
@@ -738,29 +744,21 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
             let widths:Vec<f32>=label.chars().map(|c|ui.calc_text_size(c.to_string())[0]).collect();
             let width=widths.iter().sum::<f32>()+gap*(widths.len().saturating_sub(1)) as f32;
             let height=ui.calc_text_size(label)[1];
-            // 手柄按键：标签左边一个实心圆，里面写键名（主按钮深色圆金字，次按钮白色圆深色字），悬停时略放大
-            let radius=(12.5+1.5*hover_k)*s;let badge_gap=12.0*s;
-            let mut x=(min[0]+max[0]-width-radius*2.0-badge_gap)*0.5;let mid=(min[1]+max[1])*0.5;
-            let center=[x+radius,mid];
-            {
-                let draw=ui.get_window_draw_list();
-                let (fill,letter,rim)=if primary {([0.07,0.07,0.06,1.0],gold,[0.07,0.07,0.06,1.0])}else{([0.93,0.91,0.86,1.0],[0.07,0.07,0.06,1.0],white)};
-                draw.add_circle(center,radius,rgba(fill,a)).filled(true).num_segments(32).build();
-                draw.add_circle(center,radius+2.5*s,rgba(rim,0.35*a)).thickness(1.2*s).num_segments(32).build();
-                drop(draw);
-                ui.set_window_font_scale(scale*0.82*s);let size=ui.calc_text_size(key);
-                ui.set_cursor_screen_pos([center[0]-size[0]*0.5,center[1]-size[1]*0.52]);ui.text_colored(fade(letter,a),key);
-            }
-            x+=radius*2.0+badge_gap;let y=mid-height*0.5;
+            // 按键标签（crate::pad，手柄 / 键盘随最后用的设备切换）：主按钮深底金字，次按钮浅底深字，悬停时略放大
+            let h=(25.0+3.0*hover_k)*s;let badge=crate::pad::width(ui,key,h);let badge_gap=if badge>0.0 {12.0*s}else{0.0};
+            let mut x=(min[0]+max[0]-width-badge-badge_gap)*0.5;let mid=(min[1]+max[1])*0.5;
+            crate::pad::badge(ui,x,mid,h,key,if primary {crate::pad::Tone::Dark}else{crate::pad::Tone::Light},a);
+            ui.set_window_font_scale(scale*s);
+            x+=badge+badge_gap;let y=mid-height*0.5;
             ui.set_window_font_scale(scale*s);
             for (c,w) in label.chars().zip(&widths) {ui.set_cursor_screen_pos([x,y]);ui.text_colored(ink,c.to_string());x+=w+gap;}
             drop(font);
             (clicked,hover)
         };
-        let (primary,key,keys):(&str,&str,&[Key])=if from_archive {("返回档案","B",&[Key::Escape,Key::GamepadFaceRight,Key::Enter,Key::GamepadFaceDown])}else{("返回大赐福","A",&[Key::Enter,Key::GamepadFaceDown])};
+        let (primary,key,keys):(&str,crate::pad::Input,&[Key])=if from_archive {("返回档案",crate::pad::BACK,&[Key::Escape,Key::GamepadFaceRight,Key::Enter,Key::GamepadFaceDown])}else{("返回大赐福",crate::pad::CONFIRM,&[Key::Enter,Key::GamepadFaceDown])};
         let (clicked,hover)=button(primary,key,1112.0,1342.0,true,pop(elapsed,buttons,0.35),hover_t[0]);if hover{hovered=Some(0);}
         close=clicked||keys.iter().any(|k|ui.is_key_pressed_no_repeat(*k));
-        let (clicked,hover)=button("复制种子","Y",1362.0,1540.0,false,pop(elapsed,buttons+0.08,0.35),hover_t[1]);if hover{hovered=Some(1);}
+        let (clicked,hover)=button("复制种子",crate::pad::Input::new(crate::pad::Pad::Y,""),1362.0,1540.0,false,pop(elapsed,buttons+0.08,0.35),hover_t[1]);if hover{hovered=Some(1);}
         if clicked||ui.is_key_pressed_no_repeat(Key::GamepadFaceUp) {ui.set_clipboard_text(record.seed.to_string());copy=true;}
     });
     // 按钮悬停的过渡（约 0.15 秒铺满）与音效

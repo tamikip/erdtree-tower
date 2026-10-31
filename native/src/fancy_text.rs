@@ -45,6 +45,19 @@ pub const DISPLAY_CHARS:[u32;15]=[0x30,0x39,0x41,0x44,0x53,0x53,0x2B,0x2B,0x2E,0
 static DISPLAY_FONT:std::sync::Mutex<Option<TitleFont>>=std::sync::Mutex::new(None);
 pub fn set_display_font(font:TitleFont) {if let Ok(mut slot)=DISPLAY_FONT.lock(){*slot=Some(font);}}
 pub fn display_font()->Option<hudhook::imgui::FontId> {DISPLAY_FONT.lock().ok().and_then(|f|*f).map(|f|f.0)}
+/// 大标题黑体：同一份思源黑体子集按 48 像素只加载 ASCII 与下面这些字（苦难律法页的标题、分类名、按钮），大字不放大位图
+pub const HEADING_PIXELS:f32=48.0;
+pub const HEADING_CHARS:&str="苦难律法已选项敌人我方经济规则开始旅程";
+static HEADING_FONT:std::sync::Mutex<Option<TitleFont>>=std::sync::Mutex::new(None);
+pub fn set_heading_font(font:TitleFont) {if let Ok(mut slot)=HEADING_FONT.lock(){*slot=Some(font);}}
+pub fn heading_font()->Option<hudhook::imgui::FontId> {HEADING_FONT.lock().ok().and_then(|f|*f).map(|f|f.0)}
+/// 大标题黑体的字形范围（ASCII 加 HEADING_CHARS）
+pub fn heading_ranges()->&'static [u32] {
+    static RANGES:std::sync::LazyLock<Vec<u32>>=std::sync::LazyLock::new(||ranges(HEADING_CHARS));
+    &RANGES
+}
+/// 大标题黑体已加载，且这段文字的每个字都在里面
+pub fn heading_covers(text:&str)->bool {heading_font().is_some()&&text.chars().all(|c|(' '..='~').contains(&c)||HEADING_CHARS.contains(c))}
 /// 黑体子集里有的字（ui-sans-glyphs.txt；ASCII 都有）
 static SANS_GLYPHS:std::sync::LazyLock<std::collections::HashSet<char>>=std::sync::LazyLock::new(||
     std::fs::read_to_string(button_font_path().with_file_name("ui-sans-glyphs.txt")).unwrap_or_default().chars().collect());

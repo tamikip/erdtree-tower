@@ -1,0 +1,10 @@
+界面音效素材：Kenney（www.kenney.nl）的免费音效包，均为 Creative Commons Zero（CC0）授权
+http://creativecommons.org/publicdomain/zero/1.0/
+
+- Interface Sounds 1.0  https://kenney.nl/assets/interface-sounds   （interface-sounds_*.ogg）
+- UI Audio              https://kenney.nl/assets/ui-audio           （ui-audio_*.ogg）
+- Casino Audio          https://kenney.nl/assets/casino-audio       （casino-audio_*.ogg）
+- Impact Sounds         https://kenney.nl/assets/impact-sounds      （impact-sounds_*.ogg）
+
+文件名为“包名_原文件名”，内容未改动；scene-builder/ui_sfx.py 把它们转成 scene-assets/sfx/*.wav。
+CC0 不要求署名，这里注明出处以示感谢。

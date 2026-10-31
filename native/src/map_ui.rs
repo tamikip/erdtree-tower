@@ -230,11 +230,13 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, _vitals: &str) {
             }
             crate::map_ink::toolbar(ui,erdtree_tower::map_drawing::Scope::of(run),[size[0]-right+margin,555.0*scale],scale,view.ready&&!view.busy&&run.phase==Phase::Map);
             ui.set_cursor_pos([size[0]-right+margin,size[1]-126.0*scale]);
-            if ui.button_with_size(format!("档案  [{}]",crate::options::label(erdtree_tower::options::Hotkey::Archive)),[right-2.0*margin,44.0*scale])||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadBack) {
+            let archive_key=crate::pad::Input::new(crate::pad::Pad::View,crate::options::label(erdtree_tower::options::Hotkey::Archive));
+            if crate::pad::button(ui,"map-archive","档案",Some(archive_key),[right-2.0*margin,44.0*scale])||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadBack) {
                 crate::run_screen::archive_entry();
             }
             ui.set_cursor_pos([size[0]-right+margin,size[1]-74.0*scale]);
-            if ui.button_with_size(format!("构筑  [{} / Y]",crate::options::label(erdtree_tower::options::Hotkey::Build)),[right-2.0*margin,44.0*scale])||ui.is_key_pressed_no_repeat(crate::options::key(erdtree_tower::options::Hotkey::Build))||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadFaceUp) {
+            let build_key=crate::pad::Input::new(crate::pad::Pad::Y,crate::options::label(erdtree_tower::options::Hotkey::Build));
+            if crate::pad::button(ui,"map-build","构筑",Some(build_key),[right-2.0*margin,44.0*scale])||ui.is_key_pressed_no_repeat(crate::options::key(erdtree_tower::options::Hotkey::Build))||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadFaceUp) {
                 crate::build_panel::toggle();
             }
             ui.set_cursor_pos([left+margin,margin]);

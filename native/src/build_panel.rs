@@ -113,8 +113,8 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
         let (a, b) = ([corner[0] + 9.0 * s, corner[1] + 9.0 * s], [corner[0] + 21.0 * s, corner[1] + 21.0 * s]);
         let draw = ui.get_window_draw_list();
         draw.add_line(a, b, color).thickness(1.8 * s).build();draw.add_line([a[0], b[1]], [b[0], a[1]], color).thickness(1.8 * s).build();drop(draw);
-        ui.set_window_font_scale(0.75 * s);ui.set_cursor_screen_pos([pos[0] + 26.0 * s, pos[1] + 28.0 * s]);
-        ui.text_colored(MUTED, format!("{} / Y 开关", crate::options::label(erdtree_tower::options::Hotkey::Build)));
+        let build_key = crate::pad::Input::new(crate::pad::Pad::Y, crate::options::label(erdtree_tower::options::Hotkey::Build));
+        crate::pad::hints(ui, [pos[0] + 26.0 * s, pos[1] + 36.0 * s], 0.0, &[(Some(build_key), "开关")], 20.0 * s, 14.0 * s, MUTED, crate::pad::Tone::Light);
         ui.set_cursor_screen_pos([pos[0] + 22.0 * s, pos[1] + 84.0 * s]);
         let _child = ui.push_style_color(StyleColor::ChildBg, [0.0, 0.0, 0.0, 0.0]);
         let _track = ui.push_style_color(StyleColor::ScrollbarBg, [0.0, 0.0, 0.0, 0.0]);

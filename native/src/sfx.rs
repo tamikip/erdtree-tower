@@ -1,4 +1,4 @@
-// 界面音效：scene-assets/sfx/*.wav（scene-builder/summary_sfx.py 合成），用 Windows 自带的 winmm（waveOut）从内存播放。
+// 界面音效：scene-assets/sfx/*.wav（Kenney 的 CC0 现成音效，scene-builder/ui_sfx.py 从 art-source/sfx-kenney/ 转换），用 Windows 自带的 winmm（waveOut）从内存播放。
 // 每次播放单独开一个输出句柄，由系统混音，几个音效可以叠在一起；播完由后台线程关掉。音量按 tower-options.ini 的 sfx（0–100）在载入时缩放。
 use std::{collections::HashMap,sync::{LazyLock,atomic::{AtomicUsize,Ordering}},time::{Duration,Instant}};
 

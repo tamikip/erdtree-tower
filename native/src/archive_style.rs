@@ -27,7 +27,10 @@ pub fn centered(ui:&Ui,label:&str,min:[f32;2],max:[f32;2],color:[f32;4],scale:f3
 #[derive(Clone,Copy,PartialEq,Eq)]
 pub enum Tone {Normal,Primary,Disabled}
 /// 主题按钮：暗底金边，悬停时边框与文字变亮、底色从左往右铺一层金；Primary 的底色带金，Disabled 灰掉且点不动
-pub fn button(ui:&Ui,id:&str,label:&str,min:[f32;2],max:[f32;2],tone:Tone,s:f32)->bool {
+pub fn button(ui:&Ui,id:&str,label:&str,min:[f32;2],max:[f32;2],tone:Tone,s:f32)->bool {button_pad(ui,id,label,None,min,max,tone,s)}
+/// 同 button，文字左边加一个按键标签（手柄 / 键盘随最后用的设备切换）
+#[allow(clippy::too_many_arguments)]
+pub fn button_pad(ui:&Ui,id:&str,label:&str,input:Option<crate::pad::Input>,min:[f32;2],max:[f32;2],tone:Tone,s:f32)->bool {
     ui.set_cursor_screen_pos(min);ui.set_window_font_scale(s);
     let clicked=ui.invisible_button(id,[max[0]-min[0],max[1]-min[1]]);let hover=ui.is_item_hovered()&&tone!=Tone::Disabled;
     let draw=ui.get_window_draw_list();
@@ -46,7 +49,8 @@ pub fn button(ui:&Ui,id:&str,label:&str,min:[f32;2],max:[f32;2],tone:Tone,s:f32)
         for x in [min[0],max[0]] {draw.add_polyline(vec![[x,y-r],[x+r,y],[x,y+r],[x-r,y]],border).filled(true).build();}
     }
     drop(draw);
-    centered(ui,label,min,max,match tone {Tone::Disabled=>DIM,_ if hover=>[1.0,0.95,0.8,1.0],Tone::Primary=>GOLD,Tone::Normal=>WHITE},1.0,s);
+    let color=match tone {Tone::Disabled=>DIM,_ if hover=>[1.0,0.95,0.8,1.0],Tone::Primary=>GOLD,Tone::Normal=>WHITE};
+    crate::pad::label_in(ui,min,max,input.filter(|_|tone!=Tone::Disabled),label,color,s,crate::pad::Tone::Light);
     clicked&&tone!=Tone::Disabled
 }
 /// 右上角的金色角标（如“当前外观”）：right_top 为卡片右上角

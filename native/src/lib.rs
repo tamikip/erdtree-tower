@@ -21,6 +21,7 @@ use hudhook::{
 };
 
 mod blessings;
+mod pad;
 mod options;
 mod stats;
 mod enemies;
@@ -297,14 +298,20 @@ impl ImguiRenderLoop for TowerPreview {
             },
             Err(error)=>log(format!("Title font missing: {error}")),
         }
-        // 结算页黑体：思源黑体粗体的子集（约一千字），正文按 26 像素加载；大号数字与评级字母另按 220 像素只加载这几个字
+        // 结算页黑体：思源黑体粗体的子集（约一千字），正文按 26 像素加载；大标题按 48 像素只加载标题用字；大号数字与评级字母另按 220 像素只加载这几个字
         match std::fs::read(fancy_text::button_font_path()) {
             Ok(font)=>{
                 fancy_text::set_button_font(fancy_text::TitleFont(ctx.fonts().add_font(&[FontSource::TtfData {
                     data: &font,
-                    size_pixels: fancy_text::SANS_PIXELS,
+                    // 和正文一样按屏幕密度加载（全局缩放是 1/密度），高分辨率下不糊、也不会变小
+                    size_pixels: fancy_text::SANS_PIXELS*font_density,
                     // 字体里只有子集里的字，按全范围加载也只栅格化这些字
                     config: Some(FontConfig {glyph_ranges: FontGlyphRanges::chinese_full(),..Default::default()}),
+                }])));
+                fancy_text::set_heading_font(fancy_text::TitleFont(ctx.fonts().add_font(&[FontSource::TtfData {
+                    data: &font,
+                    size_pixels: fancy_text::HEADING_PIXELS*font_density,
+                    config: Some(FontConfig {glyph_ranges: FontGlyphRanges::from_slice(fancy_text::heading_ranges()),..Default::default()}),
                 }])));
                 fancy_text::set_display_font(fancy_text::TitleFont(ctx.fonts().add_font(&[FontSource::TtfData {
                     data: &font,
@@ -318,6 +325,8 @@ impl ImguiRenderLoop for TowerPreview {
 
     fn render(&mut self, ui: &mut Ui) {
         diagnostics::frame();
+        // 按键提示跟着最后用的设备切换（手柄 / 键鼠）
+        pad::update(ui);
         if ui.is_key_pressed_no_repeat(options::key(Hotkey::Settle)) {
             if runtime::PLAYER_READY.load(Ordering::Relaxed) {
                 runtime::QUICK_END.store(true,Ordering::Relaxed);

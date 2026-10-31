@@ -12,7 +12,7 @@ from fontTools.ttLib import TTCollection
 from fontTools.subset import Options, Subsetter
 
 LABELS = "返回大赐福档案复制种子再次挑战开始新旅程确定取消本局评分苦难律法总分新纪录历史最高登顶成功旅程终结暂离结算"
-SOURCES = ["native/src/run_screen.rs", "native/src/map_ui.rs", "src/embers.rs", "src/contracts.rs", "src/law.rs", "src/score.rs",
+SOURCES = ["native/src/run_screen.rs", "native/src/law_ui.rs", "native/src/map_ui.rs", "src/embers.rs", "src/contracts.rs", "src/law.rs", "src/score.rs",
            "src/journal.rs", "src/rewards.rs", "scene-assets/boss-pool.txt", "scene-assets/enemy-pools.txt"]
 DISPLAY = "0123456789SABCD+×."
 source, root = Path(sys.argv[1]), Path(sys.argv[2])
