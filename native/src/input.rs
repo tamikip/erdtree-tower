@@ -19,10 +19,13 @@ impl ActionWindow {
         active || self.last_active.is_some_and(|at|now.saturating_sub(at)<std::time::Duration::from_millis(350))
     }
 }
+/// 界面打开期间锁住角色：禁止攻击等动作（disabled_secondary_actions）与移动（disabled_movement）。
+/// 正常情况下游戏输入已经被 PadCapture 停掉，这是第二道保险：即使输入漏到游戏（例如别的模组把轮询又打开），
+/// 在三选一等界面按左右也不会让角色走动或出招。关闭后 350 毫秒再还原成打开前的状态
 pub struct ActionGuard {
     clock:std::time::Instant,
     window:ActionWindow,
-    saved:Option<(usize,eldenring::cs::FieldInsHandle,bool)>,
+    saved:Option<(usize,eldenring::cs::FieldInsHandle,bool,bool)>,
 }
 impl Default for ActionGuard {
     fn default()->Self {Self{clock:std::time::Instant::now(),window:ActionWindow::default(),saved:None}}
@@ -30,12 +33,14 @@ impl Default for ActionGuard {
 impl ActionGuard {
     pub fn update(&mut self,chr:&mut eldenring::cs::ChrIns,active:bool) {
         let owner=std::ptr::from_ref(chr) as usize;
-        if self.saved.is_some_and(|(address,handle,_)|address!=owner||handle!=chr.field_ins_handle) {self.saved=None;}
+        if self.saved.is_some_and(|(address,handle,_,_)|address!=owner||handle!=chr.field_ins_handle) {self.saved=None;}
         if self.window.blocked(self.clock.elapsed(),active) {
-            self.saved.get_or_insert((owner,chr.field_ins_handle,chr.debug_flags.disabled_secondary_actions()));
+            self.saved.get_or_insert((owner,chr.field_ins_handle,chr.debug_flags.disabled_secondary_actions(),chr.debug_flags.disabled_movement()));
             chr.debug_flags.set_disabled_secondary_actions(true);
-        } else if let Some((_,_,previous))=self.saved.take() {
-            chr.debug_flags.set_disabled_secondary_actions(previous);
+            chr.debug_flags.set_disabled_movement(true);
+        } else if let Some((_,_,actions,movement))=self.saved.take() {
+            chr.debug_flags.set_disabled_secondary_actions(actions);
+            chr.debug_flags.set_disabled_movement(movement);
         }
     }
 }

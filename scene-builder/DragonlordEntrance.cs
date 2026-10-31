@@ -5,7 +5,8 @@ static class DragonlordEntrance {
     const uint Basis=45020000,Active=45007990,Crossed=45007991,Gate=Basis+1950;
     const uint CountdownSfx=Basis+2960,Placed=45007992;
     public static Vector3 WorldPosition(uint id,Func<Vector3,Vector3> place)=>id switch {
-        Basis+1900=>new(13.193273f,1009.634827f,346.978882f),
+        // 传送门与其他战斗场地一样放在场地正中，战斗中关闭、胜利后出现（PortalReveal）
+        Basis+1900=>place(new Vector3(0,0.03f,0)),
         Basis+1810=>new(15.993273f,1009.634827f,346.978882f),
         _=>place(Position(id)),
     };

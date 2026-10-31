@@ -1,23 +1,27 @@
 use erdtree_tower::map_drawing::{self,Canvas,Edit,Point,Scope,StrokeId,MAX_POINTS};
-use hudhook::imgui::{ImColor32,MouseButton,StyleColor,Ui};
+use hudhook::imgui::{ImColor32,MouseButton,Ui};
 #[derive(Clone,Copy,Default,PartialEq,Eq)]
 pub enum Mode {#[default] Select,Draw,Erase}
 #[derive(Default)]
 struct Ink {scope:Option<Scope>,mode:Mode,draft:Vec<Point>,erased:Vec<StrokeId>,active:bool,last_time:f64}
 thread_local! {static INK:std::cell::RefCell<Ink>=std::cell::RefCell::new(Ink::default());}
-pub fn toolbar(ui:&Ui,scope:Scope,pos:[f32;2],scale:f32,ready:bool) {
+/// 地图工具：选路 / 划线 / 擦除三个并排的主题按钮（当前模式金底），下面一行当前模式的说明。
+/// pos 为屏幕坐标，size 为整排按钮的宽高
+pub fn toolbar(ui:&Ui,scope:Scope,pos:[f32;2],size:[f32;2],scale:f32,ready:bool) {
     INK.with(|ink| {
         let mut ink=ink.borrow_mut();
         if ink.scope!=Some(scope){*ink=Ink{scope:Some(scope),..Default::default()};}
-        ui.set_cursor_pos(pos);
-        let _disabled=ui.begin_disabled(!ready);
+        let gap=6.0*scale;let w=(size[0]-gap*2.0)/3.0;
         for (i,(mode,label)) in [(Mode::Select,"选路"),(Mode::Draw,"划线"),(Mode::Erase,"擦除")].into_iter().enumerate() {
-            ui.set_cursor_pos([pos[0],pos[1]+i as f32*40.0*scale]);
-            let _selected=(ink.mode==mode).then(||ui.push_style_color(StyleColor::Button,[0.53,0.40,0.16,1.0]));
-            if ui.button_with_size(label,[108.0*scale,32.0*scale]) {ink.mode=mode;ink.active=false;ink.draft.clear();ink.erased.clear();}
+            let min=[pos[0]+i as f32*(w+gap),pos[1]];let max=[min[0]+w,pos[1]+size[1]];
+            let tone=if !ready {crate::archive_style::Tone::Disabled}else if ink.mode==mode {crate::archive_style::Tone::Primary}else{crate::archive_style::Tone::Normal};
+            ui.set_window_font_scale(0.9*scale);
+            if crate::archive_style::button(ui,&format!("map-tool-{i}"),label,min,max,tone,0.9*scale) {ink.mode=mode;ink.active=false;ink.draft.clear();ink.erased.clear();}
         }
-        ui.set_cursor_pos([pos[0],pos[1]+122.0*scale]);
-        crate::fancy_text::text_wrapped(ui,match ink.mode {Mode::Select=>"拖动地图或滚轮翻页",Mode::Draw=>"按住左键划线，松开同步",Mode::Erase=>"按住左键擦除整条笔迹"});
+        let hint=match ink.mode {Mode::Select=>"拖动地图或滚轮翻页",Mode::Draw=>"按住左键划线，松开同步",Mode::Erase=>"按住左键擦除整条笔迹"};
+        ui.set_window_font_scale(14.0/20.0*scale);let tw=ui.calc_text_size(hint)[0];
+        ui.set_cursor_screen_pos([pos[0]+(size[0]-tw).max(0.0)*0.5,pos[1]+size[1]+10.0*scale]);ui.text_colored(crate::archive_style::MUTED,hint);
+        ui.set_window_font_scale(scale);
     });
 }
 pub fn selecting()->bool {INK.with(|ink|ink.borrow().mode==Mode::Select)}

@@ -17,9 +17,11 @@ modes=modes.Append("arena-candidates").ToArray();
 modes=modes.Append("stormveil-no-runes-patch").ToArray();
 modes=modes.Append("stormveil-sidewall-patch").ToArray();
 modes=modes.Append("title-texture-patch").ToArray();
+modes=modes.Append("portal-reveal-test").ToArray();
 if(args.Length<4||!modes.Contains(args[3])||args.Length!=4||args.Take(3).Any(modes.Contains)){Console.Error.WriteLine("Usage: SceneBuilder <game> <output> <cache> <mode>"+(args.Length>3?" (rejected: "+string.Join(" ",args.Skip(3))+")":"")+"\nModes: "+string.Join(" ",modes));Environment.Exit(2);}
 var game=args[0];var output=args[1];var cache=args[2];
 if(args.Contains("personal-events-test")){PersonalEvents.Test();return;}
+if(args.Contains("portal-reveal-test")){PortalReveal.Test();return;}
 if(args.Contains("dormant-loading-test")){DormantLoadingAssets.Test();return;}
 if(args.Contains("party-enemy-events-test")){PartyEnemyEvents.Test();return;}
 if(args.Contains("affix-text-test")){AffixTextFix.Test(cache);return;}

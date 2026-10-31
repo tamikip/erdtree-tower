@@ -1354,12 +1354,8 @@ fn tick_locked() {
     if world.summon_buddy_manager.player_has_alive_summon {
         state.summon_seen=Some(Instant::now());
         if ash_fighting {
-            for raw in [world.summon_buddy_manager.active_summon_goods_id,world.summon_buddy_manager.requested_summon_goods_id] {
-                let id=raw as u32&0x0fffffff;
-                if raw>0&&state.ash_before.iter().any(|(item,_)|*item==id)&&state.ash_used!=Some(id) {
-                    state.ash_used=Some(id);super::log(format!("Spirit ash used: goods={id}"));break;
-                }
-            }
+            let candidates=[world.summon_buddy_manager.active_summon_goods_id,world.summon_buddy_manager.requested_summon_goods_id];
+            if let Some(id)=first_used_ash(state.ash_used,&state.ash_before,candidates) {state.ash_used=Some(id);super::log(format!("Spirit ash used: goods={id}"));}
         }
     }
     // 双生的灵唤铃：第二只的召唤被原版拒绝时，补回白扣的骨灰（扣除可能稍晚于请求，5 秒内重试）
@@ -2021,7 +2017,7 @@ fn tick_locked() {
             state.reward_wait = Some((Instant::now(), next));
             state.reward_portal=Default::default();
             state.view.busy = true;
-            report(&mut state, format!("敌人已击败，3 秒后激活传送门。{healed}"));
+            report(&mut state, format!("敌人已击败，传送门即将出现。{healed}"));
         }
         (Outcome::PlayerDied, Ok(())) => {
             record(&next);
@@ -3280,6 +3276,12 @@ fn spirit_peak(run:&Run,inventory:u8)->u8 {
 }
 /// 召唤师「群灵」：战斗胜利时召唤物还活着，这次召唤不消耗骨灰。
 /// 胜利前两秒内仍存活也计入；离场后再请求返还，保留资格直到背包确认或下一场战斗。
+/// 这场战斗第一次召唤用的骨灰（召唤师「群灵」胜利时补回的就是它）：已经记下就不再改。
+/// 双生的灵唤铃召唤第二只时 requested / active 会换成第二个骨灰，不能覆盖第一个——第二个骨灰按余烬说明照常消耗
+fn first_used_ash(recorded:Option<u32>,before:&[(u32,u32)],candidates:[i32;2])->Option<u32> {
+    if recorded.is_some() {return None;}
+    candidates.into_iter().filter(|raw|*raw>0).map(|raw|raw as u32&0x0fffffff).find(|id|before.iter().any(|(item,_)|item==id))
+}
 fn keep_summoned_ash(world:&mut WorldChrMan,run:&erdtree_tower::Run,summon_seen:Option<Instant>,before:&[(u32,u32)],used:Option<u32>)->bool {
     if !run.summoner() {return false;}
     let alive=world.summon_buddy_manager.player_has_alive_summon||summon_seen.is_some_and(|t|t.elapsed()<Duration::from_secs(2));
@@ -3640,6 +3642,20 @@ fn request_travel(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn summoner_refund_keeps_the_first_ash_when_a_twin_spirit_follows() {
+        use super::first_used_ash;
+        let before=[(212000,1),(232000,1)];
+        // 第一只召唤：记下第一个骨灰
+        assert_eq!(first_used_ash(None,&before,[212000,0]),Some(212000));
+        // 双生的灵唤铃召唤第二只：requested / active 换成第二个骨灰，已经记下的第一个不变
+        assert_eq!(first_used_ash(Some(212000),&before,[212000,232000]),None);
+        assert_eq!(first_used_ash(Some(212000),&before,[232000,232000]),None);
+        // 请求里带分类高位、或不在开战快照里的骨灰都按原规则处理
+        assert_eq!(first_used_ash(None,&before,[0x4000_0000|232000,0]),Some(232000));
+        assert_eq!(first_used_ash(None,&before,[999000,0]),None);
+        assert_eq!(first_used_ash(None,&before,[0,212000]),Some(212000));
+    }
     #[test]
     fn flask_sync_resumes_on_arrival_before_entering_the_spawn_circle() {
         let mut travel=crate::travel::Travel::new(0);

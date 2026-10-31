@@ -4,6 +4,8 @@ using System.Globalization;
 
 static class BattlefieldAssets {
     static string[][] Rows()=>File.ReadAllLines("outputs/erdtree-tower/scene-assets/battlefields.txt").Select(l=>l.Split('|')).ToArray();
+    /// 场地正中：原版 Boss 的出生点（传送门略高出地面一点，与竞技场模板一致）
+    static Vector3 Center(MSBE.Part.Enemy anchor)=>anchor.Position+new Vector3(0,0.03f,0);
     static Vector3 Point(string[] row,int offset)=>new(float.Parse(row[offset],CultureInfo.InvariantCulture),float.Parse(row[offset+1],CultureInfo.InvariantCulture),float.Parse(row[offset+2],CultureInfo.InvariantCulture));
     public static void Build(string output) {
         foreach(var row in Rows()) {
@@ -35,9 +37,11 @@ static class BattlefieldAssets {
             entry.Name="tower_entry";entry.ActivationPartName=null;entry.Position=Point(row,8);entry.Rotation=new Vector3(0,yaw,0);map.Regions.Add(entry);
             foreach(var player in map.Parts.Players){player.Position=entry.Position;player.Rotation=entry.Rotation;}
             var portal=(MSBE.Part.Asset)template.Parts.Assets.Single(a=>a.EntityID==basis+1900).DeepCopy();
-            portal.Position=Point(row,11);portal.Rotation=new Vector3(0,yaw+180,0);
+            // 传送门放到场地正中（原版 Boss 的出生点）：战斗中关闭，胜利后从地面钻出来（PortalReveal）
+            portal.Position=Center(anchor);portal.Rotation=new Vector3(0,yaw+180,0);
             if(!map.Models.Assets.Any(m=>m.Name==portal.ModelName))map.Models.Assets.Add((MSBE.Model.Asset)template.Models.Assets.Single(m=>m.Name==portal.ModelName).DeepCopy());
             map.Parts.Assets.Add(portal);
+            PortalReveal.AddRegion(map,basis+1900);PortalReveal.Apply(events,basis+1900);
             BossAssets.Events(events,basis,output);
             map.Write(Path.Combine(output,"map/mapstudio",name+".msb.dcx"));
             events.Write(Path.Combine(output,"event",name+".emevd.dcx"));
@@ -55,7 +59,9 @@ static class BattlefieldAssets {
             if(row[1]=="m10_00_00_00"&&events.Events.Any(e=>e.ID==10007980)){StormveilAssets.Verify(output);continue;}
             var stone=map.Parts.Enemies.Single(e=>e.EntityID==basis+100);
             if(stone.TalkID!=2000||stone.Position!=Point(row,4)||!map.Parts.Collisions.Any(c=>c.Name==stone.CollisionPartName))throw new Exception("Invalid battlefield summon stone");
-            if(map.Regions.GetEntries().Single(r=>r.EntityID==basis+2600).Position!=Point(row,8)||map.Parts.Assets.Single(a=>a.EntityID==basis+1900).Position!=Point(row,11))throw new Exception("Invalid battlefield entry/portal");
+            var anchor=map.Parts.Enemies.Single(e=>e.Name==row[14]);
+            if(map.Regions.GetEntries().Single(r=>r.EntityID==basis+2600).Position!=Point(row,8)||map.Parts.Assets.Single(a=>a.EntityID==basis+1900).Position!=Center(anchor))throw new Exception("Invalid battlefield entry/portal");
+            PortalReveal.Verify(map,events,basis+1900,row[3]);
             var init=events.Events.Single(e=>e.ID==0);
             foreach(var enemy in map.Parts.Enemies.Where(e=>e.EntityID!=basis+100))if(!init.Instructions.Any(i=>i.Bank==2004&&i.ID==5&&BitConverter.ToUInt32(i.ArgData,0)==enemy.EntityID&&i.ArgData[4]==0))throw new Exception("Vanilla battlefield enemy not disabled");
             if(events.Events.Count(e=>e.ID>=basis+3000&&e.ID<basis+4000)!=BossAssets.Parts(output).Length*3)throw new Exception("Missing battlefield boss bars");

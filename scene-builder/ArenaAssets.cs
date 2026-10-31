@@ -129,7 +129,9 @@ static class ArenaAssets {
             }
             foreach(var source in template.Parts.Assets.Where(a=>Assets.Contains(a.EntityID))) {
                 var part=(MSBE.Part.Asset)source.DeepCopy();part.Name="tower_site_"+part.EntityID;
-                part.Position=ServiceAt(source.EntityID,source.Position-center0);part.Rotation=new(source.Rotation.X,source.Rotation.Y+yaw,source.Rotation.Z);
+                // 传送门放到场地正中（原版 Boss 的出生点）：战斗中关闭，胜利后从地面钻出来（PortalReveal）
+                part.Position=source.EntityID==First+1900?Place(new Vector3(0,source.Position.Y-center0.Y,0),center,yaw):ServiceAt(source.EntityID,source.Position-center0);
+                part.Rotation=new(source.Rotation.X,source.Rotation.Y+yaw,source.Rotation.Z);
                 part.InstanceID=msb.Parts.Assets.Where(a=>a.ModelName==part.ModelName).Select(a=>a.InstanceID).DefaultIfEmpty(-1).Max()+1;
                 part.EntityGroupIDs=new uint[8];part.UnkPartNames=new string[6];part.UnkT54PartName=null;part.MapStudioLayer=uint.MaxValue;
                 part.Unk1.DisplayGroups=Enumerable.Repeat(uint.MaxValue,8).ToArray();part.Unk1.DrawGroups=Enumerable.Repeat(uint.MaxValue,8).ToArray();
@@ -151,6 +153,7 @@ static class ArenaAssets {
             events.Events=keptEvents.Select(e=>EMEVD.Read(new EMEVD{Events=[e]}.Write()).Events[0]).ToList();
             foreach(var i in initKept)init.Instructions.Add(i);
             events.Events.Insert(0,init);
+            PortalReveal.AddRegion(msb,First+1900);PortalReveal.Apply(events,First+1900);
             if(dragonlord)DragonlordEntrance.Apply(msb,events);
             int[] partyActs=site.Key=="farum_dragonlord"?[1,2,3]:[site.Act];
             foreach(int act in partyActs)ArenaPartyAssets.Add(input,msb,events,act,anchor,p=>Place(p,center,yaw),yaw);
@@ -188,6 +191,7 @@ static class ArenaAssets {
         }
         if(map.Parts.Enemies.Single(e=>e.EntityID==First+100).TalkID!=template.Parts.Enemies.Single(e=>e.EntityID==First+100).TalkID)throw new Exception($"{key}: summon stone talk changed");
         foreach(var part in map.Parts.Enemies.Where(e=>Ours(e.EntityID)))if(!map.Parts.Collisions.Any(c=>c.Name==part.CollisionPartName))throw new Exception($"{key}: {part.Name} has no ground collision");
+        PortalReveal.Verify(map,events,First+1900,key);
         var init=events.Events.Single(e=>e.ID==0);
         foreach(var enemy in map.Parts.Enemies.Where(e=>!Ours(e.EntityID)&&!ArenaPartyAssets.Combat(e.EntityID)))
             if(!init.Instructions.Any(i=>i.Bank==2004&&i.ID==5&&BitConverter.ToUInt32(i.ArgData,0)==enemy.EntityID&&i.ArgData[4]==0))throw new Exception($"{key}: vanilla enemy {enemy.Name} left active");

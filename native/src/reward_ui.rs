@@ -43,6 +43,81 @@ fn back_out(elapsed:f64,start:f64,len:f64)->f32 {
     let t=((elapsed-start)/len).clamp(0.0,1.0) as f32;let c=1.70158;let u=t-1.0;
     if t<=0.0 {0.0}else{1.0+(c+1.0)*u*u*u+c*u*u}
 }
+/// 传说卡的光效（克制的写法，不用一圈圈亮框和跑马灯）：
+/// legendary_bloom 画在卡面之前——卡片背后一层柔和的暖金辉光，从边缘向外渐隐，缓慢呼吸；
+/// legendary_frame 画在卡面之后——一段柔光沿金边缓慢滑过（约 6 秒一圈）、内沿一层很淡的暖光、
+/// 稀疏的细金尘在卡面上缓缓上浮、每 6 秒一道很淡的竖向扫光。time 为秒（每张卡有相位差），alpha 为卡片透明度
+fn legendary_bloom(draw:&hudhook::imgui::DrawListMut<'_>,min:[f32;2],max:[f32;2],scale:f32,time:f32,alpha:f32) {
+    if alpha<=0.0 {return;}
+    let breath=0.8+0.2*(time*std::f32::consts::TAU*0.25).sin();
+    // 一层层叠起来的半透明圆角矩形，越往外越大越淡，叠出平滑的渐隐
+    for layer in (1..=14).rev() {
+        let d=layer as f32*3.0*scale;
+        let a=0.085*breath*alpha*(1.0-layer as f32/15.0);
+        draw.add_rect([min[0]-d,min[1]-d],[max[0]+d,max[1]+d],ImColor32::from_rgba(255,196,104,(a*255.0) as u8)).filled(true).rounding(6.0*scale+d).build();
+    }
+}
+fn legendary_frame(draw:&hudhook::imgui::DrawListMut<'_>,min:[f32;2],max:[f32;2],scale:f32,time:f32,alpha:f32) {
+    if alpha<=0.0 {return;}
+    let warm=|a:f32|ImColor32::from_rgba(255,214,140,(a.clamp(0.0,1.0)*alpha*255.0) as u8);
+    let pale=|a:f32|ImColor32::from_rgba(255,240,206,(a.clamp(0.0,1.0)*alpha*255.0) as u8);
+    let clear=ImColor32::from_rgba(255,214,140,0);
+    let (w,h)=(max[0]-min[0],max[1]-min[1]);
+    let breath=0.8+0.2*(time*std::f32::consts::TAU*0.25).sin();
+    // 内沿暖光：四条从边缘向内渐隐的光带
+    let depth=30.0*scale;let edge=warm(0.16*breath);
+    // 物品图标背后的一团暖金圣光（同心圆叠出柔和的径向渐隐），缓慢呼吸
+    let halo=[min[0]+w*0.5,min[1]+178.0*scale];
+    for ring in (1..=12).rev() {
+        let r=ring as f32*10.0*scale;
+        draw.add_circle(halo,r,warm(0.028*breath*(1.0-ring as f32/13.0))).filled(true).num_segments(48).build();
+    }
+    draw.add_rect_filled_multicolor(min,[max[0],min[1]+depth],edge,edge,clear,clear);
+    draw.add_rect_filled_multicolor([min[0],max[1]-depth],max,clear,clear,edge,edge);
+    draw.add_rect_filled_multicolor(min,[min[0]+depth,max[1]],edge,clear,clear,edge);
+    draw.add_rect_filled_multicolor([max[0]-depth,min[1]],max,clear,edge,edge,clear);
+    // 金边：一条细的常亮描边
+    draw.add_rect(min,max,warm(0.6+0.2*breath)).rounding(2.0*scale).thickness(1.4*scale).build();
+    // 沿金边滑过的一段柔光：按到光心的距离做平滑衰减，细亮线 + 外面一层宽而淡的光
+    let perimeter=2.0*(w+h);
+    let along=|u:f32|->[f32;2] {
+        let mut d=u.rem_euclid(1.0)*perimeter;
+        if d<w {return [min[0]+d,min[1]];}d-=w;
+        if d<h {return [max[0],min[1]+d];}d-=h;
+        if d<w {return [max[0]-d,max[1]];}d-=w;
+        [min[0],max[1]-d]
+    };
+    let head=time/6.0;let span=0.24;let steps=56;
+    for k in 0..steps {
+        let (t0,t1)=(k as f32/steps as f32,(k+1) as f32/steps as f32);
+        let x=(t0+t1)-1.0;let falloff=(1.0-x*x).max(0.0).powi(2);
+        let (a,b)=(along(head+(t0-0.5)*span),along(head+(t1-0.5)*span));
+        draw.add_line(a,b,warm(0.16*falloff)).thickness(12.0*scale).build();
+        draw.add_line(a,b,warm(0.35*falloff)).thickness(5.0*scale).build();
+        draw.add_line(a,b,pale(falloff)).thickness(2.0*scale).build();
+    }
+    // 竖向扫光：很淡的渐变光带，每 6 秒从左扫到右一次
+    let progress=(time%6.0)/1.6;
+    if progress<1.0 {
+        let c=min[0]-60.0*scale+(w+120.0*scale)*progress;let half=48.0*scale;let peak=pale(0.07);
+        draw.with_clip_rect_intersect(min,max,|| {
+            draw.add_rect_filled_multicolor([c-half,min[1]],[c,max[1]],clear,peak,peak,clear);
+            draw.add_rect_filled_multicolor([c,min[1]],[c+half,max[1]],peak,clear,clear,peak);
+        });
+    }
+    // 细金尘：卡面内稀疏上浮、微微闪烁
+    draw.with_clip_rect_intersect(min,max,|| {
+        for n in 0..10u32 {
+            let r=|k:u32|{let mut v=n.wrapping_mul(0x9E37_79B1)^k.wrapping_mul(0x85EB_CA77);v^=v>>15;v=v.wrapping_mul(0x2C1B_3C6D);v^=v>>12;(v&0xffff) as f32/65535.0};
+            let life=(time*(0.05+0.04*r(1))+r(2)).fract();
+            let x=min[0]+w*(0.08+0.84*r(3))+(time*0.7+n as f32).sin()*4.0*scale;let y=max[1]-life*h;
+            let twinkle=0.6+0.4*(time*(1.5+r(4))+n as f32).sin();
+            let a=(std::f32::consts::PI*life).sin()*twinkle;
+            draw.add_circle([x,y],3.4*scale,warm(a*0.10)).filled(true).build();
+            draw.add_circle([x,y],(0.8+0.7*r(5))*scale,pale(a*0.75)).filled(true).build();
+        }
+    });
+}
 fn card_light(tier:usize,selected:bool,hover:bool,time:f64)->u8 {
     let base=if selected{240.0}else if hover{195.0}else{150.0};
     (base+if tier==3 {15.0*(time*std::f64::consts::TAU/3.6).sin()}else{0.0}) as u8
@@ -459,6 +534,7 @@ impl Panel {
                 let quality_color=rarity_color(tier);
                 let ember_category=format!("余烬 · {}",["普通","稀有","史诗","传说"][tier.min(3)]);
                 let category=if ember {ember_category.as_str()}else{category};
+                if tier>=3 {legendary_bloom(&ui.get_window_draw_list(),[x,y],[x+width,y+height],scale,now as f32+i as f32*1.3,alpha);}
                 if let Some(texture)=if tier==1 {self.rare_blue}else{None} {
                     let light=card_light(tier,selected,hover,now);
                     ui.get_window_draw_list().add_image(texture,[x,y],[x+width,y+height])
@@ -492,6 +568,7 @@ impl Panel {
                         draw.add_rect([x-offset*scale,y-offset*scale],[x+width+offset*scale,y+height+offset*scale],ImColor32::from_rgba(236,120,58,a8(alpha as f32/255.0))).rounding(4.0*scale).thickness(thickness*scale).build();
                     }
                 }
+                if tier>=3 {legendary_frame(&ui.get_window_draw_list(),[x,y],[x+width,y+height],scale,now as f32+i as f32*1.3,alpha);}
                 center(ui,x+width*0.5,y+61.0*scale,category,quality_color);
                 if let Some(texture)=card_icon(run,reward).and_then(|icon|self.icon(icon)) {
                     let side=175.0*scale;ui.get_window_draw_list().add_image(texture,[x+(width-side)*0.5,y+91.0*scale],[x+(width+side)*0.5,y+266.0*scale]).col(ImColor32::from_rgba(255,255,255,a8(1.0))).build();

@@ -37,6 +37,10 @@ impl MapScroll {
 }
 
 thread_local! {static SCROLL: std::cell::RefCell<MapScroll> = std::cell::RefCell::new(MapScroll::default());}
+thread_local! {
+    /// 侧栏图例里鼠标所在的节点类型（侧栏先画，路线图同一帧读取）
+    static LEGEND_HOVER:std::cell::Cell<Option<NodeKind>>=const {std::cell::Cell::new(None)};
+}
 #[cfg(test)]
 static TEST_TARGET:std::sync::Mutex<([f32;2],bool)>=std::sync::Mutex::new(([0.0,0.0],false));
 #[cfg(test)]
@@ -199,10 +203,10 @@ pub fn class_name(class: Class) -> &'static str {
 
 
 /// 选路阶段的路线图常驻：没有关闭键（手柄 B 原来能关，关掉后手柄没有办法再打开，键盘也一直关不掉）
-pub fn draw(ui: &Ui, run: &Run, view: &View, _vitals: &str) {
+pub fn draw(ui: &Ui, run: &Run, view: &View, vitals: &str) {
     let size=ui.io().display_size;
     let scale=(size[0]/1600.0).min(size[1]/900.0).clamp(0.65,1.6);
-    let left=0.0;let right=165.0*scale;let margin=18.0*scale;
+    let left=0.0;let right=236.0*scale;let margin=18.0*scale;
     let gold=[0.84,0.72,0.46,1.0];
     let _background=ui.push_style_color(StyleColor::WindowBg,[0.04,0.05,0.04,0.96]);
     let _text=ui.push_style_color(StyleColor::Text,gold);
@@ -213,32 +217,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, _vitals: &str) {
         .title_bar(false).resizable(false).movable(false).collapsible(false).scroll_bar(false).build(|| {
             crate::oath_art::background(&ui.get_window_draw_list(),size);
             ui.set_window_font_scale(scale);
-            // 主题幕：本幕的主题与地区
-            {
-                let theme=crate::scenery::theme(run);let (_,_,accent)=crate::scenery::palette(run);
-                let draw=ui.get_window_draw_list();let pos=ui.window_pos();
-                draw.add_text([pos[0]+size[0]-right+margin,pos[1]+12.0*scale],accent,theme.name);
-                draw.add_text([pos[0]+size[0]-right+margin,pos[1]+36.0*scale],ImColor32::from_rgb(150,140,118),theme.region);
-            }
-            ui.set_cursor_pos([size[0]-right+margin,65.0*scale]);ui.text("图例");
-            for (i,kind) in [NodeKind::Monster,NodeKind::Elite,NodeKind::Camp,NodeKind::Shop,NodeKind::Chest,NodeKind::Event,NodeKind::Boss].into_iter().enumerate() {
-                let y=(126.0+i as f32*62.0)*scale;
-                let draw=ui.get_window_draw_list();let p=[size[0]-right+35.0*scale,y];
-                draw.add_circle(p,23.0*scale,ImColor32::from_rgb(203,183,136)).filled(true).build();
-                if !crate::map_art::icon_scaled(&draw,p,kind,1.0,0.8*scale){glyph(&draw,p,kind,ImColor32::from_rgb(65,49,28));}
-                ui.set_cursor_pos([size[0]-right+68.0*scale,y-10.0*scale]);ui.text(if kind==NodeKind::Boss{"首领"}else{kind.label()});
-            }
-            crate::map_ink::toolbar(ui,erdtree_tower::map_drawing::Scope::of(run),[size[0]-right+margin,555.0*scale],scale,view.ready&&!view.busy&&run.phase==Phase::Map);
-            ui.set_cursor_pos([size[0]-right+margin,size[1]-126.0*scale]);
-            let archive_key=crate::pad::Input::new(crate::pad::Pad::View,crate::options::label(erdtree_tower::options::Hotkey::Archive));
-            if crate::pad::button(ui,"map-archive","档案",Some(archive_key),[right-2.0*margin,44.0*scale])||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadBack) {
-                crate::run_screen::archive_entry();
-            }
-            ui.set_cursor_pos([size[0]-right+margin,size[1]-74.0*scale]);
-            let build_key=crate::pad::Input::new(crate::pad::Pad::Y,crate::options::label(erdtree_tower::options::Hotkey::Build));
-            if crate::pad::button(ui,"map-build","构筑",Some(build_key),[right-2.0*margin,44.0*scale])||ui.is_key_pressed_no_repeat(crate::options::key(erdtree_tower::options::Hotkey::Build))||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadFaceUp) {
-                crate::build_panel::toggle();
-            }
+            sidebar(ui,run,view,vitals,[size[0]-right,0.0],[right,size[1]],scale);
             ui.set_cursor_pos([left+margin,margin]);
             let _paper=ui.push_style_color(StyleColor::ChildBg,[0.84,0.79,0.66,1.0]);
             let _ink=ui.push_style_color(StyleColor::Text,crate::scenery::ink_rgba(run));
@@ -264,6 +243,95 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, _vitals: &str) {
             });
             drop(_popup);drop(_ink);drop(_paper);
         });
+}
+/// 路线图右侧的信息栏：本幕与地区、旅程状态（层数、生命、专注、卢恩）、图例、地图工具、档案与构筑。
+/// 暗色面板配金色细边，与旅程档案、选择职业等界面同一套样式；文字按设计字号缩放，不放大位图
+fn sidebar(ui:&Ui,run:&Run,view:&View,vitals:&str,origin:[f32;2],extent:[f32;2],scale:f32) {
+    use crate::archive_style::{self as style,GOLD,WHITE,MUTED};
+    let (x0,w)=(origin[0],extent[0]);let at=|x:f32,y:f32|[x0+x*scale,origin[1]+y*scale];
+    let text=|x:f32,y:f32,value:&str,color:[f32;4],px:f32,align:f32| {
+        ui.set_window_font_scale(px/20.0*scale);let tw=ui.calc_text_size(value)[0];
+        ui.set_cursor_screen_pos([x0+x*scale-tw*align,origin[1]+y*scale]);ui.text_colored(color,value);
+    };
+    let inner=w/scale;
+    {
+        let draw=ui.get_window_draw_list();
+        draw.add_rect_filled_multicolor(origin,[x0+w,origin[1]+extent[1]],ImColor32::from_rgba(14,12,9,236),ImColor32::from_rgba(14,12,9,236),ImColor32::from_rgba(7,6,5,246),ImColor32::from_rgba(7,6,5,246));
+        draw.add_line(origin,[x0,origin[1]+extent[1]],ImColor32::from_rgba(171,143,87,150)).thickness(1.2*scale).build();
+    }
+    // ── 本幕与地区 ──
+    let theme=crate::scenery::theme(run);let (_,_,accent)=crate::scenery::palette(run);
+    let accent=ImColor32::to_rgba_f32s(accent);
+    text(20.0,16.0,&format!("第 {} 幕",run.act.max(1)),MUTED,14.0,0.0);
+    {
+        let font=crate::fancy_text::title_font().map(|f|ui.push_font(f));
+        ui.set_window_font_scale(if font.is_some(){24.0/32.0}else{1.2}*scale);
+        // 名字太长时缩小到放得下
+        let tw=ui.calc_text_size(theme.name)[0];if tw>(inner-36.0)*scale {ui.set_window_font_scale(if font.is_some(){24.0/32.0}else{1.2}*scale*(inner-36.0)*scale/tw);}
+        ui.set_cursor_screen_pos(at(20.0,38.0));ui.text_colored(accent,theme.name);
+        drop(font);
+    }
+    text(20.0,74.0,theme.region,MUTED,14.0,0.0);
+    crate::law_ui::ornament(&ui.get_window_draw_list(),at(inner*0.5,104.0),(inner*0.5-18.0)*scale,scale);
+    // ── 旅程状态 ──
+    let floors=run.floors().max(1);let floor=run.reached_layer.min(floors);
+    let bar=|y:f32,fill:f32,color:[f32;4]| {
+        let draw=ui.get_window_draw_list();let (a,b)=(at(20.0,y),at(inner-20.0,y+4.0));
+        draw.add_rect(a,b,ImColor32::from_rgba(255,255,255,24)).filled(true).build();
+        draw.add_rect(a,[a[0]+(b[0]-a[0])*fill.clamp(0.0,1.0),b[1]],style::rgba(color,0.95)).filled(true).build();
+    };
+    text(20.0,120.0,"层数",MUTED,14.0,0.0);text(inner-20.0,117.0,&format!("{floor} / {floors}"),WHITE,17.0,1.0);
+    bar(144.0,floor as f32/floors as f32,GOLD);
+    // 生命与专注：vitals 形如“生命 455/455    专注 82/82”
+    let words:Vec<&str>=vitals.split_whitespace().collect();
+    let mut y=160.0;
+    for pair in words.chunks(2) {
+        let [name,value]=pair else{continue};
+        let fill=value.split_once('/').and_then(|(a,b)|Some(a.trim().parse::<f32>().ok()?/b.trim().parse::<f32>().ok()?.max(1.0))).unwrap_or(1.0);
+        let color=if name.contains("生命"){[0.80,0.30,0.26,1.0]}else if name.contains("专注"){[0.36,0.52,0.86,1.0]}else{GOLD};
+        text(20.0,y,name,MUTED,14.0,0.0);text(inner-20.0,y-2.0,value,WHITE,16.0,1.0);bar(y+23.0,fill,color);y+=38.0;
+    }
+    {let draw=ui.get_window_draw_list();style::coin(&draw,at(28.0,y+9.0),8.0*scale,scale);}
+    text(42.0,y,"卢恩",MUTED,14.0,0.0);text(inner-20.0,y-2.0,&view.runes.to_string(),GOLD,16.0,1.0);
+    let y=y+34.0;
+    crate::law_ui::ornament(&ui.get_window_draw_list(),at(inner*0.5,y),(inner*0.5-18.0)*scale,scale);
+    // ── 图例：两列；鼠标移到某一项上，地图上同类型的节点放大高亮（LEGEND_HOVER，路线图同一帧读取）──
+    let y=y+14.0;
+    text(20.0,y,"图例",MUTED,14.0,0.0);
+    LEGEND_HOVER.with(|h|h.set(None));
+    for (i,kind) in [NodeKind::Monster,NodeKind::Elite,NodeKind::Camp,NodeKind::Shop,NodeKind::Chest,NodeKind::Event,NodeKind::Boss].into_iter().enumerate() {
+        let (cx,cy)=(34.0+(i%2) as f32*(inner*0.5-6.0),y+44.0+(i/2) as f32*40.0);
+        let (row_min,row_max)=(at(cx-20.0,cy-18.0),at(cx+inner*0.5-30.0,cy+18.0));
+        let hover=ui.is_mouse_hovering_rect(row_min,row_max);
+        if hover {LEGEND_HOVER.with(|h|h.set(Some(kind)));}
+        let draw=ui.get_window_draw_list();let p=at(cx,cy);
+        if hover {
+            draw.add_rect(row_min,row_max,style::rgba(GOLD,0.14)).filled(true).rounding(18.0*scale).build();
+            draw.add_rect(row_min,row_max,style::rgba(GOLD,0.55)).rounding(18.0*scale).thickness(1.0*scale).build();
+        }
+        draw.add_circle(p,15.0*scale,ImColor32::from_rgb(203,183,136)).filled(true).build();
+        draw.add_circle(p,15.0*scale,ImColor32::from_rgba(120,98,58,200)).thickness(1.0*scale).build();
+        if !crate::map_art::icon_scaled(&draw,p,kind,1.0,if kind==NodeKind::Boss{0.36}else{0.56}*scale){glyph(&draw,p,kind,ImColor32::from_rgb(65,49,28));}
+        drop(draw);
+        text(cx+24.0,cy-9.0,if kind==NodeKind::Boss{"首领"}else{kind.label()},if hover{GOLD}else{WHITE},15.0,0.0);
+    }
+    let y=y+44.0+4.0*40.0-6.0;
+    crate::law_ui::ornament(&ui.get_window_draw_list(),at(inner*0.5,y),(inner*0.5-18.0)*scale,scale);
+    // ── 地图工具 ──
+    crate::map_ink::toolbar(ui,erdtree_tower::map_drawing::Scope::of(run),at(20.0,y+16.0),[(inner-40.0)*scale,34.0*scale],scale,view.ready&&!view.busy&&run.phase==Phase::Map);
+    // ── 档案与构筑 ──
+    let bottom=extent[1]/scale;
+    let archive_key=crate::pad::Input::new(crate::pad::Pad::View,crate::options::label(erdtree_tower::options::Hotkey::Archive));
+    if style::button_pad(ui,"map-archive","旅程档案",Some(archive_key),at(20.0,bottom-118.0),at(inner-20.0,bottom-72.0),style::Tone::Normal,scale)||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadBack) {
+        crate::run_screen::archive_entry();
+    }
+    let build_key=crate::pad::Input::new(crate::pad::Pad::Y,crate::options::label(erdtree_tower::options::Hotkey::Build));
+    let open=crate::build_panel::open();
+    if style::button_pad(ui,"map-build",if open{"收起构筑"}else{"构筑"},Some(build_key),at(20.0,bottom-62.0),at(inner-20.0,bottom-16.0),if open{style::Tone::Primary}else{style::Tone::Normal},scale)
+        ||ui.is_key_pressed_no_repeat(crate::options::key(erdtree_tower::options::Hotkey::Build))||ui.is_key_pressed_no_repeat(hudhook::imgui::Key::GamepadFaceUp) {
+        crate::build_panel::toggle();
+    }
+    ui.set_window_font_scale(scale);
 }
 pub(crate) fn reward_description(run: &Run, reward: &Reward) -> String {
     match reward {
@@ -377,6 +445,16 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
         if ui.is_item_active()&&enabled {pressed=Some(id);}
     }
     thread_local! {static EMPHASIS:std::cell::RefCell<Vec<f32>>=const {std::cell::RefCell::new(Vec::new())};}
+    // 图例悬停：同类型的节点放大（legend[id] 0→1），其余节点变淡（dim 0→1）
+    thread_local! {static LEGEND_FOCUS:std::cell::RefCell<(Vec<f32>,f32)>=const {std::cell::RefCell::new((Vec::new(),0.0))};}
+    let legend_kind=LEGEND_HOVER.with(|h|h.get());
+    let (legend,dim)=LEGEND_FOCUS.with(|state| {
+        let mut state=state.borrow_mut();let k=(ui.io().delta_time*12.0).min(1.0);
+        state.0.resize(run.nodes.len(),0.0);
+        for (id,value) in state.0.iter_mut().enumerate() {let target=if legend_kind==Some(run.nodes[id].kind){1.0}else{0.0};*value+=(target-*value)*k;}
+        state.1+=(if legend_kind.is_some(){1.0}else{0.0}-state.1)*k;
+        state.clone()
+    });
     let emphasis=EMPHASIS.with(|values| {
         let mut values=values.borrow_mut();values.resize(run.nodes.len(),0.0);
         for (id,value) in values.iter_mut().enumerate(){let target=if hovered==Some(id){1.0}else{0.0};*value+=(target-*value)*(ui.io().delta_time*14.0).min(1.0);}
@@ -443,8 +521,16 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
         if !reachable[id] { continue; }
         let pos = point(id);
         let enabled = ready && available.contains(&id);
-        let focus=emphasis[id];
-        let zoom=1.0+0.18*focus-if pressed==Some(id){0.09}else{0.0};
+        let focus=emphasis[id];let shown=legend[id];
+        let zoom=1.0+0.18*focus+0.45*shown-if pressed==Some(id){0.09}else{0.0};
+        // 图例点亮的类型：金色光圈 + 脉冲环
+        if shown>0.01 {
+            let pulse=(ui.time() as f32*3.0).sin()*0.5+0.5;
+            draw.add_circle(pos,radius*zoom+4.0,ImColor32::from_rgba(255,226,150,(shown*150.0) as u8)).filled(true).build();
+            draw.add_circle(pos,radius*zoom+6.0+pulse*6.0,ImColor32::from_rgba(196,128,28,(shown*(200.0-pulse*120.0)) as u8)).thickness(2.5).build();
+        }
+        // 图例点亮其他类型时，这个节点变淡
+        let fade=1.0-0.6*dim*(1.0-shown);
         let visited = run.visited.contains(&id);
         let color = if visited {
             ImColor32::from_rgb(50, 95, 61)
@@ -475,9 +561,16 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
         if enabled || run.visited.last()==Some(&id) {
             draw.add_circle(pos, radius*zoom, color).thickness(2.0+focus).build();
         }
-        if !crate::map_art::icon_scaled(&draw,pos,node.kind,if enabled||visited{1.0}else{0.8},zoom){glyph(&draw, pos, node.kind, color);}
-        if run.visited.last()==Some(&id) {draw.add_text([pos[0]-38.0,pos[1]+32.0],color,"当前位置");}
-        if node.kind==NodeKind::Boss {draw.add_text([pos[0]-38.0,pos[1]+32.0],color,"最终试炼");}
+        if !crate::map_art::icon_scaled(&draw,pos,node.kind,if enabled||visited{1.0}else{0.8}*fade,zoom){glyph(&draw, pos, node.kind, color);}
+        // 节点下方的小牌子：当前位置（深绿底）、最终试炼（深墨底），不再把字直接压在纸和图标上
+        let plate=|label:&str,dy:f32,fill:ImColor32| {
+            let tw=ui.calc_text_size(label)[0];let (w,h)=(tw+18.0,ui.text_line_height()+6.0);let y=pos[1]+dy;
+            draw.add_rect([pos[0]-w*0.5,y],[pos[0]+w*0.5,y+h],fill).filled(true).rounding(h*0.5).build();
+            draw.add_rect([pos[0]-w*0.5,y],[pos[0]+w*0.5,y+h],ImColor32::from_rgba(240,226,190,150)).rounding(h*0.5).thickness(1.0).build();
+            draw.add_text([pos[0]-tw*0.5,y+3.0],ImColor32::from_rgb(244,234,208),label);
+        };
+        if run.visited.last()==Some(&id) {plate("当前位置",radius+8.0,ImColor32::from_rgba(44,84,56,235));}
+        if node.kind==NodeKind::Boss {plate("最终试炼",radius+22.0,ImColor32::from_rgba(52,38,22,235));}
         if visited {
             draw.add_circle([pos[0] + 18.0, pos[1] + 17.0], 4.0, color)
                 .filled(true)
