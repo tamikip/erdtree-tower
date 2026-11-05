@@ -1,5 +1,5 @@
 use std::time::{Duration,Instant};
-use eldenring::{cs::{ChrIns,ChrInsExt,FieldInsHandle,SoloParamRepository,SpEffectParam,WorldChrMan},param::SP_EFFECT_PARAM_ST};
+use eldenring::{cs::{ChrIns,ChrInsExt,EquipParamGoods,FieldInsHandle,SoloParamRepository,SpEffectParam,WorldChrMan},param::SP_EFFECT_PARAM_ST};
 use fromsoftware_shared::FromStatic;
 use erdtree_tower::{Phase,Run,embers::{self,Ember,Gain,Strike,StrikeRequest}};
 
@@ -19,6 +19,21 @@ const BARRIER:i32=FIRST+16;
 const MEDITATION:i32=FIRST+17;
 const GLINTSTONE:i32=FIRST+18;
 const FULL_MOON:i32=FIRST+19;
+/// 灵唤师的共鸣：本机召唤物在场时挂在玩家身上（造成的伤害提高），召唤物倒下或消失就摘掉
+const SPIRIT_RESONANCE:i32=FIRST+21;
+/// 战技的精粹：持有即常驻，战技增伤（只对战技生效）与战技专注消耗降低各一行
+const ARTS_ATTACK:i32=FIRST+22;
+const ARTS_COST:i32=FIRST+23;
+/// 坩埚骑士的铁壁：整局常驻（格挡不耗精力；最大负重压到极低，始终超重）
+const BULWARK:i32=FIRST+24;
+/// 鲜血骑士的破势：一次性发作在敌人身上的特效编号段（出血、睡眠、冻伤、发狂；毒、腐败、致死这些持续类不算）
+const BURSTS:[(i32,i32,&str);4]=[(6400,6449,"出血"),(6450,6499,"睡眠"),(6700,6749,"冻伤"),(6750,6799,"发狂")];
+fn burst_kind(id:i32)->Option<&'static str> {BURSTS.iter().find(|(low,high,_)|(*low..=*high).contains(&id)).map(|(_,_,name)|*name)}
+/// 发作时把敌人的韧性压到这么低：下一下韧性伤害就失衡（直接写 0 不一定会触发失衡动作，留一点让引擎按正常流程判定）
+pub const BREAK_TOUGHNESS:f32=0.001;
+/// 鲜血骑士的破势：每只敌人上一帧身上的发作特效、全部特效、生命，以及上次失衡的时间（Boss 冷却用）
+#[derive(Default)]
+struct Break {key:u64,bursts:Vec<i32>,effects:Vec<i32>,hp:i32,last:Option<Instant>}
 const FLASH:i32=FIRST+40;
 /// 灵唤铃的号令：挂在召唤物身上
 const SPIRIT_COMMAND:i32=FIRST+50;
@@ -72,7 +87,7 @@ fn observe_chain(chr:&ChrIns,level:u32) {
     if let Ok(mut trace)=CHAIN_TRACE.lock(){*trace=ChainTrace{level,resident:CRITICAL_HOOK_READY.load(Ordering::Acquire),marker:CRITICAL_PENDING.load(Ordering::Acquire),
         rate:row.map(|r|r.physics_attack_rate()),critical_only:row.is_some_and(|r|r.state_info()==367&&r.throw_attack_param_change()),effects:active.len()};}
 }
-fn player_ids()->impl Iterator<Item=i32> {[EXECUTION,REVENGE,ECHO,BARRIER,MEDITATION,GLINTSTONE,FULL_MOON,CHAIN_RESIDENT].into_iter().chain((1..=embers::FRENZY_STACKS).map(frenzy_effect))}
+fn player_ids()->impl Iterator<Item=i32> {[EXECUTION,REVENGE,ECHO,BARRIER,MEDITATION,GLINTSTONE,FULL_MOON,SPIRIT_RESONANCE,ARTS_ATTACK,ARTS_COST,BULWARK,CHAIN_RESIDENT].into_iter().chain((1..=embers::FRENZY_STACKS).map(frenzy_effect))}
 /// 叠层余烬不设上限：每种两行轮换（灵魂收容挂在召唤物身上，其余挂在玩家身上）。
 /// 层数变了就把新倍率写进没挂着的那一行、换上它，再摘掉旧的那一行；不改正在生效的那一行
 fn slots(ember:Ember)->Option<[i32;2]> {
@@ -121,6 +136,27 @@ fn ready(ids:&[i32])->bool {unsafe {SoloParamRepository::instance()}.is_ok_and(|
 const HIT_PERMILLE:i64=3;
 const HIT_INTERVAL:Duration=Duration::from_millis(300);
 
+/// 行商的无底囊：投掷道具的使用动作（EquipParamGoods.goodsUseAnim）。17 飞刀与飞镖、2 投掷弯刀、3 与 42 投掷壶和抛出的石块碎片、
+/// 20 附绳壶、50 辉石碎片、67 双手投出的重壶（各动作对应的道具见 README）
+const THROW_ANIMS:[u8;7]=[2,3,17,20,42,50,67];
+/// 持有时在本机内存里把这些道具改成“使用不消耗”（不改 regulation），记下改过的行；不再持有时只恢复这些行
+static POUCH_ROWS:std::sync::Mutex<Option<Vec<u32>>>=std::sync::Mutex::new(None);
+fn sync_pouch(on:bool) {
+    let Ok(mut rows)=POUCH_ROWS.lock() else{return};
+    if on==rows.is_some() {return;}
+    let Ok(params)=(unsafe {SoloParamRepository::instance_mut()}) else{return};
+    if on {
+        let mut changed=Vec::new();
+        for (id,row) in params.rows_mut::<EquipParamGoods>() {
+            if row.goods_type()==0&&row.is_consume()&&THROW_ANIMS.contains(&row.goods_use_anim()) {row.set_is_consume(false);changed.push(id);}
+        }
+        super::log(format!("TOWER_EMBER pouch on: {} throwables no longer consumed",changed.len()));
+        *rows=Some(changed);
+    } else {
+        for id in rows.take().unwrap_or_default() {if let Some(row)=params.get_mut::<EquipParamGoods>(id) {row.set_is_consume(true);}}
+        super::log("TOWER_EMBER pouch off: throwables consumed again");
+    }
+}
 pub fn held(run:Option<&Run>)->Vec<Ember> {
     run.filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)).map(|r|r.embers.clone()).unwrap_or_default()
 }
@@ -128,16 +164,20 @@ pub fn held(run:Option<&Run>)->Vec<Ember> {
 pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight) {
     let mut want=Vec::new();
     let embers=held(run);
+    sync_pouch(embers.contains(&Ember::Pouch));
     let owner=if embers.contains(&Ember::Chain)||embers.contains(&Ember::Execution){std::ptr::from_ref(chr) as usize}else{0};
     if CHAIN_OWNER.swap(owner,Ordering::AcqRel)!=owner{CRITICAL_PENDING.store(false,Ordering::Release);}
     if fight.revenge_active() {want.push(REVENGE);}
     if fight.echo_active() {want.push(ECHO);}
     if embers.contains(&Ember::Glintstone) {want.push(GLINTSTONE);}
+    if embers.contains(&Ember::Bulwark) {want.push(BULWARK);}
+    if embers.contains(&Ember::Arts) {want.extend([ARTS_ATTACK,ARTS_COST]);}
     if fight.casting() {
         if embers.contains(&Ember::Barrier) {want.push(BARRIER);}
         if embers.contains(&Ember::Meditation) {want.push(MEDITATION);}
     }
     if fight.full_moon {want.push(FULL_MOON);}
+    if fight.resonance {want.push(SPIRIT_RESONANCE);}
     if fight.frenzy>0 {want.push(frenzy_effect(fight.frenzy));}
     let present:Vec<_>=chr.special_effect.entries().map(|e|e.param_id).collect();
     let stacks=run.map(|r|r.ember_stacks).unwrap_or_default();
@@ -169,6 +209,8 @@ pub struct Fight {
     cast_until:Option<Instant>,cast_seen:bool,
     /// 蕾娜拉的满月：专注不低于 MOON_FP_PERCENT%
     full_moon:bool,
+    /// 灵唤师的共鸣：本机召唤物在场（这一帧有活着的召唤物）
+    resonance:bool,
     /// 黑刀刺客的身法：退还翻滚与致命一击扣掉的精力
     footwork:Footwork,feasts:u8,missing:bool,
     /// 上一帧在场的召唤物位置（灵骸迸裂在它消失时引爆）
@@ -179,9 +221,42 @@ pub struct Fight {
     remote:Vec<(u64,u32)>,
     /// 联机时这场战斗是否已记过第一次“自己的命中”与“别人的命中”（日志，用来核对 last_hit_by 的归属）
     attributed:[bool;2],
+    /// 鲜血骑士的破势：每只敌人的发作状态；probes：本场已记的校准日志条数
+    breaks:Vec<Break>,probes:u8,
 }
 impl Fight {
     pub fn active(&self)->bool {self.key.is_some()}
+    /// 鲜血骑士的破势（只由房主或单人执行，敌人由他们计算）：敌人身上新出现一次性发作时压低韧性，下一下就失衡；
+    /// 同一个 Boss（有血条的）BREAKER_BOSS_COOLDOWN_SECONDS 秒内最多一次。在 tick 之后调用（tick 换场时会清掉状态）。
+    /// 校准：敌人一帧掉了 10% 以上的生命时，把这一帧新出现的特效记进日志（每场最多 12 条），用来核对发作特效的编号段
+    pub fn break_on_bursts(&mut self,world:&mut WorldChrMan,foes:&[(FieldInsHandle,u8,u8)]) {
+        let now=Instant::now();
+        for &(handle,bar,slot) in foes {
+            let Some(chr)=world.chr_ins_by_handle_mut(&handle) else{continue};
+            let (hp,max)=(chr.modules.data.hp,chr.modules.data.max_hp);
+            if hp<=0||chr.chr_flags1c5.death_flag(){continue;}
+            let key=(u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0);
+            let effects:Vec<i32>=chr.special_effect.entries().map(|e|e.param_id).collect();
+            let bursts:Vec<i32>=effects.iter().copied().filter(|id|burst_kind(*id).is_some()).collect();
+            let index=match self.breaks.iter().position(|b|b.key==key) {Some(i)=>i,None=>{self.breaks.push(Break{key,bursts:bursts.clone(),effects:effects.clone(),hp,last:None});continue;}};
+            let state=&mut self.breaks[index];
+            if self.probes<12&&max>0&&state.hp-hp>max/10 {
+                let fresh:Vec<i32>=effects.iter().copied().filter(|id|!state.effects.contains(id)).collect();
+                self.probes+=1;super::log(format!("TOWER_EMBER breaker probe slot={slot} hp {}->{hp}/{max} new_effects={fresh:?}",state.hp));
+            }
+            let fresh=bursts.iter().copied().find(|id|!state.bursts.contains(id));
+            state.bursts=bursts;state.effects=effects;state.hp=hp;
+            let Some(id)=fresh else{continue};
+            let boss=bar>0;
+            if boss&&state.last.is_some_and(|at|now.duration_since(at)<Duration::from_secs(embers::BREAKER_BOSS_COOLDOWN_SECONDS)) {
+                super::log(format!("TOWER_EMBER breaker slot={slot} {} effect={id}: boss cooldown",burst_kind(id).unwrap_or("?")));continue;
+            }
+            state.last=Some(now);
+            let toughness=&mut chr.modules.toughness;let before=toughness.toughness;
+            toughness.toughness=toughness.toughness.min(BREAK_TOUGHNESS);
+            super::log(format!("TOWER_EMBER breaker slot={slot} {} effect={id} boss={boss} toughness {before}->{} max={}",burst_kind(id).unwrap_or("?"),toughness.toughness,toughness.toughness_max));
+        }
+    }
     pub fn revenge_active(&self)->bool {self.revenge_until.is_some_and(|until|Instant::now()<until)}
     pub fn echo_active(&self)->bool {self.echo_until.is_some_and(|until|Instant::now()<until)}
     pub fn casting(&self)->bool {self.cast_until.is_some_and(|until|Instant::now()<until)}
@@ -267,6 +342,9 @@ impl Fight {
         let spirit=world.summon_buddy_chr_set.characters().find(|c|c.modules.data.hp>0&&!c.chr_flags1c5.death_flag())
             .map(|c|{let q=c.modules.physics.position;(c.modules.data.hp,c.modules.data.max_hp,[q.0,q.1,q.2])});
         let vanished=self.spirit.filter(|_|spirit.is_none());self.spirit=spirit.map(|(_,_,pos)|pos);
+        let resonance=has(Ember::SpiritResonance)&&spirit.is_some();
+        if resonance!=self.resonance {super::log(format!("TOWER_EMBER spirit resonance {}",if resonance{"on"}else{"off"}));}
+        self.resonance=resonance;
         for &dead in &deaths {events.gains.push(Gain::Kill{rank:kill_rank(self.foes[dead].rank),spirit:spirit.is_some()||vanished.is_some()});}
         // 灵魂收容：每只在场的召唤物挂上当前层数的效果
         if has(Ember::SpiritKeeper) {
@@ -456,6 +534,11 @@ fn critical_listener_rejects_other_players_and_noncritical_effects() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn breaker_counts_only_burst_ailments() {
+        for (id,kind) in [(6400,Some("出血")),(6416,Some("出血")),(6450,Some("睡眠")),(6701,Some("冻伤")),(6754,Some("发狂"))] {assert_eq!(burst_kind(id),kind,"{id}");}
+        for id in [6399,6501,6601,6801,6850,9670010,9670011] {assert_eq!(burst_kind(id),None,"poison, rot, blight, death and our own buildup are not bursts: {id}");}
+    }
     #[test]
     fn effect_ids_do_not_overlap() {
         let ids:Vec<_>=player_ids().collect();

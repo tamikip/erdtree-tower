@@ -260,6 +260,10 @@ impl Gate {
     }
     pub fn members(&self)->Vec<u64> {self.peers.iter().map(|p|p.0).collect()}
     /// 成员的敌人侧余烬效果（只取本场战斗、在场的成员），以及核对用的余烬
+    /// 本场在场队员持有的余烬（房主据此代为执行只作用在敌人身上、又不走汇报的余烬，如鲜血骑士的破势）
+    pub fn held_embers(&self)->Vec<crate::embers::Ember> {
+        self.peers.iter().filter_map(|(_,r)|r.as_ref().filter(|r|r.present&&r.epoch==self.epoch)).flat_map(|r|r.embers.iter().copied()).collect()
+    }
     pub fn strikes(&self)->Vec<(u64,Vec<crate::embers::Ember>,Vec<crate::embers::StrikeRequest>)> {
         self.peers.iter().filter_map(|(id,r)|r.as_ref().filter(|r|r.present&&r.epoch==self.epoch&&!r.strikes.is_empty()).map(|r|(*id,r.embers.clone(),r.strikes.clone()))).collect()
     }

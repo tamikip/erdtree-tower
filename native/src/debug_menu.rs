@@ -4,7 +4,7 @@ use hudhook::imgui::{Condition,Ui};
 use erdtree_tower::{NodeKind,Run,contracts::Kind,embers::Ember,law::{Law,NODES}};
 use crate::enemies::Enemy;
 
-pub enum Command {MausoleumTest,BossTest(u16),RadahnTest,EndBossTest,ChainTest(u32),Jump(usize),Act(u8),Oath(Kind,u8),Ember(Ember,bool),Law(Law),Item(u32),Heal,Runes(u32),Cheats(bool,bool)}
+pub enum Command {MausoleumTest,BossTest(u16),RadahnTest,EndBossTest,ChainTest(u32),Jump(usize),Act(u8),Oath(Kind,u8),Ember(Ember,bool),Law(Law),Item(u32),Heal,Runes(u32),Cheats(bool,bool),InstantBreak(bool)}
 
 // tower-debug.enable 文件，或启动参数 debug=1（启动器的「调试模式」）
 static ENABLED:LazyLock<bool>=LazyLock::new(||crate::LOG_PATH.with_file_name("tower-debug.enable").exists()||crate::options::get().debug);
@@ -15,6 +15,33 @@ static GOD:AtomicBool=AtomicBool::new(false);
 static ONE_SHOT:AtomicBool=AtomicBool::new(false);
 pub fn replace_cheats(god:bool,one_shot:bool)->(bool,bool){(GOD.swap(god,Ordering::Relaxed),ONE_SHOT.swap(one_shot,Ordering::Relaxed))}
 static APPLIED:Mutex<Option<(bool,bool)>>=Mutex::new(None);
+/// 攻击立刻爆条（单人调试）：每帧把敌人的韧性压到接近 0，下一下韧性伤害就失衡
+static INSTANT_BREAK:AtomicBool=AtomicBool::new(false);
+/// 离玩家最近的敌人的韧性：调试菜单打开时游戏任务线程每帧写，菜单里显示
+static NEAREST:Mutex<Option<String>>=Mutex::new(None);
+/// 每帧（游戏任务线程）：攻击立刻爆条开着时压低全部敌人的韧性；菜单打开时记下最近那个敌人的韧性。只看敌人，不动玩家、队友与召唤物
+pub fn tick_enemies(world:&mut eldenring::cs::WorldChrMan) {
+    let (open,instant)=(OPEN.load(Ordering::Relaxed),INSTANT_BREAK.load(Ordering::Relaxed));
+    if !enabled()||!open&&!instant {return;}
+    let Some(player)=world.main_player.as_ref() else{return};
+    let origin={let p=&player.chr_ins.modules.physics.position;[p.0,p.1,p.2]};
+    let friends:Vec<eldenring::cs::FieldInsHandle>=world.player_chr_set.characters().map(|p|p.chr_ins.field_ins_handle)
+        .chain(world.summon_buddy_chr_set.characters().map(|c|c.field_ins_handle)).chain(std::iter::once(player.chr_ins.field_ins_handle)).collect();
+    let mut nearest:Option<(f32,String)>=None;
+    for chr in world.chr_sets.iter().flatten().flat_map(|set|set.characters()) {
+        if friends.contains(&chr.field_ins_handle)||chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag()||chr.debug_flags.character_disabled(){continue;}
+        if chr.modules.toughness.toughness_max<=0.0 {continue;}
+        if instant {let t=&mut chr.modules.toughness;t.toughness=t.toughness.min(crate::embers::BREAK_TOUGHNESS);}
+        if !open {continue;}
+        let p=&chr.modules.physics.position;
+        let distance=((p.0-origin[0]).powi(2)+(p.1-origin[1]).powi(2)+(p.2-origin[2]).powi(2)).sqrt();
+        if nearest.as_ref().is_some_and(|(best,_)|*best<=distance) {continue;}
+        let (t,armor)=(&chr.modules.toughness,&chr.modules.super_armor);
+        nearest=Some((distance,format!("最近的敌人：NPC {}　距离 {distance:.1} 米　生命 {}/{}\n韧性（失衡条）{:.1} / {:.1}　恢复计时 {:.1} 秒\n霸体（韧度）{:.1} / {:.1}",
+            chr.npc_param_id,chr.modules.data.hp,chr.modules.data.max_hp,t.toughness,t.toughness_max,t.recover_time,armor.sa_durability,armor.sa_durability_max)));
+    }
+    if open&&let Ok(mut shown)=NEAREST.lock() {*shown=Some(nearest.map_or_else(||"附近没有敌人".to_owned(),|(_,text)|text));}
+}
 static BOUT_PROTECT:AtomicBool=AtomicBool::new(false);
 static PLAYER_PROTECTION:Mutex<PlayerProtection>=Mutex::new(PlayerProtection{previous:None});
 struct PlayerProtection {previous:Option<(usize,bool)>}
@@ -41,7 +68,7 @@ fn write_cheat_flags(flags:&mut eldenring::cs::WorldChrManDbgFlags,want:(bool,bo
 /// 每帧：把开关写进游戏的调试标志；联机或调试菜单不可用时全部关掉
 pub fn apply_cheats(party:bool) {
     use fromsoftware_shared::FromStatic;
-    if party||!enabled() {GOD.store(false,Ordering::Relaxed);ONE_SHOT.store(false,Ordering::Relaxed);BOUT_PROTECT.store(false,Ordering::Relaxed);}
+    if party||!enabled() {GOD.store(false,Ordering::Relaxed);ONE_SHOT.store(false,Ordering::Relaxed);BOUT_PROTECT.store(false,Ordering::Relaxed);INSTANT_BREAK.store(false,Ordering::Relaxed);}
     if let Ok(world)=unsafe {eldenring::cs::WorldChrMan::instance_mut()}{sync_player_hit(world);}
     let want=(GOD.load(Ordering::Relaxed),ONE_SHOT.load(Ordering::Relaxed));
     let Ok(mut applied)=APPLIED.lock() else{return};
@@ -317,6 +344,9 @@ impl Menu {
         let (mut god,mut one_shot)=(GOD.load(Ordering::Relaxed),ONE_SHOT.load(Ordering::Relaxed));
         let changed=ui.checkbox("无敌（仅玩家免伤，可正常攻击）",&mut god)|{ui.same_line();ui.checkbox("秒杀（每次命中 9999999 伤害）",&mut one_shot)};
         if changed {GOD.store(god,Ordering::Relaxed);ONE_SHOT.store(one_shot,Ordering::Relaxed);send(Command::Cheats(god,one_shot));}
+        let mut instant=INSTANT_BREAK.load(Ordering::Relaxed);
+        if ui.checkbox("攻击立刻爆条（敌人韧性一直压到 0，打中就失衡）",&mut instant) {INSTANT_BREAK.store(instant,Ordering::Relaxed);send(Command::InstantBreak(instant));}
+        if let Some(text)=NEAREST.lock().ok().and_then(|n|n.clone()) {crate::fancy_text::text_wrapped(ui,text);}
         if ui.button("卢恩 +10000") {send(Command::Runes(10000));}
         ui.same_line();if ui.button("卢恩 +100000") {send(Command::Runes(100000));}
         ui.separator();

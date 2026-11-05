@@ -2,7 +2,7 @@ use serde::{Deserialize,Serialize};
 
 /// 余烬：誓约三选一里的机制增益，没有代价，不能深化；选过的整局生效
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Hash,Serialize,Deserialize)]
-pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork}
+pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork,SpiritResonance,Pouch,Arts,Bulwark,Breaker}
 
 // 运行时数值（参数类的数值见 scene-builder/EmberAssets.cs，说明文字同步引用这些常量）
 pub const EXECUTION_SECONDS:u32=5;
@@ -32,6 +32,8 @@ pub const SPIRIT_BURST_PERCENT:u32=8;
 pub const SPIRIT_FEAST_HEAL_PERCENT:u32=15;
 pub const SPIRIT_FEAST_FP_PERCENT:u32=5;
 pub const SPIRIT_COMMAND_PERCENT:u32=20;
+/// 灵唤师的共鸣：召唤物在场时，玩家自己造成的伤害提高（召唤物的伤害不变）
+pub const SPIRIT_RESONANCE_PERCENT:u32=40;
 // 叠层余烬：层数由战斗中的事件累积，整局保留（Run::ember_stacks），不设上限
 /// 噬魂者：击倒普通敌人、精英、Boss 分别得魂点，每满 SOUL_POINTS 点一层
 pub const SOUL_POINTS:u32=10;
@@ -50,13 +52,18 @@ pub const BARRIER_CUT_PERCENT:u32=35;
 pub const GLINTSTONE_FP_PERCENT:u32=25;
 pub const MOON_FP_PERCENT:u32=70;
 pub const MOON_ATTACK_PERCENT:u32=18;
+/// 战技的精粹：战技造成的伤害提高、战技消耗的专注降低（百分比）
+pub const ARTS_ATTACK_PERCENT:u32=25;
+pub const ARTS_FP_CUT_PERCENT:u32=50;
 /// 直接扣敌人生命的余烬对 Boss 每次最多扣最大生命的 1%
 pub const BOSS_CAP_PERCENT:u32=1;
+/// 鲜血骑士的破势：同一个 Boss 两次失衡之间至少隔这么久（普通敌人每次发作都失衡）
+pub const BREAKER_BOSS_COOLDOWN_SECONDS:u64=30;
 
 impl Ember {
-    pub const ALL:[Self;26]=[Self::Execution,Self::Bloodlord,Self::Frost,Self::Deathflame,Self::Miquella,Self::Rise,Self::DragonHeart,Self::Revenge,Self::Frenzy,Self::Echo,Self::Feast,Self::Thorns,
+    pub const ALL:[Self;31]=[Self::Execution,Self::Bloodlord,Self::Frost,Self::Deathflame,Self::Miquella,Self::Rise,Self::DragonHeart,Self::Revenge,Self::Frenzy,Self::Echo,Self::Feast,Self::Thorns,
         Self::SpiritLink,Self::SpiritBurst,Self::SpiritFeast,Self::SpiritCommand,Self::SpiritTwin,Self::SoulEater,Self::Chain,Self::Godslayer,Self::SpiritKeeper,
-        Self::Barrier,Self::Meditation,Self::Glintstone,Self::FullMoon,Self::Footwork];
+        Self::Barrier,Self::Meditation,Self::Glintstone,Self::FullMoon,Self::Footwork,Self::SpiritResonance,Self::Pouch,Self::Arts,Self::Bulwark,Self::Breaker];
     pub fn index(self)->usize {Self::ALL.iter().position(|e|*e==self).unwrap()}
     pub fn name(self)->&'static str {match self {
         Self::Execution=>"无声处刑",Self::Bloodlord=>"鲜血君王的赐福",Self::Frost=>"永冻吐息",Self::Deathflame=>"死诞之焰",
@@ -65,7 +72,7 @@ impl Ember {
         Self::SpiritLink=>"仿身泪滴的替身",Self::SpiritBurst=>"灵骸迸裂",Self::SpiritFeast=>"众灵的盛宴",Self::SpiritCommand=>"灵唤铃的号令",
         Self::SpiritTwin=>"双生的灵唤铃",Self::SoulEater=>"噬魂者",Self::Chain=>"处刑之链",Self::Godslayer=>"屠神者",Self::SpiritKeeper=>"灵魂收容",
         Self::Barrier=>"托普斯的力场",Self::Meditation=>"亚兹勒的冥想",Self::Glintstone=>"辉石的余韵",Self::FullMoon=>"蕾娜拉的满月",
-        Self::Footwork=>"黑刀刺客的身法",
+        Self::Footwork=>"黑刀刺客的身法",Self::SpiritResonance=>"灵唤师的共鸣",Self::Pouch=>"行商的无底囊",Self::Arts=>"战技的精粹",Self::Bulwark=>"坩埚骑士的铁壁",Self::Breaker=>"鲜血骑士的破势",
     }}
     pub fn effect(self)->String {match self {
         Self::Execution=>format!("致命一击后 {EXECUTION_SECONDS} 秒内\n精力消耗 -{EXECUTION_STAMINA_CUT}%"),
@@ -93,11 +100,16 @@ impl Ember {
         Self::Meditation=>"施放法术或祷告时霸体\n不会被打断".into(),
         Self::Glintstone=>format!("法术与祷告消耗的专注\n降低 {GLINTSTONE_FP_PERCENT}%"),
         Self::Footwork=>"翻滚、后撤步与致命一击\n不消耗精力".into(),
+        Self::Pouch=>"飞刀、投掷壶等投掷道具\n使用后不再消耗".into(),
+        Self::Arts=>format!("战技伤害 +{ARTS_ATTACK_PERCENT}%\n战技消耗的专注 -{ARTS_FP_CUT_PERCENT}%"),
+        Self::Bulwark=>"举盾格挡不消耗精力\n代价：始终超重\n（不能翻滚，移动变慢）".into(),
+        Self::Breaker=>format!("敌人出血、冻伤、睡眠、发狂发作时\n立即失衡\n同一个 Boss 每 {BREAKER_BOSS_COOLDOWN_SECONDS} 秒最多一次"),
         Self::FullMoon=>format!("专注不低于 {MOON_FP_PERCENT}% 时\n造成的伤害提高 {MOON_ATTACK_PERCENT}%"),
+        Self::SpiritResonance=>format!("召唤物在场时\n你造成的伤害 +{SPIRIT_RESONANCE_PERCENT}%"),
     }}
     /// 品质：余烬只有史诗（2）与传说（3），按强度定，决定抽到的概率与奖励卡的颜色
     pub fn quality(self)->u8 {match self {
-        Self::Rise|Self::SpiritTwin|Self::Miquella|Self::Feast|Self::Godslayer|Self::Meditation=>3,
+        Self::Rise|Self::SpiritTwin|Self::Miquella|Self::Feast|Self::Godslayer|Self::Meditation|Self::SpiritResonance|Self::Breaker=>3,
         _=>2,
     }}
     /// 只影响敌人的余烬：联机客机上不生效（敌人由房主计算）
@@ -117,7 +129,7 @@ impl Ember {
     }
     pub fn affects_enemies(self)->bool {matches!(self,Self::Bloodlord|Self::Frost|Self::Deathflame|Self::Thorns|Self::SpiritBurst)}
     /// 召唤流余烬：只有身上带着骨灰时才会出现在奖励里
-    pub fn needs_spirit(self)->bool {matches!(self,Self::SpiritLink|Self::SpiritBurst|Self::SpiritFeast|Self::SpiritCommand|Self::SpiritTwin|Self::SpiritKeeper)}
+    pub fn needs_spirit(self)->bool {matches!(self,Self::SpiritLink|Self::SpiritBurst|Self::SpiritFeast|Self::SpiritCommand|Self::SpiritTwin|Self::SpiritKeeper|Self::SpiritResonance)}
     /// 法师余烬：只有身上带着法杖或圣印记时才会出现在奖励里
     pub fn needs_casting(self)->bool {matches!(self,Self::Barrier|Self::Meditation|Self::Glintstone|Self::FullMoon)}
     /// 这局的构筑能不能抽到它
@@ -277,7 +289,7 @@ pub fn icon_talisman(ember:Ember)->u32 {match ember {
     Ember::DragonHeart=>4020,Ember::Revenge=>2060,Ember::Frenzy=>2080,Ember::Echo=>5000,Ember::Feast=>5030,Ember::Thorns=>1210,
     Ember::SpiritLink=>6090,Ember::SpiritBurst=>6020,Ember::SpiritFeast=>2210,Ember::SpiritCommand=>3060,Ember::SpiritTwin=>6090,
     Ember::SoulEater=>2050,Ember::Chain=>2090,Ember::Godslayer=>1001,Ember::SpiritKeeper=>2210,
-    Ember::Barrier=>3000,Ember::Meditation=>6020,Ember::Glintstone=>1010,Ember::FullMoon=>2110,Ember::Footwork=>5050,
+    Ember::Barrier=>3000,Ember::Meditation=>6020,Ember::Glintstone=>1010,Ember::FullMoon=>2110,Ember::Footwork=>5050,Ember::SpiritResonance=>3060,Ember::Pouch=>5000,Ember::Arts=>6020,Ember::Bulwark=>4100,Ember::Breaker=>2160,
 }}
 /// 扣敌人生命的量：按目标最大生命的百分比，Boss 另有上限
 pub fn enemy_damage(max_hp:i32,percent:u32,boss:bool)->i32 {
@@ -296,7 +308,7 @@ mod tests {
     #[test]
     fn every_quality_has_embers_and_rolls_follow_the_odds() {
         assert!(Ember::ALL.iter().all(|e|matches!(e.quality(),2|3)),"embers are only epic or legendary");
-        assert_eq!(Ember::ALL.iter().filter(|e|e.quality()==3).count(),6);
+        assert_eq!(Ember::ALL.iter().filter(|e|e.quality()==3).count(),8);
         assert_eq!(odds(crate::affixes::QUALITY_START),[0,0,85,15]);assert_eq!(odds(crate::affixes::QUALITY_END),[0,0,72,28]);
         let mut counts=[0u32;4];
         for seed in 0..20000u64 {counts[usize::from(offer_by_quality(seed,&[],true,true,[0,0,50,50]).unwrap().quality())]+=1;}
@@ -316,10 +328,10 @@ mod tests {
         for _ in 0..Ember::ALL.len() {let e=offer(held.len() as u64*31,&held,true,true).unwrap();assert!(!held.contains(&e));held.push(e);}
         assert_eq!(offer(1,&held,true,true),None);
         assert_eq!(offer(5,&[],true,true),offer(5,&[],true,true));
-        // 没有骨灰、也没有法杖圣印记时只出 16 枚通用余烬，抽完就没有了
+        // 没有骨灰、也没有法杖圣印记时只出 20 枚通用余烬，抽完就没有了
         let mut plain=vec![];
         while let Some(e)=offer(plain.len() as u64*17,&plain,false,false) {assert!(!e.needs_spirit()&&!e.needs_casting());plain.push(e);}
-        assert_eq!(plain.len(),16);
+        assert_eq!(plain.len(),20);
     }
     #[test]
     fn enemy_damage_is_capped_for_bosses() {
@@ -500,6 +512,15 @@ mod tests {
         assert_eq!(Ember::Execution.effect(),"致命一击后 5 秒内\n精力消耗 -50%");
         assert_eq!(Ember::Barrier.effect(),"施放法术或祷告时\n受到的伤害降低 35%");
         assert_eq!(Ember::FullMoon.effect(),"专注不低于 70% 时\n造成的伤害提高 18%");
+        assert_eq!(Ember::SpiritResonance.effect(),"召唤物在场时\n你造成的伤害 +40%");
+        assert_eq!(Ember::Arts.effect(),"战技伤害 +25%\n战技消耗的专注 -50%");
+        assert!(Ember::Arts.quality()==2&&!Ember::Arts.needs_spirit()&&!Ember::Arts.needs_casting());
+        assert!(Ember::Pouch.quality()==2&&!Ember::Pouch.needs_spirit()&&!Ember::Pouch.needs_casting()&&!Ember::Pouch.affects_enemies());
+        assert_eq!(Ember::Bulwark.effect(),"举盾格挡不消耗精力\n代价：始终超重\n（不能翻滚，移动变慢）");
+        assert!(Ember::Bulwark.quality()==2&&!Ember::Bulwark.needs_spirit()&&!Ember::Bulwark.needs_casting());
+        assert_eq!(Ember::Breaker.effect(),"敌人出血、冻伤、睡眠、发狂发作时\n立即失衡\n同一个 Boss 每 30 秒最多一次");
+        assert!(Ember::Breaker.quality()==3&&!Ember::Breaker.needs_spirit()&&!Ember::Breaker.needs_casting());
+        assert!(Ember::SpiritResonance.needs_spirit()&&Ember::SpiritResonance.quality()==3&&!Ember::SpiritResonance.affects_enemies());
         assert_eq!(Ember::Frenzy.effect(),"每次命中攻击 +2%，最多 +16%\n受伤时清零");
         assert!(Ember::ALL.iter().all(|e|e.effect().lines().all(|l|l.chars().count()<=20)),"card lines must fit");
     }

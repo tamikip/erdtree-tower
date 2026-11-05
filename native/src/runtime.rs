@@ -1335,6 +1335,7 @@ fn tick_locked() {
     };
     PLAYER_READY.store(world.main_player.is_some()&&game.save_slot>=0,std::sync::atomic::Ordering::Relaxed);
     clear_ailments_under_overlay(&mut state,world,game);
+    super::debug_menu::tick_enemies(world);
     if state.view.resource_alert.is_none()&&let Some(bad)=resource_check().filter(|bad|!bad.is_empty()) {
         state.view.resource_alert=Some((1,bad.clone()));
         report(&mut state,format!("整合包文件不完整：{} 个场地文件缺失或与当前版本不一致，进入这些战斗会被拒绝。请关闭游戏，在启动器里点「校验并修复文件」。",bad.len()));
@@ -2442,6 +2443,7 @@ fn debug_command(state:&mut Runtime,world:&mut WorldChrMan,command:super::debug_
         },
         // 开关本身由 debug_menu::apply_cheats 每帧写入；这里只把旅程标记为调试旅程并提示
         Command::Cheats(god,one_shot)=>format!("无敌{}，秒杀{}",if god{"开"}else{"关"},if one_shot{"开"}else{"关"}),
+        Command::InstantBreak(on)=>format!("攻击立刻爆条{}",if on{"开"}else{"关"}),
         Command::Runes(amount)=>{
             data.rune_count=data.rune_count.saturating_add(amount).min(999_999_999);next.gold=data.rune_count;state.view.runes=data.rune_count;
             format!("卢恩 +{amount}")
@@ -2666,6 +2668,9 @@ fn host_embers(state:&mut Runtime,world:&mut WorldChrMan) {
     let events=state.ember_fight.tick(world,key,&embers,&foes,authority,state.party.is_some(),flasks,keeper);
     if events.feast {grant_feast(state.flasks.as_mut(),world);}
     record_ember_gains(state,events.gains,key);
+    // 鲜血骑士的破势：自己持有，或联机时任一在场队员持有，都由房主（单人即自己）执行
+    let breaker=erdtree_tower::embers::Ember::Breaker;
+    if authority&&(embers.contains(&breaker)||state.party.as_ref().is_some_and(|p|p.gate.held_embers().contains(&breaker))) {state.ember_fight.break_on_bursts(world,&foes);}
     // 房主：执行成员发来的敌人侧余烬效果
     if let Some(link)=state.party.as_ref().filter(|p|p.host()) {
         for (member,held,requests) in link.gate.strikes() {state.ember_fight.apply_remote(world,&foes,member,&held,&requests);}
