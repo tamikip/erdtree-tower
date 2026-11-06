@@ -1,5 +1,5 @@
 use std::time::{Duration,Instant};
-use eldenring::{cs::{ChrIns,ChrInsExt,EquipParamGoods,FieldInsHandle,SoloParamRepository,SpEffectParam,WorldChrMan},param::SP_EFFECT_PARAM_ST};
+use eldenring::{cs::{AttackElementCorrectParam,ChrIns,ChrInsExt,EquipParamGoods,EquipParamWeapon,FieldInsHandle,SoloParamRepository,SpEffectParam,WorldChrMan},param::SP_EFFECT_PARAM_ST};
 use fromsoftware_shared::FromStatic;
 use erdtree_tower::{Phase,Run,embers::{self,Ember,Gain,Strike,StrikeRequest}};
 
@@ -26,6 +26,9 @@ const ARTS_ATTACK:i32=FIRST+22;
 const ARTS_COST:i32=FIRST+23;
 /// 坩埚骑士的铁壁：整局常驻（格挡不耗精力；最大负重压到极低，始终超重）
 const BULWARK:i32=FIRST+24;
+/// 红狮子的不退：生命低于 LAST_STAND_HP_PERCENT% 时挂上（受到的削韧 ×1/3），回到以上就摘掉
+const LAST_STAND:i32=FIRST+25;
+pub(crate) fn last_stand(hp:i32,max:i32)->bool {hp>0&&max>0&&i64::from(hp)*100<i64::from(max)*i64::from(embers::LAST_STAND_HP_PERCENT)}
 /// 鲜血骑士的破势：一次性发作在敌人身上的特效编号段（出血、睡眠、冻伤、发狂；毒、腐败、致死这些持续类不算）
 const BURSTS:[(i32,i32,&str);4]=[(6400,6449,"出血"),(6450,6499,"睡眠"),(6700,6749,"冻伤"),(6750,6799,"发狂")];
 fn burst_kind(id:i32)->Option<&'static str> {BURSTS.iter().find(|(low,high,_)|(*low..=*high).contains(&id)).map(|(_,_,name)|*name)}
@@ -87,20 +90,27 @@ fn observe_chain(chr:&ChrIns,level:u32) {
     if let Ok(mut trace)=CHAIN_TRACE.lock(){*trace=ChainTrace{level,resident:CRITICAL_HOOK_READY.load(Ordering::Acquire),marker:CRITICAL_PENDING.load(Ordering::Acquire),
         rate:row.map(|r|r.physics_attack_rate()),critical_only:row.is_some_and(|r|r.state_info()==367&&r.throw_attack_param_change()),effects:active.len()};}
 }
-fn player_ids()->impl Iterator<Item=i32> {[EXECUTION,REVENGE,ECHO,BARRIER,MEDITATION,GLINTSTONE,FULL_MOON,SPIRIT_RESONANCE,ARTS_ATTACK,ARTS_COST,BULWARK,CHAIN_RESIDENT].into_iter().chain((1..=embers::FRENZY_STACKS).map(frenzy_effect))}
+fn player_ids()->impl Iterator<Item=i32> {[EXECUTION,REVENGE,ECHO,BARRIER,MEDITATION,GLINTSTONE,FULL_MOON,SPIRIT_RESONANCE,ARTS_ATTACK,ARTS_COST,BULWARK,LAST_STAND,CHAIN_RESIDENT].into_iter().chain((1..=embers::FRENZY_STACKS).map(frenzy_effect))}
 /// 叠层余烬不设上限：每种两行轮换（灵魂收容挂在召唤物身上，其余挂在玩家身上）。
 /// 层数变了就把新倍率写进没挂着的那一行、换上它，再摘掉旧的那一行；不改正在生效的那一行
 fn slots(ember:Ember)->Option<[i32;2]> {
-    let base=match ember {Ember::Godslayer=>60,Ember::SoulEater=>70,Ember::Chain=>80,Ember::SpiritKeeper=>90,_=>return None};
+    let base=match ember {Ember::Battlemage=>26,Ember::Godslayer=>60,Ember::Harvest=>62,Ember::SoulEater=>70,Ember::Chain=>80,Ember::SpiritKeeper=>90,_=>return None};
     Some([FIRST+base,FIRST+base+1])
 }
-const PLAYER_STACKING:[Ember;3]=[Ember::Godslayer,Ember::SoulEater,Ember::Chain];
+const PLAYER_STACKING:[Ember;4]=[Ember::Godslayer,Ember::Harvest,Ember::SoulEater,Ember::Chain];
+/// 处刑者的血宴：致命一击之后这么久之内自己打死的敌人算处决击杀（每次致命一击只算一只）
+const HARVEST_WINDOW:Duration=Duration::from_secs(4);
 fn holds(row:&SP_EFFECT_PARAM_ST,ember:Ember,rates:embers::Rates)->bool {
     if ember==Ember::SpiritKeeper {row.physics_attack_power_rate()==rates.attack&&row.slash_damage_cut_rate()==rates.cut}
+    else if ember==Ember::Battlemage {row.slash_damage_cut_rate()==rates.cut}
     else {row.physics_attack_rate()==rates.attack&&row.max_hp_rate()==rates.hp}
 }
 fn write(row:&mut SP_EFFECT_PARAM_ST,ember:Ember,rates:embers::Rates) {
-    if ember==Ember::SpiritKeeper {
+    if ember==Ember::Battlemage {
+        let c=rates.cut;
+        row.set_slash_damage_cut_rate(c);row.set_blow_damage_cut_rate(c);row.set_thrust_damage_cut_rate(c);row.set_neutral_damage_cut_rate(c);
+        row.set_magic_damage_cut_rate(c);row.set_fire_damage_cut_rate(c);row.set_thunder_damage_cut_rate(c);row.set_dark_damage_cut_rate(c);
+    } else if ember==Ember::SpiritKeeper {
         let a=rates.attack;
         row.set_physics_attack_power_rate(a);row.set_magic_attack_power_rate(a);row.set_fire_attack_power_rate(a);row.set_thunder_attack_power_rate(a);row.set_dark_attack_power_rate(a);
         let c=rates.cut;
@@ -157,6 +167,84 @@ fn sync_pouch(on:bool) {
         super::log("TOWER_EMBER pouch off: throwables consumed again");
     }
 }
+/// 黄金树的恩泽：原版治疗类祷告的回复特效（changeHpPoint 为负即回复）：急救、治疗、大治疗、王之治疗、黄金树治疗（含给队友的）、
+/// 赐福的恩惠、黄金树的赐福、兽性活力，以及 DLC 的远距治疗、小黄金树。圣杯瓶、道具、武器的回复不在内
+const MERCY_HEALS:[u32;18]=[1642000,1642001,1642100,1642101,1642200,1642201,1642300,1642301,1642400,1642401,
+    1643000,1643001,1643100,1643101,1685000,21640000,21640001,21667000];
+/// 持有时在本机内存里把这些行的回复量乘 1+MERCY_HEAL_PERCENT%（不改 regulation），记下原值；不再持有时改回原值
+static MERCY_ROWS:std::sync::Mutex<Option<Vec<(u32,i32)>>>=std::sync::Mutex::new(None);
+pub(crate) fn mercy_heal(point:i32)->i32 {(i64::from(point)*i64::from(100+embers::MERCY_HEAL_PERCENT)/100) as i32}
+fn sync_mercy(on:bool) {
+    let Ok(mut rows)=MERCY_ROWS.lock() else{return};
+    if on==rows.is_some() {return;}
+    let Ok(params)=(unsafe {SoloParamRepository::instance_mut()}) else{return};
+    if on {
+        let mut changed=Vec::new();
+        for id in MERCY_HEALS {
+            let Some(row)=params.get_mut::<SpEffectParam>(id) else{continue};
+            let point=row.change_hp_point();
+            if point<0 {row.set_change_hp_point(mercy_heal(point));changed.push((id,point));}
+        }
+        super::log(format!("TOWER_EMBER mercy on: {} healing incantation effects +{}%",changed.len(),embers::MERCY_HEAL_PERCENT));
+        *rows=Some(changed);
+    } else {
+        for (id,point) in rows.take().unwrap_or_default() {if let Some(row)=params.get_mut::<SpEffectParam>(id) {row.set_change_hp_point(point);}}
+        super::log("TOWER_EMBER mercy off: healing incantations restored");
+    }
+}
+/// 战斗法师：属性补正表里预留的专用行（battlemage-patch 写进 regulation）。转换时把武器原来的补正规则复制过来，
+/// 再让智力或信仰也计入物理伤害；武器参数行改用这一行，智力 / 信仰补正提到 S。都只改本机内存，读档后按存档重新写
+const BATTLEMAGE_ELEMENTS:u32=9670000;
+/// 补正值：原版字母 S 的门槛是 175，取 180（强化后的倍率通常 ≥1，仍是 S）
+const BATTLEMAGE_CORRECT:f32=180.0;
+struct Converted {row:u32,stat:u8,correct:f32,elements:i32}
+static BATTLEMAGE:std::sync::Mutex<Vec<Converted>>=std::sync::Mutex::new(Vec::new());
+/// 铁匠菜单据此显示「战斗法师」一项
+pub static BATTLEMAGE_HELD:AtomicBool=AtomicBool::new(false);
+fn sync_battlemage(wanted:&[(u32,u8)]) {
+    let Ok(mut applied)=BATTLEMAGE.lock() else{return};
+    if applied.len()==wanted.len()&&applied.iter().zip(wanted).all(|(a,(row,stat))|a.row==*row&&a.stat==*stat) {return;}
+    let Ok(params)=(unsafe {SoloParamRepository::instance_mut()}) else{return};
+    // 先全部改回原样，再按存档重新写
+    for c in applied.drain(..) {
+        if let Some(row)=params.get_mut::<EquipParamWeapon>(c.row) {
+            if c.stat==0 {row.set_correct_magic(c.correct);}else{row.set_correct_faith(c.correct);}
+            row.set_attack_element_correct_id(c.elements);
+        }
+    }
+    for (slot,&(row_id,stat)) in wanted.iter().enumerate().take(embers::BATTLEMAGE_WEAPONS) {
+        let custom=BATTLEMAGE_ELEMENTS+slot as u32;
+        let Some(row)=params.get::<EquipParamWeapon>(row_id) else{continue};
+        let (correct,elements)=(if stat==0{row.correct_magic()}else{row.correct_faith()},row.attack_element_correct_id());
+        let Some(source)=params.get::<AttackElementCorrectParam>(elements.max(0) as u32).map(|r|std::ptr::from_ref(r)) else{continue};
+        let Some(target)=params.get_mut::<AttackElementCorrectParam>(custom) else{super::log_repeating("TOWER_EMBER battlemage: element correction rows missing; run battlemage-patch");return;};
+        unsafe {std::ptr::copy_nonoverlapping(source,std::ptr::from_mut(target),1);}
+        if stat==0 {target.set_is_magic_correct_by_physics(true);}else{target.set_is_faith_correct_by_physics(true);}
+        let row=params.get_mut::<EquipParamWeapon>(row_id).unwrap();
+        if stat==0 {row.set_correct_magic(correct.max(BATTLEMAGE_CORRECT));}else{row.set_correct_faith(correct.max(BATTLEMAGE_CORRECT));}
+        row.set_attack_element_correct_id(custom as i32);
+        applied.push(Converted{row:row_id,stat,correct,elements});
+    }
+    super::log(format!("TOWER_EMBER battlemage weapons: {wanted:?}"));
+}
+/// 疾行者的轻羽：当前动画是走路、奔跑（动画编号去掉动作组后在这一段）时把动作播放速度提到 1+STRIDE_PERCENT%，攻击、翻滚、施法不变。
+/// 编号段按魂系列惯例先定（a000_020000 起的移动动作），实测后按 TOWER_EMBER stride anims 日志校准
+const LOCOMOTION:std::ops::RangeInclusive<i32>=20000..=24999;
+pub(crate) fn locomotion(anim:i32)->bool {anim>=0&&LOCOMOTION.contains(&(anim%1_000_000))}
+static STRIDE_SET:AtomicBool=AtomicBool::new(false);
+static STRIDE_SEEN:std::sync::Mutex<Vec<i32>>=std::sync::Mutex::new(Vec::new());
+fn sync_stride(chr:&mut ChrIns,on:bool) {
+    let anim={let t=&chr.modules.time_act;t.anim_queue[(t.read_idx%10) as usize].anim_id};
+    if on && let Ok(mut seen)=STRIDE_SEEN.lock() && seen.len()<40 && !seen.contains(&anim) {
+        seen.push(anim);super::log(format!("TOWER_EMBER stride anims: {seen:?}"));
+    }
+    let speed=1.0+embers::STRIDE_PERCENT as f32/100.0;
+    let alive=chr.modules.data.hp>0;
+    let behavior=&mut chr.modules.behavior;
+    if on&&alive&&locomotion(anim) {
+        if behavior.animation_speed<speed {behavior.animation_speed=speed;STRIDE_SET.store(true,Ordering::Relaxed);}
+    } else if STRIDE_SET.swap(false,Ordering::Relaxed)&&(behavior.animation_speed-speed).abs()<0.001 {behavior.animation_speed=1.0;}
+}
 pub fn held(run:Option<&Run>)->Vec<Ember> {
     run.filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)).map(|r|r.embers.clone()).unwrap_or_default()
 }
@@ -165,12 +253,17 @@ pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight) {
     let mut want=Vec::new();
     let embers=held(run);
     sync_pouch(embers.contains(&Ember::Pouch));
-    let owner=if embers.contains(&Ember::Chain)||embers.contains(&Ember::Execution){std::ptr::from_ref(chr) as usize}else{0};
+    sync_mercy(embers.contains(&Ember::Mercy));
+    sync_stride(chr,embers.contains(&Ember::Stride));
+    let battlemage=embers.contains(&Ember::Battlemage);BATTLEMAGE_HELD.store(battlemage,Ordering::Relaxed);
+    sync_battlemage(if battlemage {run.map_or(&[][..],|r|r.battlemage.as_slice())}else{&[]});
+    let owner=if embers.contains(&Ember::Chain)||embers.contains(&Ember::Execution)||embers.contains(&Ember::Harvest){std::ptr::from_ref(chr) as usize}else{0};
     if CHAIN_OWNER.swap(owner,Ordering::AcqRel)!=owner{CRITICAL_PENDING.store(false,Ordering::Release);}
     if fight.revenge_active() {want.push(REVENGE);}
     if fight.echo_active() {want.push(ECHO);}
     if embers.contains(&Ember::Glintstone) {want.push(GLINTSTONE);}
     if embers.contains(&Ember::Bulwark) {want.push(BULWARK);}
+    if embers.contains(&Ember::LastStand)&&last_stand(chr.modules.data.hp,chr.modules.data.max_hp) {want.push(LAST_STAND);}
     if embers.contains(&Ember::Arts) {want.extend([ARTS_ATTACK,ARTS_COST]);}
     if fight.casting() {
         if embers.contains(&Ember::Barrier) {want.push(BARRIER);}
@@ -185,6 +278,9 @@ pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight) {
         let level=if embers.contains(&ember) {stacks.level(ember)}else{0};
         swap(chr,&present,ember,scaled_slot(ember,level,&present));
     }
+    // 战斗法师的减伤：按智力、信仰较高者，能力值变了就换一行
+    let mind=if battlemage {unsafe {eldenring::cs::PlayerIns::local_player()}.ok().map_or(0,|p|{let d=unsafe {p.player_game_data.as_ref()};d.intelligence.max(d.faith)})}else{0};
+    swap(chr,&present,Ember::Battlemage,scaled_slot(Ember::Battlemage,mind,&present));
     for id in player_ids() {if present.contains(&id)&&!want.contains(&id){chr.remove_speffect(id);}}
     if want.is_empty()||!ready(&want) {observe_chain(chr,stacks.level(Ember::Chain));return;}
     for id in want {if !present.contains(&id){chr.apply_speffect(id,false);}}
@@ -217,6 +313,8 @@ pub struct Fight {
     spirit:Option<[f32;3]>,
     /// 上一帧玩家身上有处刑之链的致命一击标记
     critical_edge:CriticalEdge,
+    /// 处刑者的血宴：最近一次致命一击的时间（之后 HARVEST_WINDOW 内自己打死的敌人算处决击杀，算过就清掉）
+    critical_at:Option<Instant>,
     /// 房主：每个成员已执行到的敌人侧效果序号
     remote:Vec<(u64,u32)>,
     /// 联机时这场战斗是否已记过第一次“自己的命中”与“别人的命中”（日志，用来核对 last_hit_by 的归属）
@@ -272,11 +370,12 @@ impl Fight {
         let Some(player)=world.main_player.as_ref() else{return events};
         if player.chr_ins.modules.data.hp<=0||player.chr_ins.chr_flags1c5.death_flag() {return events;}
         // 致命一击（原生处决事件，见 install_critical_trace）：处刑之链加层，无声处刑挂上精力减半
-        if has(Ember::Chain)||has(Ember::Execution) {
+        if has(Ember::Chain)||has(Ember::Execution)||has(Ember::Harvest) {
             let marked=CRITICAL_PENDING.swap(false,Ordering::AcqRel);
             let throwing=unsafe{std::ptr::addr_of!(player.chr_ins.modules.throw.throw_node.throw_state).cast::<u32>().read()}==3;
             if self.critical_edge.observe(marked,throwing) {
                 if has(Ember::Chain) {events.gains.push(Gain::Critical);}
+                if has(Ember::Harvest) {self.critical_at=Some(now);}
                 let count=CRITICAL_EVENTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed)+1;
                 super::log(format!("CHAIN_TEST real critical marker observed count={count}"));
                 if has(Ember::Execution)&&ready(&[EXECUTION_RELIEF]) {
@@ -346,6 +445,11 @@ impl Fight {
         if resonance!=self.resonance {super::log(format!("TOWER_EMBER spirit resonance {}",if resonance{"on"}else{"off"}));}
         self.resonance=resonance;
         for &dead in &deaths {events.gains.push(Gain::Kill{rank:kill_rank(self.foes[dead].rank),spirit:spirit.is_some()||vanished.is_some()});}
+        // 处刑者的血宴：致命一击之后不久自己打死的那一只（只算第一只，范围伤害顺带打死的不算）
+        if let Some(&dead)=deaths.first()&&self.critical_at.is_some_and(|at|now.duration_since(at)<HARVEST_WINDOW) {
+            self.critical_at=None;let rank=kill_rank(self.foes[dead].rank);
+            events.gains.push(Gain::CriticalKill{rank});super::log(format!("TOWER_EMBER harvest critical kill rank={rank}"));
+        }
         // 灵魂收容：每只在场的召唤物挂上当前层数的效果
         if has(Ember::SpiritKeeper) {
             let living=|c:&&mut _|{let c:&ChrIns=c;c.modules.data.hp>0&&!c.chr_flags1c5.death_flag()};
@@ -377,8 +481,14 @@ impl Fight {
         }
         let rise=has(Ember::Rise)&&!self.rose&&i64::from(hp)*100<i64::from(max_hp)*i64::from(embers::RISE_BELOW_PERCENT);
         let dragon=has(Ember::DragonHeart)&&stamina<=0&&max_stamina>0&&self.dragon_ready.is_none_or(|t|now>=t);
-        if heal>0||rise||dragon||refund>0 {
+        // 殉道者的苦修：掉了多少生命（按最大生命的比例），就按同样的比例回复专注
+        let martyr=if has(Ember::Martyr) {taken}else{0};
+        if heal>0||rise||dragon||refund>0||martyr>0 {
             let data=&mut world.main_player.as_mut().unwrap().chr_ins.modules.data;
+            if martyr>0 {
+                let gain=embers::martyr_fp(martyr,data.max_hp,data.max_fp);
+                if gain>0 {data.fp=(i64::from(data.fp.max(0))+i64::from(gain)).min(i64::from(data.max_fp)) as i32;}
+            }
             if refund>0 {
                 data.stamina=(i64::from(data.stamina.max(0))+i64::from(refund)).min(i64::from(data.max_stamina)) as i32;
                 self.footwork.last=Some(data.stamina);
@@ -534,6 +644,20 @@ fn critical_listener_rejects_other_players_and_noncritical_effects() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mercy_raises_heals_by_half_and_keeps_the_sign() {
+        assert_eq!((mercy_heal(-230),mercy_heal(-8),mercy_heal(-115)),(-345,-12,-172));
+        assert!(MERCY_HEALS.iter().all(|id|(1642000..1700000).contains(id)||(21640000..21670000).contains(id)));
+    }
+    #[test]
+    fn stride_only_speeds_up_locomotion() {
+        assert!(locomotion(20000)&&locomotion(24999)&&locomotion(30020100),"locomotion in any action group");
+        assert!(!locomotion(27000)&&!locomotion(30030000)&&!locomotion(-1));
+    }
+    #[test]
+    fn last_stand_turns_on_below_forty_percent() {
+        assert!(last_stand(399,1000)&&!last_stand(400,1000)&&!last_stand(0,1000)&&!last_stand(10,0));
+    }
     #[test]
     fn breaker_counts_only_burst_ailments() {
         for (id,kind) in [(6400,Some("出血")),(6416,Some("出血")),(6450,Some("睡眠")),(6701,Some("冻伤")),(6754,Some("发狂"))] {assert_eq!(burst_kind(id),kind,"{id}");}

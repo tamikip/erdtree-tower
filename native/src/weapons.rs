@@ -50,6 +50,49 @@ pub fn reforge_target(data: &PlayerGameData, run: &erdtree_tower::Run, node: usi
     }
     Ok(next)
 }
+/// 重练炉：右手的词条武器换成同品质的另一把武器（强化等级按新武器的上限保留）；uses 是这座炉子此前重练的次数
+pub fn furnace_target(data: &PlayerGameData, run: &erdtree_tower::Run, node: usize, uses: u8) -> Result<u32, String> {
+    let slot = data.equipment.chr_asm.equipment.active_right_weapon_slot() as usize;
+    let old = data.equipment.chr_asm.equipment_param_ids[slot];
+    if old < 0 {return Err("请在右手装备词条武器".into());}
+    let (variant, level) = (old as u32 / 100 * 100, old as u32 % 100);
+    if erdtree_tower::affixes::tier(variant).is_none() {return Err("右手武器没有词条，未扣除卢恩".into());}
+    let target = erdtree_tower::affixes::furnace(run, node, variant, uses).ok_or("没有可以换的同品质武器，未扣除卢恩")?;
+    let params = unsafe { SoloParamRepository::instance() }.map_err(|_| "武器参数未就绪")?;
+    let row = params.get::<EquipParamWeapon>(target).ok_or("重练后的武器参数不存在")?;
+    // 普通与失色武器的满级不同：按等效等级换算（普通 +25 ≈ 失色 +10）
+    let somber_old = params.get::<EquipParamWeapon>(variant).is_some_and(|p| p.origin_equip_wep16() < 0);
+    let somber_new = row.origin_equip_wep16() < 0;
+    let level = match (somber_old, somber_new) {(false, true) => level * 2 / 5, (true, false) => level * 5 / 2, _ => level};
+    let next = target + level.min(super::smith::level_max(params, row.reinforce_type_id()) as u32);
+    let reinforcement = i32::from(row.reinforce_type_id()) + (next % 100) as i32;
+    if reinforcement < 0 || params.get::<ReinforceParamWeapon>(reinforcement as u32).is_none() {
+        return Err("重练后的强化参数不存在，未扣除卢恩".into());
+    }
+    Ok(next)
+}
+/// 战斗法师：S 补正的门槛（原版补正字母 S ≥ 175）
+pub const S_SCALING: f32 = 175.0;
+/// 近战武器的种类（武器编号的百万位）：剑、刀、斧、槌、矛、拳爪鞭等；盾、法杖、圣印记、弓弩、火把、调香瓶、突刺盾不算
+pub fn melee_kind(kind: u32) -> bool {matches!(kind, 1..=23 | 60 | 63 | 64 | 66 | 67 | 68)}
+/// 战斗法师：右手武器能不能附加 S 补正，能的话返回它的武器参数行（等级去掉）。converted：这局已转换过的武器（换另一种补正时不算“已有 S”）
+pub fn battlemage_target(data: &PlayerGameData, converted: &[(u32, u8)]) -> Result<u32, String> {
+    let slot = data.equipment.chr_asm.equipment.active_right_weapon_slot() as usize;
+    let old = data.equipment.chr_asm.equipment_param_ids[slot];
+    if old < 0 {return Err("请在右手装备近战武器".into());}
+    let (row_id, level) = (old as u32 / 100 * 100, old as u32 % 100);
+    if !melee_kind((erdtree_tower::affixes::base(row_id) & 0x0fffffff) / 1_000_000) {return Err("只有近战武器能附加补正（盾、法杖、圣印记、弓弩不行）".into());}
+    if converted.iter().any(|(row, _)| *row == row_id) {return Ok(row_id);}
+    let params = unsafe { SoloParamRepository::instance() }.map_err(|_| "武器参数未就绪")?;
+    let row = params.get::<EquipParamWeapon>(row_id).ok_or("武器参数不存在")?;
+    let reinforce = params.get::<ReinforceParamWeapon>((i32::from(row.reinforce_type_id()) + level as i32) as u32).ok_or("强化参数不存在")?;
+    let scaled = [
+        row.correct_strength() * reinforce.correct_strength_rate(), row.correct_agility() * reinforce.correct_agility_rate(),
+        row.correct_magic() * reinforce.correct_magic_rate(), row.correct_faith() * reinforce.correct_faith_rate(), row.correct_luck() * reinforce.correct_luck_rate(),
+    ];
+    if scaled.iter().any(|v| *v >= S_SCALING) {return Err("这把武器已经有 S 补正".into());}
+    Ok(row_id)
+}
 pub fn reforge(data: &mut PlayerGameData, next: u32) -> Result<(), String> {
     let slot = data.equipment.chr_asm.equipment.active_right_weapon_slot() as usize;
     let old = data.equipment.chr_asm.equipment_param_ids[slot];
@@ -205,5 +248,13 @@ mod tests {
         assert!(next_id(901239, 10, 39, true).is_err());
         assert!(next_id(901225, 25, 25, true).is_err());
         assert!(next_id(110000, 25, 99, false).is_err());
+    }
+}
+#[cfg(test)]
+mod battlemage_tests {
+    #[test]
+    fn only_melee_weapons_take_battlemage_scaling() {
+        for kind in [1,2,3,4,9,13,14,16,23,60,64,66,67,68] {assert!(super::melee_kind(kind),"{kind}");}
+        for kind in [24,30,31,32,33,34,40,41,42,43,44,61,62] {assert!(!super::melee_kind(kind),"{kind}");}
     }
 }

@@ -301,10 +301,14 @@ fn tick_party_scarabs(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->
         scene.hunt=Some(super::map_scarabs::Hunt::new(base)?);
     }
     if let Some(killed)=link.event.done {
-        if job.player==link.config.player {
+        // 奖励给打死它的人（每个人按本机看到的最后一击各领各的），付钱的人只在没打到时退款；原来只发给付钱的人
+        let mine=killed&scene.hunt.as_ref().map_or(0,|h|h.own_kills());
+        let payer=job.player==link.config.player;
+        super::log(format!("Party scarabs settle: wave={} payer={payer} killed={killed:03b} mine={mine:03b} aborted={}",job.wave,link.event.aborted));
+        if payer||mine!=0&&!link.event.aborted {
             let run=state.view.run.as_mut().ok_or("个人事件未加载")?;
-            if run.phase!=(Phase::Node{id})||!run.regional_event.scarabs||run.regional_event.attempts!=attempt{return Err("个人粪金龟次数与结算不匹配".into());}
-            if link.event.aborted {
+            if run.phase!=(Phase::Node{id})||!run.regional_event.scarabs||payer&&run.regional_event.attempts!=attempt{return Err("个人粪金龟次数与结算不匹配".into());}
+            if payer&&link.event.aborted {
                 let player=world.main_player.as_mut().ok_or("角色尚未加载")?;
                 let data=unsafe {player.player_game_data.as_mut()};
                 let refunded=data.rune_count.checked_add(erdtree_tower::regional_events::SCARAB_PRICE).ok_or("退款超过卢恩上限")?;
@@ -312,11 +316,13 @@ fn tick_party_scarabs(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->
                 let mut next=run.clone();next.regional_event.attempts-=1;next.gold=refunded;
                 data.rune_count=refunded;state.view.runes=refunded;record_checked(&next)?;*run=next;
                 finish_party_award()?;
-            }else if killed!=0 {
+            }else if mine!=0 {
                 write_award_journal(&award_path()?,run)?;
                 let player=world.main_player.as_mut().ok_or("角色尚未加载")?;
-                for slot in 0..3 {if killed&(1<<slot)!=0 {
-                    super::loot::regional_reward(unsafe {player.player_game_data.as_mut()},run,run.seed^0x5ca4ab,id*16+usize::from(attempt)*3+slot)?;
+                for slot in 0..3 {if mine&(1<<slot)!=0 {
+                    // 不是付钱的人：种子里再混进付钱的人，免得两个人各自第 1 次的两波抽到同一件
+                    let seed=if payer {run.seed^0x5ca4ab}else{run.seed^0x5ca4ab^job.player.rotate_left(17)};
+                    super::loot::regional_reward(unsafe {player.player_game_data.as_mut()},run,seed,id*16+usize::from(attempt)*3+slot)?;
                 }}
                 record_checked(run)?;finish_party_award()?;
             }
@@ -2867,6 +2873,9 @@ fn transact(state: &mut Runtime, world: &mut WorldChrMan, action: Action, journa
     let reforge=if effect.reforge {
         let Phase::Node{id:node}=old.phase else {return Err("当前不在事件节点".into());};
         Some(super::weapons::reforge_target(unsafe {player.player_game_data.as_ref()},&old,node,effect.reforge_upgrade)?)
+    }else if effect.furnace {
+        let Phase::Node{id:node}=old.phase else {return Err("当前不在事件节点".into());};
+        Some(super::weapons::furnace_target(unsafe {player.player_game_data.as_ref()},&old,node,effect.furnace_uses)?)
     }else{None};
     if (sacred_tear||upgrade_stone)&&!material_ready {
         let item=if upgrade_stone{super::smith::VOUCHER}else{erdtree_tower::elite::TEAR};
@@ -3165,6 +3174,13 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
             tick_regional_event(state,world,&mut room)?;
         }
         if room.kind == erdtree_tower::NodeKind::Camp {
+            // 战斗法师：铁匠菜单里选了智力或信仰，给右手武器附加 S 补正（免费，记进存档；参数下一帧由 embers::sync 写进内存）
+            if let Some(stat)=super::native_talk::take_battlemage() {
+                match battlemage_convert(state,world,stat) {
+                    Ok(message)=>{room.notice(super::native_talk::BATTLEMAGE_DONE)?;room.view.message=message;},
+                    Err(error)=>{super::log(format!("TOWER_EMBER battlemage refused: {error}"));room.notice(super::native_talk::BATTLEMAGE_REFUSED)?;room.view.message=error;},
+                }
+            }
             let data=unsafe {world.main_player.as_mut().ok_or("角色未加载")?.player_game_data.as_mut()};
             if let Some(run)=state.view.run.as_ref() {super::spirit_tune::set_peak(erdtree_tower::rewards::spirit_level_now(run));}
             if super::smith::spent(room.allowance_issued,room.view.completed,super::smith::remaining(data),room.allowance_target) {
@@ -3247,6 +3263,15 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
     state.room = Some(room);
 }
 
+fn battlemage_convert(state:&mut Runtime,world:&WorldChrMan,stat:u8)->Result<String,String> {
+    let player=world.main_player.as_ref().ok_or("角色未加载")?;
+    let run=state.view.run.as_ref().ok_or("旅程未绑定")?;
+    let row=super::weapons::battlemage_target(unsafe {player.player_game_data.as_ref()},&run.battlemage)?;
+    let mut next=run.clone();next.battlemage_convert(row,stat)?;record_checked(&next)?;state.view.run=Some(next);
+    let name=if stat==0{"智力"}else{"信仰"};
+    super::log(format!("TOWER_EMBER battlemage weapon={row} stat={name}"));
+    Ok(format!("右手武器获得了{name} S 补正，{name}也计入物理伤害。"))
+}
 fn tick_chest_award(state:&mut Runtime,world:&mut WorldChrMan,room:&mut super::rooms::Room)->Result<(),String> {
     use super::{loot,chest_award::Receipt,native_talk::{flag,set_flag}};
     if room.view.completed {set_flag(45010995,true)?;return Ok(());}
@@ -3288,6 +3313,7 @@ fn gamble_result(index:usize,choice:usize,wins:bool)->i32 {
     match index {
         erdtree_tower::events::DICE=>(if wins {GAMBLE_DICE_WIN}else{GAMBLE_DICE_LOSE})+choice as i32,
         erdtree_tower::events::MYSTERY=>GAMBLE_MYSTERY,
+        erdtree_tower::events::FURNACE=>super::native_talk::FURNACE_RESULT,
         _=>GAMBLE_REFORGE+choice as i32,
     }
 }
@@ -3391,11 +3417,17 @@ fn tick_regional_event(state:&mut Runtime,world:&mut WorldChrMan,room:&mut super
         set_flag(45010942,false)?;set_flag(45010995,true)?;
         let title=erdtree_tower::events::STORIES[index].title;
         let wins=erdtree_tower::events::dice_wins(run,room.node);
-        if run.regional_event.opened==0 {room.view.message=format!("{title}：与 NPC 交谈。");}
+        if index==erdtree_tower::events::FURNACE {
+            room.view.message=format!("{title}：与守炉人交谈，重练右手的词条武器。这一次 {} 卢恩（已重练 {} 次，每次翻倍）。",erdtree_tower::events::furnace_price(run.regional_event.reforges),run.regional_event.reforges);
+        }else if run.regional_event.opened==0 {room.view.message=format!("{title}：与 NPC 交谈。");}
         if let Some(super::native_talk::EventRequest::Gamble(choice))=room.take_event_request() {
             let message=state.view.run.as_ref().map(|r|erdtree_tower::events::story_outcome(r,choice)).unwrap_or_default();
             match transact(state,world,Action::Story(choice),false,false) {
-                Ok(())=>{room.notice(gamble_result(index,choice,wins))?;room.view.message=format!("{message}使用传送门继续旅程。");},
+                Ok(())=>{room.notice(gamble_result(index,choice,wins))?;
+                    room.view.message=if index==erdtree_tower::events::FURNACE {
+                        let uses=state.view.run.as_ref().map_or(0,|r|r.regional_event.reforges);
+                        format!("{message}可以继续重练（下一次 {} 卢恩），或使用传送门继续旅程。",erdtree_tower::events::furnace_price(uses))
+                    }else{format!("{message}使用传送门继续旅程。")};},
                 Err(error)=>{super::log(format!("Gamble not resolved: {error}"));room.notice(gamble_refusal(&error))?;room.view.message=error;},
             }
         }

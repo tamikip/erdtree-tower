@@ -354,7 +354,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
             }
             if !lit {hint(ui,410.0,"在普通战或精英战的奖励里选择这枚余烬后解锁");return;}
             text(p(1244.0,312.0),ember.name(),GOLD,1.15,0.0);
-            text(p(1244.0,348.0),&format!("获得 {taken} 次"),MUTED,0.84,0.0);
+            text(p(1244.0,348.0),&format!("获得 {taken} 次{}",crate::reward_ui::ember_class_label(ember).map_or(String::new(),|l|format!(" · {l}"))),MUTED,0.84,0.0);
             wrapped(ui,p(1130.0,410.0),right,&ember.effect().replace('\n',"，"),BOON,0.92*s);
         },
         Item::Boss(i)=>{

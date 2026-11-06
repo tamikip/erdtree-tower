@@ -37,6 +37,7 @@ modes=modes.Append("arena-candidates").ToArray();
 modes=modes.Append("stormveil-no-runes-patch").ToArray();
 modes=modes.Append("stormveil-sidewall-patch").ToArray();
 modes=modes.Append("stormveil-grace-patch").ToArray();
+modes=modes.Append("battlemage-patch").ToArray();
 modes=modes.Append("title-texture-patch").ToArray();
 modes=modes.Append("portal-reveal-test").ToArray();
 modes=modes.Append("portal-rise-patch").ToArray();
@@ -97,6 +98,7 @@ if(args.Contains("dormant-loading-patch")){DormantLoadingAssets.Patch(cache,outp
 if(args.Contains("stormveil-no-runes-patch")){StormveilRuneAssets.Patch(cache,output);return;}
 if(args.Contains("stormveil-sidewall-patch")){StormveilBarrierAssets.Patch(cache,output);return;}
 if(args.Contains("stormveil-grace-patch")){StormveilAssets.PatchGraces(cache,output);return;}
+if(args.Contains("battlemage-patch")){BattlemageAssets.Patch(cache,output);return;}
 if(args.Contains("bgm-patch")){MusicAssets.Patch(cache,output);return;}
 if(args.Contains("party-dlc-patch")){PartyDlcAssets.Build(game,cache,output);return;}
 if(args.Contains("arena-build")){PortalRuneFfx.Build(cache,output);ArenaAssets.Build(game,cache,output);MelinaEntranceAssets.Patch(output,output);return;}

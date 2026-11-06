@@ -164,6 +164,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
                     }
                 }
                 lines.push((ember.effect().replace('\n', "，"), BOON));
+                if let Some(label)=crate::reward_ui::ember_class_label(*ember) {lines.push((label, MUTED));}
                 entry(ui, s, Badge::Icon(crate::reward_ui::ember_icon(*ember).and_then(&mut *icon)), &name, crate::reward_ui::rarity_color(usize::from(ember.quality())), &lines);
             }
             if !run.elite_buffs.is_empty() {

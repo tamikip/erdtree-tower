@@ -95,6 +95,20 @@ pub fn mystery_box(run:&Run,node:usize,premium:bool)->Option<u32> {
     // 抽中的装备这局已经拿过时，顺延到下一件没拿过的
     (0..pool.len()).map(|n|pool[(start+n)%pool.len()].id).find_map(|base|variant(run,base,(roll>>32) as usize,tier).filter(|id|!run.claimed_items.contains(id)))
 }
+/// 重练炉：把武器换成同品质的另一把武器（基础武器不同、本职业可用），词条组合随机；同一座炉子每次（uses）抽到的不同
+pub fn furnace(run:&Run,node:usize,current:u32,uses:u8)->Option<u32> {
+    let (old_base,tier)=(base(current),tier(current)?);
+    let roll=crate::mix(run.reward_seed()^(node as u64).wrapping_mul(7919)^0xf0_12ace^u64::from(current)^u64::from(uses).wrapping_mul(0x9e37_79b9));
+    let pool:Vec<_>=crate::rewards::CATALOG.iter().filter(|i|i.kind==ItemKind::Weapon&&i.random_eligible()&&i.kind.allowed(run.class)
+        &&i.id!=old_base&&BY_BASE.contains_key(&i.id)).map(|i|i.id).collect();
+    if pool.is_empty() {return None;}
+    let start=(roll%pool.len() as u64) as usize;
+    let candidates=(0..pool.len()).filter_map(|n|variant(run,pool[(start+n)%pool.len()],(roll>>32) as usize,tier));
+    // 这局还没拿过的优先
+    let mut fallback=None;
+    for id in candidates {if !run.claimed_items.contains(&id){return Some(id);} fallback.get_or_insert(id);}
+    fallback
+}
 fn variant(run:&Run,base:u32,profile:usize,tier:u8)->Option<u32> {
     let id=if run.affix_rules>=2 {let groups=ADVANCED.get(&base)?;groups[profile%groups.len()][usize::from(tier)]}else{BY_BASE.get(&base)?[usize::from(tier)]};
     (id!=0).then_some(id)

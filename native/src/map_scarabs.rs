@@ -9,16 +9,19 @@ pub fn controls(entity:u32)->Result<(u32,u32,u32),String> {
 pub struct Hunt {
     base:u32,reset:bool,requested:bool,bugs:Vec<(FieldInsHandle,usize)>,
     clock:Option<Instant>,revealed:bool,killed:u8,finished:bool,
+    /// 本机玩家（或本机召唤物）打死的那几只：倒下那一刻 last_hit_by 是自己。奖励按这个发给打死它的人
+    own:u8,
 }
 impl Hunt {
     pub fn new(base:u32)->Result<Self,String> {
         controls(base)?;controls(base+2)?;
         if (base-48040000)%3!=0{return Err("粪金龟组编号无效".into());}
-        Ok(Self{base,reset:false,requested:false,bugs:vec![],clock:None,revealed:false,killed:0,finished:false})
+        Ok(Self{base,reset:false,requested:false,bugs:vec![],clock:None,revealed:false,killed:0,finished:false,own:0})
     }
     pub fn ready(&self)->bool {self.bugs.len()==3&&!self.active()&&!self.finished}
     pub fn active(&self)->bool {self.clock.is_some()}
     pub fn result(&self)->Option<u8> {self.finished.then_some(self.killed)}
+    pub fn own_kills(&self)->u8 {self.own}
     pub fn start(&mut self)->Result<(),String> {
         if !self.ready(){return Err("粪金龟尚未就绪".into());}self.clock=Some(Instant::now());Ok(())
     }
@@ -55,7 +58,13 @@ impl Hunt {
         for (slot,&(handle,address)) in self.bugs.iter().enumerate() {
             if self.killed&(1<<slot)!=0 {continue;}
             let chr=world.chr_ins_by_handle(&handle).filter(|c|std::ptr::from_ref(*c) as usize==address).ok_or("粪金龟场景实体已卸载")?;
-            if chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(){self.killed|=1<<slot;}
+            if chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(){
+                self.killed|=1<<slot;
+                let own=world.main_player.as_ref().is_some_and(|p|p.chr_ins.field_ins_handle==chr.last_hit_by)
+                    ||world.summon_buddy_chr_set.characters().any(|c|c.field_ins_handle==chr.last_hit_by);
+                if own {self.own|=1<<slot;}
+                super::log(format!("Party scarab {slot} down: base={} own={own}",self.base));
+            }
         }
         if phase==super::scarabs::Stage::Finished {
             for entity in self.base..self.base+3 {set_flag(controls(entity)?.2,false)?;}

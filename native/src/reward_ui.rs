@@ -662,14 +662,20 @@ impl Panel {
                     Reward::FlaskCapacity=>("增益","圣杯扩容".into(),"红、蓝瓶上限各 +1\n本局生效，不补瓶".into()),
                     Reward::MemorySlot=>("增益","记忆扩容".into(),"记忆栏位 +1\n魔法与祷告共用，本局生效".into()),
                     Reward::StarStream=>("增益","星流引导".into(),"彗星亚兹勒随视角左右瞄准\n光束保持水平".into()),
-                    Reward::Ember(ember)=>("余烬",ember.name().into(),format!("{}\n本局生效",ember.effect())),
+                    Reward::Ember(ember)=>("余烬",ember.name().into(),format!("{}\n本局生效{}",ember.effect(),ember_class_label(*ember).map_or(String::new(),|l|format!(" · {l}")))),
                 };
                 let tier=quality(run,reward);
                 // 余烬：卡面与名字按余烬的品质着色，类别写成“余烬 · 品质”，外加一圈余火色的外框，和普通奖励区分开
                 let ember=matches!(reward,Reward::Ember(_));
                 let quality_color=rarity_color(tier);
                 let ember_category=format!("余烬 · {}",["普通","稀有","史诗","传说"][tier.min(3)]);
-                let category=if ember {ember_category.as_str()}else{category};
+                // 武器卡：类别后面写上武器种类（“传说武器 · 大剑”）
+                let typed=match reward {
+                    Reward::Item(id) if erdtree_tower::rewards::lookup(erdtree_tower::affixes::base(*id)).is_some_and(|v|v.kind==erdtree_tower::rewards::ItemKind::Weapon)
+                        =>erdtree_tower::weapon_training::type_name(*id).map(|name|format!("{category} · {name}")),
+                    _=>None,
+                };
+                let category=if ember {ember_category.as_str()}else if let Some(typed)=typed.as_ref() {typed.as_str()}else{category};
                 if tier>=3 {legendary_bloom(&ui.get_window_draw_list(),[x,y],[x+width,y+height],scale,now as f32+i as f32*1.3,alpha);}
                 if let Some(texture)=if tier==1 {self.rare_blue}else{None} {
                     let light=card_light(tier,selected,hover,now);
@@ -1151,4 +1157,8 @@ mod tests {
         assert!(card_summary(&DETAILS[&33000000]).contains("施展魔法"));
         assert!(card_summary(&DETAILS[&34000000]).contains("施展祷告"));
     }
+}
+/// 职业专属余烬的标注（“影刃专属”“星辉术士、祷誓者专属”）；通用余烬没有
+pub fn ember_class_label(ember:erdtree_tower::embers::Ember)->Option<String> {
+    ember.classes().map(|classes|format!("{}专属",classes.iter().map(|c|crate::map_ui::class_name(*c)).collect::<Vec<_>>().join("、")))
 }

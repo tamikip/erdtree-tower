@@ -45,6 +45,17 @@ pub const GAMBLE_NO_AFFIX:i32=9500151;
 pub const GAMBLE_NO_SIBLING:i32=9500152;
 pub const GAMBLE_FAILED:i32=9500153;
 pub const GAMBLE_USED:i32=9500154;
+/// 重练炉（赌运事件 3）：只有一个选项，价格每次翻倍（实际价格显示在画面上方的房间提示里）
+pub const FURNACE_OPTION:i32=9500170;
+pub const FURNACE_CONFIRM:i32=9500171;
+pub const FURNACE_RESULT:i32=9500172;
+/// 战斗法师（营地铁匠）：菜单项、智力 / 信仰两个子选项、完成与无法附加的提示
+pub const BATTLEMAGE_OPTION:i32=9500180;
+pub const BATTLEMAGE_DONE:i32=9500183;
+pub const BATTLEMAGE_REFUSED:i32=9500184;
+/// 铁匠菜单里选了战斗法师的哪一种补正（0 智力、1 信仰），由运行时校验武器、记进存档
+static BATTLEMAGE_REQUEST:std::sync::Mutex<Option<u8>>=std::sync::Mutex::new(None);
+pub fn take_battlemage()->Option<u8> {BATTLEMAGE_REQUEST.lock().ok()?.take()}
 /// 营地调灵（小红帽）：菜单项与无可用骨灰提示（文字在 scene-builder/RecoveryText.cs）。
 pub const TUNE_OPTION:i32=9500155;
 pub const TUNE_NONE:i32=9500156;
@@ -52,6 +63,7 @@ impl EventMenu {
     fn confirmation(self,choice:i32)->Option<i32> {
         use erdtree_tower::regional_events::Trial;
         match self.request(choice)? {
+            EventRequest::Gamble(_) if self.gamble==Some(erdtree_tower::events::FURNACE as u8)=>Some(FURNACE_CONFIRM),
             EventRequest::Gamble(option)=>Some(GAMBLE_CONFIRM+i32::from(self.gamble?)*2+option as i32),
             EventRequest::Trial(Trial::Descent)|EventRequest::Descent=>Some(9500118),
             EventRequest::Trial(Trial::Mausoleum)=>Some(9500165),
@@ -72,6 +84,7 @@ impl EventMenu {
             if self.used||self.busy{return None;}
             return match choice {1=>Some(EventRequest::Trial(erdtree_tower::regional_events::Trial::Mausoleum)),2=>Some(EventRequest::Trial(erdtree_tower::regional_events::Trial::Skip)),_=>None};
         }
+        if self.gamble==Some(erdtree_tower::events::FURNACE as u8) {return (!self.used&&!self.busy&&choice==1).then_some(EventRequest::Gamble(0));}
         if self.gamble.is_some() {return (!self.used&&!self.busy&&(1..=2).contains(&choice)).then(||EventRequest::Gamble((choice-1) as usize));}
         if self.trial {
             return (!self.used&&!self.busy).then(||[erdtree_tower::regional_events::Trial::Descent,erdtree_tower::regional_events::Trial::Stormveil,erdtree_tower::regional_events::Trial::Chariot,erdtree_tower::regional_events::Trial::Skip].get(choice.wrapping_sub(1) as usize).copied()).flatten().map(EventRequest::Trial);
@@ -189,8 +202,12 @@ impl NativeTalk {
                     if self.event_menu.used {return self.dialog(GAMBLE_USED);}
                     if self.event_menu.busy {return Ok(());}
                     self.event(110,&[])?;self.event(20,&[])?;
-                    let first=GAMBLE_OPTIONS+i32::from(gamble)*2;
-                    self.event(19,&[1,first,-1])?;self.event(19,&[2,first+1,-1])?;self.event(19,&[99,9500003,-1])?;
+                    if usize::from(gamble)==erdtree_tower::events::FURNACE {
+                        self.event(19,&[1,FURNACE_OPTION,-1])?;self.event(19,&[99,9500003,-1])?;
+                    }else{
+                        let first=GAMBLE_OPTIONS+i32::from(gamble)*2;
+                        self.event(19,&[1,first,-1])?;self.event(19,&[2,first+1,-1])?;self.event(19,&[99,9500003,-1])?;
+                    }
                     self.event(10,&[1])?;self.state=1;return Ok(());
                 }
                 if self.service==6 && self.event_menu.locked {return self.dialog(9500073);}
@@ -217,6 +234,7 @@ impl NativeTalk {
                     for (i,message) in [9500001,9500041,9500042].into_iter().enumerate() {
                         self.event(19,&[i as i32+1,message,-1])?;
                     }
+                    if super::embers::BATTLEMAGE_HELD.load(Ordering::Relaxed) {self.event(19,&[4,BATTLEMAGE_OPTION,-1])?;}
                     self.event(19,&[99,9500003,-1])?;
                 } else if self.service==5 {
                     for (i,message) in [9500040,9500042,9500043,9500045,9500046,9500071,9500100,9500101,9500108].into_iter().enumerate() {self.event(19,&[i as i32+1,message,-1])?;}
@@ -253,6 +271,12 @@ impl NativeTalk {
                 }
                 if self.service == 3 || self.service == 4 {
                     self.choice=Some(choice); self.state=0; return Ok(());
+                }
+                if self.service==1&&choice==4&&super::embers::BATTLEMAGE_HELD.load(Ordering::Relaxed) {
+                    // 战斗法师：免费，二选一（智力 / 信仰），作用在右手武器上
+                    self.event(110,&[])?;self.event(20,&[])?;
+                    self.event(19,&[1,BATTLEMAGE_OPTION+1,-1])?;self.event(19,&[2,BATTLEMAGE_OPTION+2,-1])?;self.event(19,&[99,9500003,-1])?;
+                    self.event(10,&[1])?;self.state=21;return Ok(());
                 }
                 if self.service==1 {
                     // 强化与护符升阶各用一块强化石；营地的一次服务用掉之后，身上还有强化石也能继续用
@@ -353,6 +377,10 @@ impl NativeTalk {
             16 => if self.query(58,&[0])?==0 {
                 if dialog_confirmed(self.query(22,&[])?)&&END_ALLOWED.load(Ordering::Relaxed){END_REQUESTED.store(true,Ordering::Relaxed);}
                 self.state=0;
+            },
+            21 => if self.query(59,&[1,0])?==0 {
+                let choice=self.query(23,&[])?;self.state=0;
+                if matches!(choice,1|2) && let Ok(mut request)=BATTLEMAGE_REQUEST.lock() {*request=Some((choice-1) as u8);}
             },
             17 => if self.query(59,&[1,0])?==0 {
                 let choice=self.query(23,&[])?;

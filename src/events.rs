@@ -6,11 +6,16 @@ pub struct Story {
     pub text: &'static str,
     pub choices: [&'static str; 2],
 }
-pub const DICE:usize=0;pub const MYSTERY:usize=1;pub const REFORGE:usize=2;
+pub const DICE:usize=0;pub const MYSTERY:usize=1;pub const REFORGE:usize=2;pub const FURNACE:usize=3;
 pub const DICE_STAKES:[u32;2]=[1000,3000];
 pub const BOX_PRICES:[u32;2]=[1000,2500];
 pub const REFORGE_PRICES:[u32;2]=[1000,3000];
-pub const STORIES: [Story; 3] = [
+/// 重练炉：第一次重练的价格，之后同一座炉子每重练一次翻倍；最多重练 FURNACE_MAX_USES 次
+pub const FURNACE_PRICE:u32=1000;
+pub const FURNACE_MAX_USES:u8=20;
+/// 重练炉这一次的价格（uses：这座炉子已经重练过几次）
+pub fn furnace_price(uses:u8)->u32 {FURNACE_PRICE.saturating_mul(1u32<<u32::from(uses.min(FURNACE_MAX_USES)))}
+pub const STORIES: [Story; 4] = [
     Story {
         title: "骰子赌徒",
         text: "赌徒把两枚骨骰在掌心摇得作响：‘押上卢恩，赢了翻倍，输了归我。骰子落下之前，谁也不知道结果。’",
@@ -32,10 +37,15 @@ pub const STORIES: [Story; 3] = [
             "支付 3000 卢恩\n精炼右手的词条武器\n换成另一种词条组合，品质必定 +1\n强化等级与战灰保留\n\n传说品质的武器不能精炼",
         ],
     },
+    Story {
+        title: "重练炉",
+        text: "炉膛里的火永不熄灭。守炉人说：‘把武器投进去，火会还你另一把同样分量的。只是每一次，火都要得更多。’",
+        choices: ["重练右手的词条武器\n换成同品质的另一把武器\n强化等级与战灰保留\n\n1000 卢恩起，每次翻倍",""],
+    },
 ];
 /// 问号房抽到的事件。event_rules 2 起每个事件按权重表单独抽取（3 起用 EVENT_WEIGHTS）；更早的旅程沿用 8 格分配，没有赌运事件
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Hash)]
-pub enum Draw {Trial,Chests,Altar,Locked,Scarabs,Spring,Dice,Mystery,Reforge,Mausoleum}
+pub enum Draw {Trial,Chests,Altar,Locked,Scarabs,Spring,Dice,Mystery,Reforge,Mausoleum,Furnace}
 /// 问号房事件权重（event_rules 3 起）：九个事件相同，各 1/9
 pub const EVENT_WEIGHTS:[(Draw,u32);9]=[
     (Draw::Trial,1),(Draw::Chests,1),(Draw::Altar,1),(Draw::Locked,1),(Draw::Scarabs,1),(Draw::Spring,1),
@@ -58,6 +68,7 @@ impl Run {
         }
         let mut weights=if self.event_rules<3 {EVENT_WEIGHTS_V2.to_vec()}else{EVENT_WEIGHTS.to_vec()};
         if self.event_rules>=4 {weights.push((Draw::Mausoleum,1));}
+        if self.event_rules>=5 {weights.push((Draw::Furnace,1));}
         let total:u32=weights.iter().map(|(_,w)|w).sum();
         let mut roll=(crate::mix(self.seed^(id as u64).wrapping_mul(0x9e37)^0xe7e27)%total as u64) as u32;
         for (draw,weight) in weights {if roll<weight {return draw;} roll-=weight;}
@@ -66,7 +77,7 @@ impl Run {
     /// 问号房里的赌运事件（STORIES 下标）
     pub fn gamble(&self,id:usize)->Option<usize> {
         if self.nodes.get(id).is_none_or(|n|n.kind!=NodeKind::Event) {return None;}
-        match self.event_draw(id) {Draw::Dice=>Some(DICE),Draw::Mystery=>Some(MYSTERY),Draw::Reforge=>Some(REFORGE),_=>None}
+        match self.event_draw(id) {Draw::Dice=>Some(DICE),Draw::Mystery=>Some(MYSTERY),Draw::Reforge=>Some(REFORGE),Draw::Furnace=>Some(FURNACE),_=>None}
     }
     /// 事件房间是贪欲祭坛还是三重宝匣（联机时赌运事件也改为二者之一，按种子决定；其余事件沿用原来的判定）
     pub fn altar(&self,id:usize)->bool {
@@ -81,6 +92,7 @@ pub fn story_outcome(run:&Run,choice:usize)->String {
     match index {
         DICE=>if dice_wins(run,node) {format!("骰子落定，你赢了 {} 卢恩。",DICE_STAKES[choice])}else{format!("骰子落定，你输掉了 {} 卢恩。",DICE_STAKES[choice])},
         MYSTERY=>"商人掀开黑布，把箱子里的装备交给你。".into(),
+        FURNACE=>"炉火吞下武器，又吐出另一把。".into(),
         _=>if choice==0 {"火焰退去，武器换了一种形状。".into()}else{"火焰烧得更旺，武器带着新的光泽回到你手中。".into()},
     }
 }
@@ -97,6 +109,9 @@ pub struct StoryEffect {
     pub reforge: bool,
     /// 精炼重铸：品质必定 +1
     pub reforge_upgrade: bool,
+    /// 重练炉：由运行时把右手武器换成同品质的另一把；furnace_uses 是这次之前已重练的次数（决定抽到哪一把）
+    pub furnace: bool,
+    pub furnace_uses: u8,
 }
 
 impl Run {
@@ -110,6 +125,16 @@ impl Run {
         let index=self.story_index()?;
         if choice > 1 {return Err("无效事件选项".into());}
         if self.regional_event.opened!=0||self.regional_event.settled {return Err("这里的事件已经用过".into());}
+        // 重练炉可以反复用：不标记“已用过”，记下次数，价格每次翻倍
+        if index==FURNACE {
+            if choice!=0 {return Err("无效事件选项".into());}
+            let uses=self.regional_event.reforges;
+            if uses>=FURNACE_MAX_USES {return Err("炉火已经熄灭，这里的交易已经完成".into());}
+            let price=furnace_price(uses);
+            if self.gold<price {return Err("卢恩不足，事件未消耗".into());}
+            self.gold-=price;self.regional_event.reforges=uses+1;
+            return Ok(StoryEffect{furnace:true,furnace_uses:uses,..Default::default()});
+        }
         let mut next = self.clone();
         let mut effect = StoryEffect::default();
         let mut price = 0;
@@ -138,6 +163,20 @@ impl Run {
 mod gamble_tests {
     use crate::{Class,NodeKind,Run,affixes,events::*};
     #[test]
+    fn furnace_price_doubles_and_swaps_for_another_weapon_of_the_same_quality() {
+        assert_eq!((furnace_price(0),furnace_price(1),furnace_price(3)),(1000,2000,8000));
+        let run=Run::new(42,Class::Samurai);
+        let mut checked=0;
+        for item in affixes::CATALOG.iter().filter(|i|i.kind==crate::rewards::ItemKind::Weapon).step_by(97).take(40) {
+            let Some(next)=affixes::furnace(&run,3,item.id,0) else{continue};
+            assert_eq!(affixes::tier(next),affixes::tier(item.id),"same quality");
+            assert_ne!(affixes::base(next),affixes::base(item.id),"a different weapon");
+            assert_ne!(affixes::furnace(&run,3,item.id,1),None);checked+=1;
+        }
+        assert!(checked>20);
+        assert!((0..8).map(|uses|affixes::furnace(&run,3,affixes::CATALOG[0].id,uses)).collect::<std::collections::HashSet<_>>().len()>1,"repeated uses roll different weapons");
+    }
+    #[test]
     fn every_event_has_its_own_weight_and_gambles_happen_in_the_room() {
         let total:u32=EVENT_WEIGHTS.iter().map(|(_,w)|w).sum();let total_v2:u32=EVENT_WEIGHTS_V2.iter().map(|(_,w)|w).sum();
         let mut counts=std::collections::HashMap::new();let mut counts_v2=std::collections::HashMap::new();let mut nodes=0u32;
@@ -162,6 +201,18 @@ mod gamble_tests {
                             loaded.leave_regional_event().unwrap();assert_eq!(loaded.phase,crate::Phase::Map);
                         }
                     },
+                    // 重练炉：可以反复用，价格每次翻倍；读档后照样能继续
+                    Draw::Furnace=>{
+                        assert_eq!(entered.story_index(),Ok(FURNACE));
+                        entered.gold=furnace_price(0)+furnace_price(1)-1;
+                        let effect=entered.resolve_story(0).unwrap();assert!(effect.furnace&&effect.furnace_uses==0);
+                        assert_eq!(entered.gold,furnace_price(1)-1);
+                        let mut loaded=Run::decode(&entered.encode().unwrap()).unwrap();
+                        assert!(loaded.resolve_story(0).is_err(),"not enough for the doubled price");assert_eq!(loaded.gold,furnace_price(1)-1);
+                        loaded.gold+=1;let effect=loaded.resolve_story(0).unwrap();assert_eq!((effect.furnace_uses,loaded.gold,loaded.regional_event.reforges),(1,0,2));
+                        assert!(loaded.resolve_story(1).is_err());
+                        loaded.leave_regional_event().unwrap();assert_eq!(loaded.phase,crate::Phase::Map);
+                    },
                     _=>assert!(entered.story_index().is_err()),
                 }
                 // 旧旅程沿用原来的 8 格分配，没有赌运事件
@@ -169,7 +220,9 @@ mod gamble_tests {
             }
         }
         // 每个事件的实际出现率接近各自权重（误差在 ±15% 以内）；event_rules 2 的旧旅程仍按旧权重
-        for (weights,total,counts) in [(EVENT_WEIGHTS,total,&counts),(EVENT_WEIGHTS_V2,total_v2,&counts_v2)] {for (draw,weight) in weights {
+        // 新旅程（event_rules 5）另有灵庙与重练炉各 1 份
+        let current:Vec<_>=EVENT_WEIGHTS.iter().copied().chain([(Draw::Mausoleum,1),(Draw::Furnace,1)]).collect();
+        for (weights,total,counts) in [(current,total+2,&counts),(EVENT_WEIGHTS_V2.to_vec(),total_v2,&counts_v2)] {for (draw,weight) in weights {
             let expected=nodes as f64*weight as f64/total as f64;let seen=*counts.get(&draw).unwrap_or(&0) as f64;
             assert!((seen-expected).abs()<expected*0.15,"{draw:?}: {seen} vs {expected}");
         }}

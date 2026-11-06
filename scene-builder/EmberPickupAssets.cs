@@ -11,7 +11,7 @@ static class EmberPickupAssets {
         var order=Regex.Match(source,@"pub const ALL:[^=]+?=\[(.*?)\];",RegexOptions.Singleline).Groups[1].Value;
         var keys=Regex.Matches(order,@"Self::(\w+)").Select(m=>m.Groups[1].Value).ToArray();
         var names=Regex.Matches(source,@"Self::(\w+)=>""([^""]+)""").GroupBy(m=>m.Groups[1].Value).ToDictionary(g=>g.Key,g=>g.First().Groups[2].Value);
-        if(keys.Length!=31||keys.Distinct().Count()!=31||keys.Any(k=>!names.ContainsKey(k)))throw new Exception("Ember catalogue mismatch");
+        if(keys.Length!=37||keys.Distinct().Count()!=37||keys.Any(k=>!names.ContainsKey(k)))throw new Exception("Ember catalogue mismatch");
         Directory.CreateDirectory(output);
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
         var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name)=="EquipParamGoods");

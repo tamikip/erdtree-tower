@@ -6,7 +6,8 @@ pub static HOSTS:std::sync::LazyLock<Vec<Host>>=std::sync::LazyLock::new(||inclu
     let flag:u32=p[4].parse().unwrap();
     Host{draw,entity:p[1].parse().unwrap(),init:p[2].parse().unwrap(),flag,npc:95016000+(flag-45011840) as i32,name_id:p[5].parse().unwrap()}
 }).collect());
-pub fn index(draw:Draw)->usize {HOSTS.iter().position(|h|h.draw==draw).unwrap()}
+/// 重练炉借用词条重铸台的守炉人（同一个问号房只会抽到其中一个，不会同时出现）；专属 NPC 要在 Windows 上重新生成地图
+pub fn index(draw:Draw)->usize {let draw=if draw==Draw::Furnace{Draw::Reforge}else{draw};HOSTS.iter().position(|h|h.draw==draw).unwrap()}
 pub fn service(index:usize)->Vec<(u32,i32,i32,u32)> {let host=&HOSTS[index];vec![(host.entity,0,host.npc,6)]}
 pub fn visibility_flag(entity:u32)->u32 {HOSTS.iter().find(|h|h.entity==entity).map_or(entity+70,|h|h.flag)}
 #[cfg(test)]

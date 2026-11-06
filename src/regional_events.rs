@@ -21,7 +21,10 @@ pub struct Progress {
     #[serde(default)] pub chariot: bool,
     /// 死亡重试回到已经动过的事件（选了挑战、领了奖、开了宝箱、用过服务）：不能重选、不能再领，只能从传送门离开
     #[serde(default,skip_serializing_if="std::ops::Not::not")] pub settled: bool,
+    /// 重练炉：这座炉子已经重练过几次（价格每次翻倍）
+    #[serde(default,skip_serializing_if="is_zero")] pub reforges: u8,
 }
+fn is_zero(value:&u8)->bool {*value==0}
 impl Progress {
     /// 和刚进房间时抽到的状态不同，即玩家已经在这里做过选择或领过东西
     pub fn touched(&self)->bool {
@@ -146,6 +149,7 @@ impl Run {
         self.finish(node);Ok(())
     }
     pub(crate) fn valid_regional_event(&self) -> bool {
+        if self.regional_event.reforges>crate::events::FURNACE_MAX_USES {return false;}
         if self.regional_event.settled {
             let event=|id:usize|self.nodes.get(id).is_some_and(|n|n.kind==NodeKind::Event);
             return self.regional_event==Progress{settled:true,..Progress::default()}

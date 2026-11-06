@@ -25,7 +25,7 @@ fn saves_from_several_versions_back_load_with_their_reward_page_unchanged() {
         assert_eq!(Run::decode(&next.encode().unwrap()).unwrap(),next,"and keep saving and loading afterwards");
     }
     let fresh=Run::new(1,Class::Samurai);
-    assert_eq!((fresh.spirit_peak,fresh.spirit_rules,fresh.ember_rules,fresh.stone_rewards),(Some(0),1,2,true),"new runs use the new rules");
+    assert_eq!((fresh.spirit_peak,fresh.spirit_rules,fresh.ember_rules,fresh.stone_rewards),(Some(0),1,3,true),"new runs use the new rules");
     // 上一版（有骨灰记录、规则 0）停在奖励页的存档也照常读取
     let mut previous=Run::new(5,Class::Samurai);previous.spirit_rules=0;
     let node=previous.start_nodes()[0];previous.enter(node).unwrap();previous.win_combat().unwrap();

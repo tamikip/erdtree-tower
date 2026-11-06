@@ -12,6 +12,11 @@ pub const TYPES:&[(u8,&str)]=&[
     (60,"格斗术"),(61,"调香瓶"),(62,"突刺盾"),(63,"投掷剑"),(64,"反手剑"),(66,"大刀"),(67,"轻大剑"),(68,"兽爪"),
 ];
 pub fn known(kind:u8)->bool {TYPES.iter().any(|&(id,_)|id==kind)}
+/// 武器种类的名称（直剑、大剑……）：按基础武器编号的百万位判断，词条武器先换回基础武器；不是已知种类返回 None
+pub fn type_name(id:u32)->Option<&'static str> {
+    let kind=(crate::affixes::base(id)&0x0fffffff)/1_000_000;
+    TYPES.iter().find(|&&(k,_)|u32::from(k)==kind).map(|&(_,name)|name)
+}
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct Preference {pub kind:u8,pub level:u8}
 impl Preference {
@@ -61,4 +66,18 @@ pub fn reward(run:&crate::Run,ids:&[u32],roll:u64)->u32 {
     let legendary=crate::elite::LEGENDARY.contains(&original);
     let weapons:Vec<_>=ids.iter().copied().filter(|id|id>>28==0&&crate::elite::LEGENDARY.contains(id)==legendary).collect();
     weapons[pick_many(&weapons,crate::mix(roll^0x70726566),run.preferences(),None)]
+}
+
+#[cfg(test)]
+mod type_name_tests {
+    #[test]
+    fn weapon_cards_name_their_weapon_type() {
+        assert_eq!(super::type_name(2000000),Some("直剑"));assert_eq!(super::type_name(3000000),Some("大剑"));
+        assert_eq!(super::type_name(33000000),Some("法杖"));assert_eq!(super::type_name(66000000),Some("大刀"));
+        assert_eq!(super::type_name(99000000),None);
+        // 词条武器按基础武器判断
+        let weapons:Vec<_>=crate::affixes::CATALOG.iter().filter(|i|i.kind==crate::rewards::ItemKind::Weapon).collect();
+        assert!(weapons.iter().filter(|i|super::type_name(i.id).is_some()).count()*10>=weapons.len()*9,"almost every affix weapon has a known type");
+        for item in weapons.iter().take(50) {assert_eq!(super::type_name(item.id),super::type_name(crate::affixes::base(item.id)));}
+    }
 }

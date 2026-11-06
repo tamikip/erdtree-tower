@@ -17,6 +17,7 @@ static class EmberAssets {
     const float ExecutionSeconds=5f,ExecutionStamina=0.5f,RevengeRate=1.3f,FrenzyStep=0.02f,CommandAttack=1.2f,CommandCut=0.8f;
     const int Buildup=12,FrenzyStacks=8,FlashVfx=1605000;
     // 叠层余烬（与 src/embers.rs 的常量一致）
+    const float HarvestStep=0.01f;
     const float SlayerHp=0.04f,SlayerAttack=0.02f,SoulStep=0.02f,ChainStep=0.06f,KeeperAttack=0.03f,KeeperCut=0.02f;
     const int CriticalState=288,CriticalOnly=367;
     static readonly string[] Kept=["spCategory","categoryPriority","effectTargetOpposeTarget","effectTargetFriendlyTarget","effectTargetSelfTarget","effectTargetSelf","effectTargetFriend","effectTargetEnemy","effectTargetPlayer","effectTargetAI","effectTargetLive","effectTargetGhost"];
@@ -70,6 +71,10 @@ static class EmberAssets {
         rows.Add(arts);
         var artsCost=Player(p,First+23,"Tower ember arts cost",1f,-1f);Set(artsCost,"artsConsumptionRate",ArtsCost);rows.Add(artsCost);
         // 坩埚骑士的铁壁：格挡时的精力消耗 ×0（原版大盾护符 0.8）；最大负重 ×0.01（原版武器库护符 1.15），身上有装备就超重。整局常驻
+        // 红狮子的不退：受到的削韧 ×1/3（强韧度 +200%；原版牛羊护符 0.75 即 +33%）。生命低于 40% 时由运行时挂上
+        // 战斗法师：受到的伤害按智力 / 信仰取高每点 -0.4%，两行轮换，运行时按能力值改写（这里写 1 点的值）
+        for(int slot=0;slot<2;slot++){var mind=Player(p,First+26+slot,$"Tower ember battlemage {slot}",1f,-1f);foreach(var cut in new[]{"slash","blow","thrust","neutral","magic","fire","thunder","dark"})Set(mind,cut+"DamageCutRate",0.996f);rows.Add(mind);}
+        var lastStand=Player(p,First+25,"Tower ember last stand",1f,-1f);Set(lastStand,"toughnessDamageCutRate",1f/3f);rows.Add(lastStand);
         var bulwark=Player(p,First+24,"Tower ember bulwark",1f,-1f);Set(bulwark,"guardStaminaMult",0f);Set(bulwark,"equipWeightChangeRate",0.01f);rows.Add(bulwark);
         for(int stack=1;stack<=FrenzyStacks;stack++)rows.Add(Player(p,First+30+stack,$"Tower ember frenzy {stack}",1f+FrenzyStep*stack,-1f));
         var flash=Enemy(p,First+40,"Tower ember flash",1f);Set(flash,"vfxId",FlashVfx);rows.Add(flash);
@@ -88,6 +93,8 @@ static class EmberAssets {
         rows.Add(mark);
         for(int slot=0;slot<2;slot++) {
             var slayer=Player(p,First+60+slot,$"Tower ember godslayer {slot}",1f+SlayerAttack,-1f);Set(slayer,"maxHpRate",1f+SlayerHp);rows.Add(slayer);
+            // 处刑者的血宴：只加最大生命（一点的倍率，运行时按点数改写成 1.01^点数）
+            var harvest=Player(p,First+62+slot,$"Tower ember harvest {slot}",1f,-1f);Set(harvest,"maxHpRate",1f+HarvestStep);rows.Add(harvest);
             rows.Add(Player(p,First+70+slot,$"Tower ember soul eater {slot}",1f+SoulStep,-1f));
             var critical=Player(p,First+80+slot,$"Tower ember chain {slot}",1f+ChainStep,-1f);
             Set(critical,"stateInfo",CriticalOnly);Set(critical,"throwAttackParamChange",1);rows.Add(critical);

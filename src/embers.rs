@@ -2,7 +2,7 @@ use serde::{Deserialize,Serialize};
 
 /// 余烬：誓约三选一里的机制增益，没有代价，不能深化；选过的整局生效
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Hash,Serialize,Deserialize)]
-pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork,SpiritResonance,Pouch,Arts,Bulwark,Breaker}
+pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork,SpiritResonance,Pouch,Arts,Bulwark,Breaker,Harvest,LastStand,Martyr,Mercy,Battlemage,Stride}
 
 // 运行时数值（参数类的数值见 scene-builder/EmberAssets.cs，说明文字同步引用这些常量）
 pub const EXECUTION_SECONDS:u32=5;
@@ -59,11 +59,45 @@ pub const ARTS_FP_CUT_PERCENT:u32=50;
 pub const BOSS_CAP_PERCENT:u32=1;
 /// 鲜血骑士的破势：同一个 Boss 两次失衡之间至少隔这么久（普通敌人每次发作都失衡）
 pub const BREAKER_BOSS_COOLDOWN_SECONDS:u64=30;
+/// 处刑者的血宴：致命一击击杀小怪、精英、Boss 分别记 1、3、5 点，每点在当前最大生命上再乘 1+HARVEST_STEP_PERCENT%（复利）
+pub const HARVEST_POINTS:[u32;3]=[1,3,5];
+/// 红狮子的不退：生命低于这个比例时，强韧度提高（受到的削韧 ×100/(100+LAST_STAND_POISE_PERCENT)，原版牛羊护符 +33% 即 ×0.75）
+pub const LAST_STAND_HP_PERCENT:u32=40;
+/// 殉道者的苦修：失去最大生命的 1% 回复最大专注的 MARTYR_FP_PERCENT/100 %（100 即 1:1，按两边的上限换算）
+pub const MARTYR_FP_PERCENT:u32=100;
+/// 黄金树的恩泽：治疗类祷告（含给队友的、持续回复的）回复量提高的百分比
+pub const MERCY_HEAL_PERCENT:i32=50;
+/// 战斗法师：受到的伤害按智力、信仰较高者每点降低 0.4%（千分比 4），最低保留 5%；一局最多转换 BATTLEMAGE_WEAPONS 把武器
+pub const BATTLEMAGE_CUT_PERMILLE:u32=4;
+pub const BATTLEMAGE_WEAPONS:usize=8;
+/// 疾行者的轻羽：走路、奔跑时动作播放速度提高的百分比
+pub const STRIDE_PERCENT:u32=20;
+/// 智力 / 信仰（取高）为 points 时受到的伤害倍率
+pub fn battlemage_cut(points:u32)->f32 {(1.0-(points.min(1000)*BATTLEMAGE_CUT_PERMILLE) as f32/1000.0).max(0.05)}
+impl crate::Run {
+    /// 战斗法师：在铁匠处给一把近战武器（武器参数行 row）附加智力（0）或信仰（1）S 补正；同一把再选一次就换成另一种
+    pub fn battlemage_convert(&mut self,row:u32,stat:u8)->crate::RuleResult<()> {
+        if !self.embers.contains(&Ember::Battlemage) {return Err("没有持有余烬「战斗法师」".into());}
+        if stat>1 {return Err("无效的补正".into());}
+        if let Some(entry)=self.battlemage.iter_mut().find(|(r,_)|*r==row) {entry.1=stat;return Ok(());}
+        if self.battlemage.len()>=BATTLEMAGE_WEAPONS {return Err(format!("一局最多转换 {BATTLEMAGE_WEAPONS} 把武器"));}
+        self.battlemage.push((row,stat));Ok(())
+    }
+}
+/// 受到伤害时按比例回复的专注（taken：这一帧掉的生命）
+pub fn martyr_fp(taken:i32,max_hp:i32,max_fp:i32)->i32 {
+    if taken<=0||max_hp<=0||max_fp<=0 {return 0;}
+    (i64::from(taken)*i64::from(max_fp)*i64::from(MARTYR_FP_PERCENT)/(i64::from(max_hp)*100)).min(i64::from(max_fp)) as i32
+}
+pub const LAST_STAND_POISE_PERCENT:u32=200;
+pub const HARVEST_STEP_PERCENT:u32=1;
+/// 倍率计算的点数上限：只防浮点溢出（1.01^1000 约 2 万倍），正常一局远远到不了，规则上视为不设上限
+pub const HARVEST_POINT_CAP:u32=1000;
 
 impl Ember {
-    pub const ALL:[Self;31]=[Self::Execution,Self::Bloodlord,Self::Frost,Self::Deathflame,Self::Miquella,Self::Rise,Self::DragonHeart,Self::Revenge,Self::Frenzy,Self::Echo,Self::Feast,Self::Thorns,
+    pub const ALL:[Self;37]=[Self::Execution,Self::Bloodlord,Self::Frost,Self::Deathflame,Self::Miquella,Self::Rise,Self::DragonHeart,Self::Revenge,Self::Frenzy,Self::Echo,Self::Feast,Self::Thorns,
         Self::SpiritLink,Self::SpiritBurst,Self::SpiritFeast,Self::SpiritCommand,Self::SpiritTwin,Self::SoulEater,Self::Chain,Self::Godslayer,Self::SpiritKeeper,
-        Self::Barrier,Self::Meditation,Self::Glintstone,Self::FullMoon,Self::Footwork,Self::SpiritResonance,Self::Pouch,Self::Arts,Self::Bulwark,Self::Breaker];
+        Self::Barrier,Self::Meditation,Self::Glintstone,Self::FullMoon,Self::Footwork,Self::SpiritResonance,Self::Pouch,Self::Arts,Self::Bulwark,Self::Breaker,Self::Harvest,Self::LastStand,Self::Martyr,Self::Mercy,Self::Battlemage,Self::Stride];
     pub fn index(self)->usize {Self::ALL.iter().position(|e|*e==self).unwrap()}
     pub fn name(self)->&'static str {match self {
         Self::Execution=>"无声处刑",Self::Bloodlord=>"鲜血君王的赐福",Self::Frost=>"永冻吐息",Self::Deathflame=>"死诞之焰",
@@ -72,7 +106,7 @@ impl Ember {
         Self::SpiritLink=>"仿身泪滴的替身",Self::SpiritBurst=>"灵骸迸裂",Self::SpiritFeast=>"众灵的盛宴",Self::SpiritCommand=>"灵唤铃的号令",
         Self::SpiritTwin=>"双生的灵唤铃",Self::SoulEater=>"噬魂者",Self::Chain=>"处刑之链",Self::Godslayer=>"屠神者",Self::SpiritKeeper=>"灵魂收容",
         Self::Barrier=>"托普斯的力场",Self::Meditation=>"亚兹勒的冥想",Self::Glintstone=>"辉石的余韵",Self::FullMoon=>"蕾娜拉的满月",
-        Self::Footwork=>"黑刀刺客的身法",Self::SpiritResonance=>"灵唤师的共鸣",Self::Pouch=>"行商的无底囊",Self::Arts=>"战技的精粹",Self::Bulwark=>"坩埚骑士的铁壁",Self::Breaker=>"鲜血骑士的破势",
+        Self::Footwork=>"黑刀刺客的身法",Self::SpiritResonance=>"灵唤师的共鸣",Self::Pouch=>"行商的无底囊",Self::Arts=>"战技的精粹",Self::Bulwark=>"坩埚骑士的铁壁",Self::Breaker=>"鲜血骑士的破势",Self::Harvest=>"处刑者的血宴",Self::LastStand=>"红狮子的不退",Self::Martyr=>"殉道者的苦修",Self::Mercy=>"黄金树的恩泽",Self::Battlemage=>"战斗法师",Self::Stride=>"疾行者的轻羽",
     }}
     pub fn effect(self)->String {match self {
         Self::Execution=>format!("致命一击后 {EXECUTION_SECONDS} 秒内\n精力消耗 -{EXECUTION_STAMINA_CUT}%"),
@@ -91,7 +125,7 @@ impl Ember {
         Self::SpiritBurst=>format!("召唤物倒下或消失时，对 {SPIRIT_BURST_RADIUS} 米内敌人\n造成其最大生命 {SPIRIT_BURST_PERCENT}% 的伤害\n对 Boss 最多 {BOSS_CAP_PERCENT}%"),
         Self::SpiritFeast=>format!("敌人倒下时\n召唤物回复 {SPIRIT_FEAST_HEAL_PERCENT}% 生命\n你回复 {SPIRIT_FEAST_FP_PERCENT}% 专注"),
         Self::SpiritCommand=>format!("召唤物造成的伤害 +{SPIRIT_COMMAND_PERCENT}%\n受到的伤害 -{SPIRIT_COMMAND_PERCENT}%"),
-        Self::SpiritTwin=>"每场战斗可以再召唤一次骨灰\n两组召唤物同时在场\n召唤师：胜利时各组存活则返还\n其他职业：骨灰照常消耗".into(),
+        Self::SpiritTwin=>"每场战斗可以再召唤一次骨灰\n两组召唤物同时在场\n胜利时各组存活则返还骨灰".into(),
         Self::SoulEater=>format!("击倒得魂：小怪{} 精英{} Boss{}\n每 {SOUL_POINTS} 魂一层，每层攻击 +{SOUL_STEP_PERCENT}%\n层数不设上限，整局保留",SOUL_KILL[0],SOUL_KILL[1],SOUL_KILL[2]),
         Self::Chain=>format!("每次致命一击叠一层，每关最多 {CHAIN_ROOM_LIMIT} 层\n每层致命一击伤害 +{CHAIN_STEP_PERCENT}%\n总层数不设上限，整局保留"),
         Self::Godslayer=>format!("每赢一场精英战或 Boss 战叠一层\n每层最大生命 +{SLAYER_HP_PERCENT}%、攻击 +{SLAYER_ATTACK_PERCENT}%\n层数不设上限，整局保留"),
@@ -103,18 +137,24 @@ impl Ember {
         Self::Pouch=>"飞刀、投掷壶等投掷道具\n使用后不再消耗".into(),
         Self::Arts=>format!("战技伤害 +{ARTS_ATTACK_PERCENT}%\n战技消耗的专注 -{ARTS_FP_CUT_PERCENT}%"),
         Self::Bulwark=>"举盾格挡不消耗精力\n代价：始终超重\n（不能翻滚，移动变慢）".into(),
+        Self::Stride=>format!("移动速度提高 {STRIDE_PERCENT}%\n（走路、奔跑更快，攻击不变）"),
+        Self::Battlemage=>format!("可在铁匠处免费让近战武器\n获得智力或信仰 S 补正\n受到的伤害降低\n智力、信仰取高 ×{}%",BATTLEMAGE_CUT_PERMILLE as f32/10.0),
+        Self::Mercy=>format!("治疗类祷告的回复量\n提高 {MERCY_HEAL_PERCENT}%"),
+        Self::Martyr=>format!("受到伤害时回复专注\n失去最大生命的 1%\n回复最大专注的 {}%",MARTYR_FP_PERCENT as f32/100.0),
+        Self::LastStand=>format!("生命低于 {LAST_STAND_HP_PERCENT}% 时\n韧性（强韧度）提高 {LAST_STAND_POISE_PERCENT}%"),
+        Self::Harvest=>format!("致命一击击杀敌人时\n最大生命提高：小怪 {HARVEST_STEP_PERCENT}%\n精英约 {}%、Boss 约 {}%\n在当前最大生命上逐次乘算\n不设上限，整局保留",HARVEST_POINTS[1]*HARVEST_STEP_PERCENT,HARVEST_POINTS[2]*HARVEST_STEP_PERCENT),
         Self::Breaker=>format!("敌人出血、冻伤、睡眠、发狂发作时\n立即失衡\n同一个 Boss 每 {BREAKER_BOSS_COOLDOWN_SECONDS} 秒最多一次"),
         Self::FullMoon=>format!("专注不低于 {MOON_FP_PERCENT}% 时\n造成的伤害提高 {MOON_ATTACK_PERCENT}%"),
         Self::SpiritResonance=>format!("召唤物在场时\n你造成的伤害 +{SPIRIT_RESONANCE_PERCENT}%"),
     }}
     /// 品质：余烬只有史诗（2）与传说（3），按强度定，决定抽到的概率与奖励卡的颜色
     pub fn quality(self)->u8 {match self {
-        Self::Rise|Self::SpiritTwin|Self::Miquella|Self::Feast|Self::Godslayer|Self::Meditation|Self::SpiritResonance|Self::Breaker=>3,
+        Self::Rise|Self::SpiritTwin|Self::Miquella|Self::Feast|Self::Godslayer|Self::Meditation|Self::SpiritResonance|Self::Breaker|Self::Harvest|Self::Battlemage=>3,
         _=>2,
     }}
     /// 只影响敌人的余烬：联机客机上不生效（敌人由房主计算）
     /// 叠层余烬（层数由战斗中的事件累积，不设上限）
-    pub fn stacking(self)->bool {matches!(self,Self::SoulEater|Self::Chain|Self::Godslayer|Self::SpiritKeeper)}
+    pub fn stacking(self)->bool {matches!(self,Self::SoulEater|Self::Chain|Self::Godslayer|Self::SpiritKeeper|Self::Harvest)}
     /// 当前层数的效果，显示在构筑面板里
     pub fn stack_bonus(self,stacks:u32)->Option<String> {
         let r=stack_rates(self,stacks)?;
@@ -123,6 +163,7 @@ impl Ember {
             Self::SoulEater=>format!("攻击 +{}%",percent(r.attack)),
             Self::Chain=>format!("致命一击伤害 +{}%",percent(r.attack)),
             Self::Godslayer=>format!("最大生命 +{}%、攻击 +{}%",percent(r.hp),percent(r.attack)),
+            Self::Harvest=>format!("最大生命 +{}%",percent(r.hp)),
             Self::SpiritKeeper=>format!("召唤物伤害 +{}%、受到的伤害 -{}%",percent(r.attack),-percent(r.cut)),
             _=>return None,
         })
@@ -133,7 +174,24 @@ impl Ember {
     /// 法师余烬：只有身上带着法杖或圣印记时才会出现在奖励里
     pub fn needs_casting(self)->bool {matches!(self,Self::Barrier|Self::Meditation|Self::Glintstone|Self::FullMoon)}
     /// 这局的构筑能不能抽到它
-    fn fits(self,spirits:bool,casting:bool)->bool {(spirits||!self.needs_spirit())&&(casting||!self.needs_casting())}
+    /// 职业专属余烬（余烬规则 3 起）：只有这些职业抽得到；None 为通用余烬，所有职业都能抽到
+    pub fn classes(self)->Option<&'static [crate::Class]> {
+        use crate::Class::*;
+        match self {
+            Self::Bulwark|Self::Chain=>Some(&[Vagabond]),
+            Self::Frenzy|Self::Arts|Self::LastStand=>Some(&[Hero]),
+            Self::Mercy=>Some(&[Prophet,Confessor]),
+            Self::Stride=>Some(&[Astrologer,Prophet,Confessor]),
+            Self::Bloodlord|Self::Frost|Self::Footwork|Self::Breaker=>Some(&[Samurai]),
+            Self::Barrier|Self::Meditation|Self::Glintstone|Self::FullMoon|Self::Martyr|Self::Battlemage=>Some(&[Astrologer,Prophet]),
+            Self::SpiritLink|Self::SpiritBurst|Self::SpiritFeast|Self::SpiritCommand|Self::SpiritTwin|Self::SpiritKeeper|Self::SpiritResonance=>Some(&[Confessor]),
+            _=>None,
+        }
+    }
+    /// class：余烬规则 3 起按职业限制（None 不限职业，旧存档）
+    fn fits(self,spirits:bool,casting:bool,class:Option<crate::Class>)->bool {
+        (spirits||!self.needs_spirit())&&(casting||!self.needs_casting())&&class.is_none_or(|class|self.classes().is_none_or(|classes|classes.contains(&class)))
+    }
 }
 /// 作用在敌人身上的余烬效果。联机成员在本机算出（只算自己与自己召唤物的命中、击倒），随汇报发给房主，由房主执行。
 /// slot：这场战斗敌人名单（enemies::node_roster）里的位置，房主与成员一致
@@ -176,6 +234,8 @@ pub enum Gain {
     Critical,
     /// 赢下一场精英战或 Boss 战
     Slain,
+    /// 致命一击击杀敌人（rank 同 Kill）：处刑者的血宴
+    CriticalKill{rank:u8},
 }
 /// 叠层余烬在某个层数下的倍率（攻击倍率、最大生命倍率、受到伤害的倍率），运行时写进效果参数
 #[derive(Clone,Copy,Debug,PartialEq)]
@@ -187,10 +247,13 @@ pub fn stack_rates(ember:Ember,stacks:u32)->Option<Rates> {
         Ember::SoulEater=>Rates{attack:step(SOUL_STEP_PERCENT),..plain},
         Ember::Chain=>Rates{attack:step(CHAIN_STEP_PERCENT),..plain},
         Ember::Godslayer=>Rates{attack:step(SLAYER_ATTACK_PERCENT),hp:step(SLAYER_HP_PERCENT),..plain},
+        Ember::Battlemage=>Rates{cut:battlemage_cut(stacks),..plain},
+        Ember::Harvest=>Rates{hp:(1.0+HARVEST_STEP_PERCENT as f32/100.0).powi(stacks.min(HARVEST_POINT_CAP) as i32),..plain},
         Ember::SpiritKeeper=>Rates{attack:step(KEEPER_ATTACK_PERCENT),cut:(1.0-KEEPER_CUT_PERCENT as f32/100.0).powi(stacks.min(10_000) as i32),..plain},
         _=>return None,
     })
 }
+fn is_zero(value:&u32)->bool {*value==0}
 /// 叠层余烬的进度，整局保留；只记拿到余烬之后的事件
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq,Serialize,Deserialize)]
 pub struct Stacks {
@@ -199,6 +262,8 @@ pub struct Stacks {
     #[serde(default)] pub chain:u32,
     #[serde(default)] pub slayer:u32,
     #[serde(default)] pub keeper:u32,
+    /// 处刑者的血宴的点数（层数 = 点数）
+    #[serde(default,skip_serializing_if="is_zero")] pub harvest:u32,
     #[serde(default,skip_serializing_if="Option::is_none")] chain_room:Option<(u64,u8,usize,u8)>,
 }
 impl Stacks {
@@ -213,7 +278,7 @@ impl Stacks {
     }
     pub fn is_empty(&self)->bool {*self==Self::default()}
     pub fn level(&self,ember:Ember)->u32 {match ember {
-        Ember::SoulEater=>self.souls/SOUL_POINTS,Ember::Chain=>self.chain,Ember::Godslayer=>self.slayer,Ember::SpiritKeeper=>self.keeper,_=>0,
+        Ember::SoulEater=>self.souls/SOUL_POINTS,Ember::Chain=>self.chain,Ember::Godslayer=>self.slayer,Ember::SpiritKeeper=>self.keeper,Ember::Harvest=>self.harvest,_=>0,
     }}
     /// 记一次事件；返回因此升层的余烬（用于提示）
     pub fn gain(&mut self,held:&[Ember],event:Gain)->Vec<Ember> {
@@ -226,19 +291,20 @@ impl Stacks {
             },
             Gain::Critical=>if has(Ember::Chain) {self.chain=self.chain.saturating_add(1);},
             Gain::Slain=>if has(Ember::Godslayer) {self.slayer=self.slayer.saturating_add(1);},
+            Gain::CriticalKill{rank}=>if has(Ember::Harvest) {self.harvest=self.harvest.saturating_add(HARVEST_POINTS[usize::from(rank.min(2))]);},
         }
         held.iter().copied().filter(|e|self.level(*e)>before.level(*e)).collect()
     }
 }
 /// 按种子抽一张没拿过的余烬；spirits 为 false 时不出召唤流余烬，casting 为 false 时不出法师余烬
-pub fn offer(seed:u64,held:&[Ember],spirits:bool,casting:bool)->Option<Ember> {
-    let pool:Vec<_>=Ember::ALL.into_iter().filter(|e|!held.contains(e)&&e.fits(spirits,casting)).collect();
+pub fn offer(seed:u64,held:&[Ember],spirits:bool,casting:bool,class:Option<crate::Class>)->Option<Ember> {
+    let pool:Vec<_>=Ember::ALL.into_iter().filter(|e|!held.contains(e)&&e.fits(spirits,casting,class)).collect();
     (!pool.is_empty()).then(||pool[(crate::mix(seed^0xe3be_12a5) % pool.len() as u64) as usize])
 }
 /// 余烬规则 1 起按品质抽：先按 odds（普通、稀有、史诗、传说，合计 100）掷品质，再在这个品质里挑没拿过的；
 /// 这个品质已经没有可抽的，就依次往低一档、再往高一档找
-pub fn offer_by_quality(seed:u64,held:&[Ember],spirits:bool,casting:bool,odds:[u32;4])->Option<Ember> {
-    let pool:Vec<_>=Ember::ALL.into_iter().filter(|e|!held.contains(e)&&e.fits(spirits,casting)).collect();
+pub fn offer_by_quality(seed:u64,held:&[Ember],spirits:bool,casting:bool,class:Option<crate::Class>,odds:[u32;4])->Option<Ember> {
+    let pool:Vec<_>=Ember::ALL.into_iter().filter(|e|!held.contains(e)&&e.fits(spirits,casting,class)).collect();
     if pool.is_empty() {return None;}
     let roll=(crate::mix(seed^0x51a1_17e5)%100) as u32;
     let mut below=0;let rolled=odds.iter().position(|chance|{below+=chance;roll<below}).unwrap_or(3) as u8;
@@ -265,16 +331,18 @@ pub fn reward(run:&crate::Run,node:usize)->Option<Ember> {
         _=>return None,
     }
     // 规则 0（旧存档）不分品质，等概率
-    if run.ember_rules>=1 {offer_by_quality(roll>>8,&run.embers,carries_spirit(run),carries_catalyst(run),odds(crate::affixes::quality_odds(run)))}
-    else {offer(roll>>8,&run.embers,carries_spirit(run),carries_catalyst(run))}
+    if run.ember_rules>=1 {offer_by_quality(roll>>8,&run.embers,carries_spirit(run),carries_catalyst(run),class_pool(run),odds(crate::affixes::quality_odds(run)))}
+    else {offer(roll>>8,&run.embers,carries_spirit(run),carries_catalyst(run),None)}
 }
 /// 宝箱房（余烬规则 2 起）：打开宝箱直接得到一枚随机余烬（按品质概率，没拿过的，召唤流、法师余烬照常看构筑）；
 /// 能抽的都拿完了返回 None，宝箱照旧给物品
 pub fn chest_ember(run:&crate::Run,node:usize)->Option<Ember> {
     if !run.ember_rewards||run.ember_rules<2||run.nodes.get(node).is_none_or(|n|n.kind!=crate::NodeKind::Chest) {return None;}
     let seed=crate::mix(run.reward_seed()^(node as u64).wrapping_mul(7919)^0xc4e5_e3be);
-    offer_by_quality(seed,&run.embers,carries_spirit(run),carries_catalyst(run),odds(crate::affixes::quality_odds(run)))
+    offer_by_quality(seed,&run.embers,carries_spirit(run),carries_catalyst(run),class_pool(run),odds(crate::affixes::quality_odds(run)))
 }
+/// 余烬规则 3 起：只抽通用余烬与本职业的专属余烬
+fn class_pool(run:&crate::Run)->Option<crate::Class> {(run.ember_rules>=3).then_some(run.class)}
 /// 身上带着骨灰：召唤师（开局就有骨灰），或拿到过任何骨灰奖励
 pub fn carries_spirit(run:&crate::Run)->bool {
     run.summoner()||run.claimed_items.iter().any(|id|crate::rewards::lookup(*id).is_some_and(|i|i.kind==crate::rewards::ItemKind::Spirit))
@@ -289,7 +357,7 @@ pub fn icon_talisman(ember:Ember)->u32 {match ember {
     Ember::DragonHeart=>4020,Ember::Revenge=>2060,Ember::Frenzy=>2080,Ember::Echo=>5000,Ember::Feast=>5030,Ember::Thorns=>1210,
     Ember::SpiritLink=>6090,Ember::SpiritBurst=>6020,Ember::SpiritFeast=>2210,Ember::SpiritCommand=>3060,Ember::SpiritTwin=>6090,
     Ember::SoulEater=>2050,Ember::Chain=>2090,Ember::Godslayer=>1001,Ember::SpiritKeeper=>2210,
-    Ember::Barrier=>3000,Ember::Meditation=>6020,Ember::Glintstone=>1010,Ember::FullMoon=>2110,Ember::Footwork=>5050,Ember::SpiritResonance=>3060,Ember::Pouch=>5000,Ember::Arts=>6020,Ember::Bulwark=>4100,Ember::Breaker=>2160,
+    Ember::Barrier=>3000,Ember::Meditation=>6020,Ember::Glintstone=>1010,Ember::FullMoon=>2110,Ember::Footwork=>5050,Ember::SpiritResonance=>3060,Ember::Pouch=>5000,Ember::Arts=>6020,Ember::Bulwark=>4100,Ember::Breaker=>2160,Ember::Harvest=>2090,Ember::LastStand=>1210,Ember::Martyr=>2010,Ember::Mercy=>2190,Ember::Battlemage=>1010,Ember::Stride=>1170,
 }}
 /// 扣敌人生命的量：按目标最大生命的百分比，Boss 另有上限
 pub fn enemy_damage(max_hp:i32,percent:u32,boss:bool)->i32 {
@@ -308,30 +376,101 @@ mod tests {
     #[test]
     fn every_quality_has_embers_and_rolls_follow_the_odds() {
         assert!(Ember::ALL.iter().all(|e|matches!(e.quality(),2|3)),"embers are only epic or legendary");
-        assert_eq!(Ember::ALL.iter().filter(|e|e.quality()==3).count(),8);
+        assert_eq!(Ember::ALL.iter().filter(|e|e.quality()==3).count(),10);
         assert_eq!(odds(crate::affixes::QUALITY_START),[0,0,85,15]);assert_eq!(odds(crate::affixes::QUALITY_END),[0,0,72,28]);
         let mut counts=[0u32;4];
-        for seed in 0..20000u64 {counts[usize::from(offer_by_quality(seed,&[],true,true,[0,0,50,50]).unwrap().quality())]+=1;}
+        for seed in 0..20000u64 {counts[usize::from(offer_by_quality(seed,&[],true,true,None,[0,0,50,50]).unwrap().quality())]+=1;}
         assert!(counts[0]==0&&counts[1]==0&&(9000..11000).contains(&counts[2])&&(9000..11000).contains(&counts[3]),"{counts:?}");
         let mut late=[0u32;4];
-        for seed in 0..20000u64 {late[usize::from(offer_by_quality(seed,&[],true,true,[0,0,0,100]).unwrap().quality())]+=1;}
+        for seed in 0..20000u64 {late[usize::from(offer_by_quality(seed,&[],true,true,None,[0,0,0,100]).unwrap().quality())]+=1;}
         assert_eq!(late[3],20000,"legendary odds give legendary embers while any are left");
         // 这一档拿完了：先往低一档找
         let held:Vec<_>=Ember::ALL.into_iter().filter(|e|e.quality()==3).collect();
-        assert!((0..500).all(|seed|offer_by_quality(seed,&held,true,true,[0,0,0,100]).unwrap().quality()==2));
-        let mut all=vec![];while let Some(e)=offer_by_quality(all.len() as u64*13,&all,true,true,[0,0,85,15]) {all.push(e);}
+        assert!((0..500).all(|seed|offer_by_quality(seed,&held,true,true,None,[0,0,0,100]).unwrap().quality()==2));
+        let mut all=vec![];while let Some(e)=offer_by_quality(all.len() as u64*13,&all,true,true,None,[0,0,85,15]) {all.push(e);}
         assert_eq!(all.len(),Ember::ALL.len());
+    }
+    #[test]
+    fn stride_is_for_the_non_melee_classes() {
+        assert_eq!(Ember::Stride.effect(),"移动速度提高 20%\n（走路、奔跑更快，攻击不变）");
+        assert!(Ember::Stride.quality()==2&&Ember::Stride.classes()==Some(&[crate::Class::Astrologer,crate::Class::Prophet,crate::Class::Confessor][..]));
+    }
+    #[test]
+    fn battlemage_cuts_damage_by_the_higher_mind_stat_and_records_weapons() {
+        assert_eq!(Ember::Battlemage.effect(),"可在铁匠处免费让近战武器\n获得智力或信仰 S 补正\n受到的伤害降低\n智力、信仰取高 ×0.4%");
+        assert!((battlemage_cut(40)-0.84).abs()<1e-6&&(battlemage_cut(80)-0.68).abs()<1e-6&&(battlemage_cut(0)-1.0).abs()<1e-6&&(battlemage_cut(500)-0.05).abs()<1e-6);
+        let mut run=crate::Run::new(3,crate::Class::Astrologer);
+        assert!(run.battlemage_convert(2000000,0).is_err(),"needs the ember");
+        run.embers.push(Ember::Battlemage);
+        run.battlemage_convert(2000000,0).unwrap();run.battlemage_convert(2000000,1).unwrap();assert_eq!(run.battlemage,vec![(2000000,1)],"switches the stat");
+        assert!(run.battlemage_convert(3000000,2).is_err());
+        for i in 1..BATTLEMAGE_WEAPONS as u32 {run.battlemage_convert(3000000+i*100,0).unwrap();}
+        assert!(run.battlemage_convert(9000000,0).is_err(),"at most eight weapons");
+        assert_eq!(crate::Run::decode(&run.encode().unwrap()).unwrap().battlemage,run.battlemage);
+        assert!(Ember::Battlemage.quality()==3&&Ember::Battlemage.classes()==Some(&[crate::Class::Astrologer,crate::Class::Prophet][..]));
+    }
+    #[test]
+    fn mercy_boosts_healing_incantations_for_clerics() {
+        assert_eq!(Ember::Mercy.effect(),"治疗类祷告的回复量\n提高 50%");
+        assert!(Ember::Mercy.quality()==2&&Ember::Mercy.classes()==Some(&[crate::Class::Prophet,crate::Class::Confessor][..]));
+    }
+    #[test]
+    fn martyr_restores_fp_in_proportion_to_the_health_lost() {
+        assert_eq!(Ember::Martyr.effect(),"受到伤害时回复专注\n失去最大生命的 1%\n回复最大专注的 1%");
+        assert_eq!(martyr_fp(200,1000,150),30,"20% of health lost restores 20% of focus");
+        assert_eq!(martyr_fp(5000,1000,150),150,"never more than the whole pool");
+        assert_eq!((martyr_fp(0,1000,150),martyr_fp(100,0,150),martyr_fp(100,1000,0)),(0,0,0));
+        assert!(Ember::Martyr.quality()==2&&Ember::Martyr.classes()==Some(&[crate::Class::Astrologer,crate::Class::Prophet][..]));
+    }
+    #[test]
+    fn last_stand_is_a_berserker_ember_with_the_tuned_text() {
+        assert_eq!(Ember::LastStand.effect(),"生命低于 40% 时\n韧性（强韧度）提高 200%");
+        assert!(Ember::LastStand.quality()==2&&Ember::LastStand.classes()==Some(&[crate::Class::Hero][..])&&!Ember::LastStand.stacking());
+    }
+    #[test]
+    fn harvest_compounds_on_execution_kills_by_enemy_rank() {
+        let held=[Ember::Harvest];let mut stacks=Stacks::default();
+        assert!(stacks.gain(&held,Gain::Kill{rank:2,spirit:false}).is_empty(),"ordinary kills do not count");
+        assert!(stacks.gain(&held,Gain::Critical).is_empty());
+        assert_eq!(stacks.gain(&held,Gain::CriticalKill{rank:0}),vec![Ember::Harvest]);assert_eq!(stacks.harvest,1);
+        stacks.gain(&held,Gain::CriticalKill{rank:1});stacks.gain(&held,Gain::CriticalKill{rank:2});assert_eq!(stacks.harvest,9);
+        let hp=stack_rates(Ember::Harvest,stacks.harvest).unwrap().hp;assert!((hp-1.01f32.powi(9)).abs()<1e-4,"compounds: {hp}");
+        assert!(stack_rates(Ember::Harvest,100).unwrap().hp>2.7,"1.01^100 is about 2.7x, not 2x");
+        assert!(stack_rates(Ember::Harvest,u32::MAX).unwrap().hp.is_finite());
+        assert_eq!(Ember::Harvest.stack_bonus(9).unwrap(),"最大生命 +9%");
+        let mut other=Stacks::default();assert!(other.gain(&[Ember::Chain],Gain::CriticalKill{rank:2}).is_empty(),"needs the ember");
+        assert!(Ember::Harvest.stacking()&&Ember::Harvest.quality()==3&&Ember::Harvest.classes().is_none());
+        assert_eq!(serde_json::to_string(&Stacks::default()).unwrap().contains("harvest"),false,"old saves stay unchanged");
+    }
+    #[test]
+    fn class_embers_only_reach_their_own_classes() {
+        use crate::Class;
+        let general=Ember::ALL.iter().filter(|e|e.classes().is_none()).count();
+        assert_eq!(general,13);
+        for class in Class::PLAYABLE {
+            let mut drawn=vec![];
+            while let Some(e)=offer(drawn.len() as u64*29,&drawn,true,true,Some(class)) {
+                assert!(e.classes().is_none_or(|c|c.contains(&class)),"{class:?} drew {e:?}");drawn.push(e);
+            }
+            let own=Ember::ALL.iter().filter(|e|e.classes().is_some_and(|c|c.contains(&class))).count();
+            assert_eq!(drawn.len(),general+own,"{class:?}");assert!(own>=2);
+        }
+        assert!(Ember::ALL.iter().all(|e|!e.needs_spirit()||e.classes()==Some(&[Class::Confessor][..])));
+        assert!(Ember::ALL.iter().all(|e|!e.needs_casting()||e.classes()==Some(&[Class::Astrologer,Class::Prophet][..])));
+        // 新旅程按职业限制，旧存档（余烬规则 2）不限
+        let mut run=crate::Run::new(7,Class::Hero);assert_eq!(class_pool(&run),Some(Class::Hero));
+        run.ember_rules=2;assert_eq!(class_pool(&run),None);
     }
     #[test]
     fn offers_skip_held_embers_and_run_out_cleanly() {
         let mut held=vec![];
-        for _ in 0..Ember::ALL.len() {let e=offer(held.len() as u64*31,&held,true,true).unwrap();assert!(!held.contains(&e));held.push(e);}
-        assert_eq!(offer(1,&held,true,true),None);
-        assert_eq!(offer(5,&[],true,true),offer(5,&[],true,true));
-        // 没有骨灰、也没有法杖圣印记时只出 20 枚通用余烬，抽完就没有了
+        for _ in 0..Ember::ALL.len() {let e=offer(held.len() as u64*31,&held,true,true,None).unwrap();assert!(!held.contains(&e));held.push(e);}
+        assert_eq!(offer(1,&held,true,true,None),None);
+        assert_eq!(offer(5,&[],true,true,None),offer(5,&[],true,true,None));
+        // 没有骨灰、也没有法杖圣印记时只出 26 枚（不分职业时），抽完就没有了
         let mut plain=vec![];
-        while let Some(e)=offer(plain.len() as u64*17,&plain,false,false) {assert!(!e.needs_spirit()&&!e.needs_casting());plain.push(e);}
-        assert_eq!(plain.len(),20);
+        while let Some(e)=offer(plain.len() as u64*17,&plain,false,false,None) {assert!(!e.needs_spirit()&&!e.needs_casting());plain.push(e);}
+        assert_eq!(plain.len(),26);
     }
     #[test]
     fn enemy_damage_is_capped_for_bosses() {
@@ -396,9 +535,14 @@ mod tests {
             for id in 0..run.nodes.len() {if reward(&run,id).is_some_and(Ember::needs_spirit) {plain+=1;}}
             run.claimed_items.push(0x40000000|232000);// 离群野狼的骨灰
             assert!(carries_spirit(&run));
-            for id in 0..run.nodes.len() {if reward(&run,id).is_some_and(Ember::needs_spirit) {summoner+=1;}}
+            // 新旅程：召唤流余烬只有召唤师抽得到，影刃捡到骨灰也没有
+            for id in 0..run.nodes.len() {if reward(&run,id).is_some_and(Ember::needs_spirit) {plain+=1;}}
+            let mut old=run.clone();old.ember_rules=2;
+            for id in 0..old.nodes.len() {if reward(&old,id).is_some_and(Ember::needs_spirit) {summoner+=1;}}
+            let confessor=Run::new(seed,Class::Confessor);
+            for id in 0..confessor.nodes.len() {if reward(&confessor,id).is_some_and(Ember::needs_spirit) {summoner+=1;}}
         }
-        assert_eq!(plain,0,"no summon embers without a spirit ash");
+        assert_eq!(plain,0,"no summon embers without a spirit ash, nor for other classes in new runs");
         assert!(summoner>0);
     }
     #[test]
@@ -438,7 +582,7 @@ mod tests {
         let mut opened=run.clone();assert_eq!(opened.claim_chest_ember().unwrap(),Some(expected));
         assert_eq!(opened.embers,vec![expected]);assert!(!matches!(opened.phase,Phase::Node{..}),"the chest node is finished");
         assert_eq!(Run::decode(&opened.encode().unwrap()).unwrap(),opened);
-        run.embers.clear();let mut full=run.clone();full.embers=Ember::ALL.into_iter().filter(|e|e.fits(false,false)).collect();
+        run.embers.clear();let mut full=run.clone();full.embers=Ember::ALL.into_iter().filter(|e|e.fits(false,false,class_pool(&run))).collect();
         assert_eq!(full.claim_chest_ember().unwrap(),None);assert_eq!(full.phase,Phase::Node{id:chest},"nothing changes without an ember");
         let mut old=run.clone();old.ember_rules=1;assert_eq!(old.claim_chest_ember().unwrap(),None);
     }
@@ -452,6 +596,9 @@ mod tests {
             for id in 0..run.nodes.len() {if reward(&run,id).is_some_and(Ember::needs_casting) {warrior+=1;}}
             run.casting_tools=Some([false,true]);
             assert!(carries_catalyst(&run));
+            // 新旅程：法师余烬只有星辉术士、祷誓者抽得到；旧规则（余烬规则 2）捡到法杖的影刃照旧能抽到
+            for id in 0..run.nodes.len() {if reward(&run,id).is_some_and(Ember::needs_casting) {warrior+=1;}}
+            run.ember_rules=2;
             for id in 0..run.nodes.len() {if reward(&run,id).is_some_and(Ember::needs_casting) {picked_up+=1;}}
             for class in [Class::Astrologer,Class::Prophet] {
                 let run=Run::new(seed,class);
@@ -461,7 +608,7 @@ mod tests {
         assert_eq!(warrior,0,"no mage embers without a catalyst");
         assert!(picked_up>0&&casters>0);
         let mut plain=vec![];
-        while let Some(e)=offer(plain.len() as u64*17,&plain,true,false) {assert!(!e.needs_casting());plain.push(e);}
+        while let Some(e)=offer(plain.len() as u64*17,&plain,true,false,None) {assert!(!e.needs_casting());plain.push(e);}
         assert_eq!(plain.len(),Ember::ALL.len()-4);
         assert!(Ember::ALL.into_iter().filter(|e|e.needs_casting()).all(|e|e.quality()==if e==Ember::Meditation {3}else{2}&&!e.needs_spirit()&&!e.affects_enemies()));
     }
