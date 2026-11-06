@@ -193,6 +193,8 @@ static BOSS_LEVELS:LazyLock<std::collections::HashMap<&'static str,u16>>=LazyLoc
 fn recommended_level(name:&str)->Option<u16> {BOSS_LEVELS.get(name).copied()}
 /// 挪到后一幕、只作为精英出现的组合（单人）：英雄石像鬼双人组从第二幕移到第三幕。地图里没有第三幕的联机实体，联机时不抽这一组
 const RELOCATED_ELITES:[(i32,u8);2]=[(950000152,3),(950000154,3)];
+/// 精英版只出第一只的组合（组里第一只的 npc）：英雄石像鬼双人组的精英版只出大剑那一只
+const SINGLE_ELITES:[(i32,&str);1]=[(950000152,"英雄石像鬼")];
 fn relocated(enemy:&Enemy)->Option<u8> {RELOCATED_ELITES.iter().find(|(npc,_)|*npc==enemy.npc).map(|(_,act)|*act)}
 fn encounter_act(enemy:&Enemy)->u8 {if enemy.npc==950000196 {3}else{relocated(enemy).unwrap_or(enemy.act)}}
 fn elite_only(enemy:&Enemy)->bool {
@@ -223,8 +225,12 @@ fn boss_roster(kind:NodeKind,seed:u64,ordinal:usize,act:u8,party:bool)->Vec<Enem
     for pair in &pairs {options.push(pair.to_vec());}
     options.sort_by_key(|o|mix(seed ^ (o.iter().fold(0u64,|k,&id|k.wrapping_mul(0x100000001b3)^id as u64)).wrapping_mul(0x9e3779b97f4a7c15)));
     let chosen=&options[ordinal%options.len()];
-    chosen.iter().flat_map(|chosen|BOSSES.iter().filter(move |(id,_)|id==chosen)).map(|(_,e)|{
-        let mut enemy=*e;enemy.act=act;enemy.kind=kind;if kind==NodeKind::Elite {enemy.npc+=1;enemy.bar=0;}enemy
+    let mut group:Vec<Enemy>=chosen.iter().flat_map(|chosen|BOSSES.iter().filter(move |(id,_)|id==chosen)).map(|(_,e)|*e).collect();
+    if kind==NodeKind::Elite && let Some(&(_,name))=group.first().and_then(|first|SINGLE_ELITES.iter().find(|(npc,_)|*npc==first.npc)) {
+        group.truncate(1);group[0].name=name;
+    }
+    group.into_iter().map(|mut enemy|{
+        enemy.act=act;enemy.kind=kind;if kind==NodeKind::Elite {enemy.npc+=1;enemy.bar=0;}enemy
     }).collect()
 }
 /// Windows party-boss-model-sync 已验证模型与 AI；当前无待同步的联机 Boss。
@@ -538,11 +544,14 @@ mod tests {
         }}}
     }
     #[test]
-    fn gargoyles_are_act_three_elites_in_solo_and_absent_in_party() {
+    fn a_single_gargoyle_is_an_act_three_elite_in_solo_and_absent_in_party() {
         let mut seen=false;
         for party in [false,true] {for act in 1..=3 {for kind in [NodeKind::Monster,NodeKind::Elite,NodeKind::Boss] {for seed in 0..1500 {
-            for e in roster_in(kind,seed,seed as usize%24,11,act,party) {
-                if e.name=="英雄石像鬼双人组" {assert!(!party);assert_eq!((act,kind,e.act),(3,NodeKind::Elite,3));seen=true;}
+            let group=roster_in(kind,seed,seed as usize%24,11,act,party);
+            assert!(group.iter().all(|e|e.name!="英雄石像鬼双人组"),"the elite gargoyles come alone");
+            if group.iter().any(|e|e.name=="英雄石像鬼") {
+                assert!(!party);assert_eq!((act,kind),(3,NodeKind::Elite));
+                assert_eq!(group.iter().map(|e|(e.npc,e.act)).collect::<Vec<_>>(),[(950000153,3)],"one greatsword gargoyle");seen=true;
             }
         }}}}
         assert!(seen);

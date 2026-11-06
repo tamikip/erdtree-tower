@@ -296,6 +296,12 @@ pub struct Events {pub feast:bool,pub gains:Vec<Gain>,pub strikes:Vec<Strike>}
 fn own_handles(world:&WorldChrMan)->Vec<FieldInsHandle> {
     world.main_player.as_ref().map(|p|p.chr_ins.field_ins_handle).into_iter().chain(world.summon_buddy_chr_set.characters().map(|c|c.field_ins_handle)).collect()
 }
+/// 联机时敌人的 last_hit_by 是空的（成员这边敌人的生命来自房主的同步，同步里只有生命与伤害、没有攻击者）：
+/// 离这只敌人最近的是本机玩家或本机召唤物（不比队友远）就算自己的。近战准，远程法术会算给离得近的队友
+fn nearest_is_mine(foe:[f32;3],mine:&[[f32;3]],others:&[[f32;3]])->bool {
+    let closest=|set:&[[f32;3]]|set.iter().map(|&p|distance(foe,p)).fold(f32::INFINITY,f32::min);
+    !mine.is_empty()&&closest(mine)<=closest(others)
+}
 /// 一场战斗内的余烬状态：按敌人生命变化判断命中与倒下，按玩家生命变化判断受伤
 #[derive(Default)]
 pub struct Fight {
@@ -413,18 +419,24 @@ impl Fight {
         let taken=self.player_hp.map_or(0,|before|(before-hp).max(0));self.player_hp=Some(hp);
         // 敌人：命中与倒下。单人时都算自己的；联机时按敌人的 last_hit_by 只算本机玩家与召唤物的（队友的不算进自己的余烬）
         let own=own_handles(world);
-        let (mut hits,mut deaths)=(Vec::new(),Vec::new());
+        let living=|c:&ChrIns|c.modules.data.hp>0&&!c.chr_flags1c5.death_flag()&&!c.debug_flags.character_disabled();
+        let at=|c:&ChrIns|{let q=c.modules.physics.position;[q.0,q.1,q.2]};
+        let mine_at:Vec<_>=std::iter::once(here).chain(world.summon_buddy_chr_set.characters().filter(|c|living(c)).map(|c|at(c))).collect();
+        let others_at:Vec<_>=world.player_chr_set.characters().map(|p|&p.chr_ins).filter(|c|!own.contains(&c.field_ins_handle)&&living(c)).map(at).collect();
+        // 自己造成的伤害（米凯拉之刃按它吸血）：自己那几只敌人每一帧掉的生命都算，不受命中判定的门槛与间隔限制
+        let (mut hits,mut deaths,mut dealt)=(Vec::new(),Vec::new(),0i64);
         for &(ref handle,rank,slot) in foes {
             let Some(chr)=world.chr_ins_by_handle(handle) else{continue};
             let (foe_hp,foe_max)=(chr.modules.data.hp,chr.modules.data.max_hp);
             let q=chr.modules.physics.position;let pos=[q.0,q.1,q.2];
             let alive=foe_hp>0&&!chr.chr_flags1c5.death_flag();
-            let attacker=chr.last_hit_by;let mine=!party||own.contains(&attacker);
+            let attacker=chr.last_hit_by;
+            let mine=!party||if attacker.is_empty() {nearest_is_mine(pos,&mine_at,&others_at)} else {own.contains(&attacker)};
             let Some(index)=self.foes.iter().position(|f|f.handle==*handle) else {
                 self.foes.push(Foe{handle:*handle,hp:foe_hp,max:foe_max,pos,alive,boss:rank<=1,rank,slot,hit_at:None});continue;
             };
             let foe=&mut self.foes[index];
-            let drop=foe.hp-foe_hp;
+            let drop=foe.hp-foe_hp;let lost=(foe.hp-foe_hp.max(0)).max(0);
             let died=foe.alive&&!alive;
             let hit=!died&&alive&&drop>0&&i64::from(drop)*1000>=i64::from(foe_max.max(1))*HIT_PERMILLE&&foe.hit_at.is_none_or(|t|now.duration_since(t)>=HIT_INTERVAL);
             if hit {foe.hit_at=Some(now);}
@@ -432,9 +444,10 @@ impl Fight {
             // 联机：每场战斗记一次“算进自己的”与“不算的”命中或击倒，实测时据此确认 last_hit_by 的归属
             if party&&(hit||died)&&!self.attributed[usize::from(!mine)] {
                 self.attributed[usize::from(!mine)]=true;
-                super::log(format!("TOWER_EMBER party {} by {attacker:?} counted={mine}",if died{"kill"}else{"hit"}));
+                super::log(format!("TOWER_EMBER party {} by {attacker} counted={mine}{}",if died{"kill"}else{"hit"},if attacker.is_empty(){" (nearest)"}else{""}));
             }
             if !mine {continue;}
+            dealt+=i64::from(lost);
             if died {deaths.push(index);} else if hit {hits.push((index,drop));}
         }
         // 召唤物：只看本机玩家的骨灰
@@ -469,7 +482,7 @@ impl Fight {
             heal+=i64::from(spirit_loss);
         }
         if has(Ember::Miquella) {
-            self.lifesteal+=hits.iter().map(|(_,d)|i64::from(*d)).sum::<i64>()*i64::from(embers::LIFESTEAL_PERCENT);
+            self.lifesteal+=dealt*i64::from(embers::LIFESTEAL_PERCENT);
             heal+=self.lifesteal/100;self.lifesteal%=100;
         }
         if has(Ember::Frenzy) {
@@ -648,6 +661,15 @@ mod tests {
     fn mercy_raises_heals_by_half_and_keeps_the_sign() {
         assert_eq!((mercy_heal(-230),mercy_heal(-8),mercy_heal(-115)),(-345,-12,-172));
         assert!(MERCY_HEALS.iter().all(|id|(1642000..1700000).contains(id)||(21640000..21670000).contains(id)));
+    }
+    #[test]
+    fn unattributed_hits_go_to_the_nearest_side() {
+        let foe=[0.0,0.0,0.0];
+        assert!(nearest_is_mine(foe,&[[1.0,0.0,0.0]],&[[3.0,0.0,0.0]]),"melee next to the enemy");
+        assert!(!nearest_is_mine(foe,&[[5.0,0.0,0.0]],&[[2.0,0.0,0.0]]),"a teammate is closer");
+        assert!(nearest_is_mine(foe,&[[9.0,0.0,0.0],[0.5,0.0,0.0]],&[[2.0,0.0,0.0]]),"own spirit is closest");
+        assert!(nearest_is_mine(foe,&[[40.0,0.0,0.0]],&[]),"alone in the arena");
+        assert!(!nearest_is_mine(foe,&[],&[]));
     }
     #[test]
     fn stride_only_speeds_up_locomotion() {
