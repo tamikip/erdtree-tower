@@ -14,7 +14,7 @@ impl Affix {
     }
     pub fn description(self)->&'static str {
         match self {
-            Affix::Stalwart=>"受到的削韧减半；用重攻击和跳劈更快打出硬直",
+            Affix::Stalwart=>"韧性翻倍；用重攻击和跳劈更快打出硬直",
             Affix::Bulwark=>"受到的伤害 -25%",
             Affix::Frenzied=>"攻击 +25%，但受到的伤害 +10%",
             Affix::Regenerating=>"每秒回复 0.3% 最大生命；持续压制可以抵消",

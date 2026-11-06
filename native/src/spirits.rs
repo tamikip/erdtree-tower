@@ -57,6 +57,11 @@ unsafe extern "C" fn replacement_clear(manager:*mut u8,owner:i32,caller:usize) {
     unsafe {original(manager,owner);}
 }
 /// 第二只的召唤请求被原版拒绝时记下骨灰编号：扣骨灰与发召唤请求在使用动画里同时发生，被拒就会白扣一个，由运行时补回
+/// 召唤师「群灵」：自己的召唤物出场后全部阵亡（或消失），重新开放召唤点，可以再召唤新的（骨灰照常消耗，胜利时还活着照样返还）
+static RESUMMON:AtomicBool=AtomicBool::new(false);
+pub fn set_resummon(on:bool){if RESUMMON.swap(on,Ordering::AcqRel)!=on {super::log(format!("TOWER_RESUMMON enabled={on}"));}}
+/// 召唤点已用过、这一轮召唤的召唤物出场过、现在场上一只都不剩
+fn resummon_allowed(enabled:bool,used:bool,seen:bool,buddies:usize)->bool {enabled&&used&&seen&&buddies==0}
 static TWIN_REFUND:std::sync::atomic::AtomicI32=std::sync::atomic::AtomicI32::new(0);
 pub fn take_twin_refund()->Option<u32> {let id=TWIN_REFUND.swap(0,Ordering::AcqRel);(id>0).then_some(id as u32&0x0fffffff)}
 pub fn set_twin(on:bool){let on=on&&REPLACE_READY.load(Ordering::Acquire);if TWIN.swap(on,Ordering::AcqRel)!=on {super::log(format!("TOWER_TWIN enabled={on}"));if !on{reset_twin();}}}
@@ -163,7 +168,9 @@ pub const SUMMONED_FLAG:u32=45020968;
 #[derive(Default)]
 pub struct Spirits {script:Option<TalkScript>,reported:bool,failed:bool,status:Option<(u32,bool,bool,bool)>,registration:Option<u32>,
     /// 双生的灵唤铃：这场战斗已经重新开放过召唤点；上一次记录的存活召唤物数量
-    twin_reopened:bool,buddies:Option<usize>}
+    twin_reopened:bool,buddies:Option<usize>,
+    /// 召唤师再召唤：这一轮召唤的召唤物已经出场过（出场前召唤物数为 0，不能当成阵亡）
+    spirit_seen:bool}
 // Accessed only from the serialized game task, like the native NPC dialogs.
 unsafe impl Send for Spirits {}
 
@@ -200,6 +207,12 @@ impl Spirits {
         if self.buddies!=Some(buddies) {
             super::log(format!("TOWER_TWIN alive spirits={buddies} (was {:?}) active_goods={} active_effect={} alive_flag={} reopened={}",self.buddies,manager.active_summon_goods_id,manager.active_summon_speffect_id,manager.player_has_alive_summon,self.twin_reopened));
             self.buddies=Some(buddies);
+        }
+        if buddies>0 {self.spirit_seen=true;}
+        if resummon_allowed(RESUMMON.load(Ordering::Acquire),used,self.spirit_seen,buddies) {
+            super::native_talk::set_flag(SUMMONED_FLAG,false)?;
+            used=false;self.spirit_seen=false;self.twin_reopened=false;reset_twin();
+            super::log("TOWER_RESUMMON all spirits are gone; summon point reopened");
         }
         let twin=TWIN.load(Ordering::Acquire);
         if used&&twin&&!self.twin_reopened&&buddies>0 {
@@ -290,6 +303,15 @@ mod tests {
         assert!(!twin_armed(true,false,false,1),"first summon not yet made");
         assert!(!twin_armed(true,true,true,2),"second spirit already summoned");
         assert!(!twin_armed(true,true,false,0),"the first spirit is gone: the native rules apply again");
+    }
+    #[test]
+    fn summoners_can_call_again_only_after_their_spirits_are_gone() {
+        use super::resummon_allowed as allowed;
+        assert!(allowed(true,true,true,0),"the spirit came out and died");
+        assert!(!allowed(true,true,false,0),"used the bell, spirit not out yet");
+        assert!(!allowed(true,true,true,1),"a spirit is still alive");
+        assert!(!allowed(true,false,true,0),"the summon point is already open");
+        assert!(!allowed(false,true,true,0),"other classes keep the native rule");
     }
     #[test]
     fn summons_are_only_registered_for_an_unused_combat_in_the_arena() {

@@ -1539,6 +1539,8 @@ fn tick_locked() {
         music.track=super::bgm::selection(music_run,i32::from(player.current_block_id),player.chr_ins.modules.data.hp>0&&!player.chr_ins.chr_flags1c5.death_flag(),game.warp_requested,state.view.travelling,music.active,music_wave);
     }
     super::spirits::set_active(local_combat&&!super::law::lone_wolf(state.view.run.as_ref()));
+    // 召唤师「群灵」：召唤物全部阵亡后可以再召唤
+    super::spirits::set_resummon(local_combat&&state.pending.as_ref().map(|p|&p.next_run).or(state.view.run.as_ref()).is_some_and(|r|r.summoner()&&r.class_rules>0));
     super::spirits::set_twin(local_combat&&state.pending.as_ref().map(|p|&p.next_run).or(state.view.run.as_ref()).is_some_and(|r|r.embers.contains(&erdtree_tower::embers::Ember::SpiritTwin)));
     super::enemies::set_party(state.party.is_some());
     // 苦难律法「孤狼」：与房主、单人相同，联机成员与守卫战也不开放召唤点
@@ -2085,8 +2087,10 @@ fn tick_locked() {
             && !player.chr_ins.modules.physics.is_falling
             && !player.chr_ins.chr_flags1c5.is_invincible();
         if arrived&&grounded {let _=super::native_talk::set_flag(45007992,true);}
-        let placed=super::native_talk::flag(45007993).unwrap_or(false);
-        let crossed=super::native_talk::flag(45007991).unwrap_or(false);
+        // 龙王平台：本机已落地并站进中心圈，就当作已落位、已进圈（不等地图事件，联机队员不再等房主进圈）
+        let inside=arrived&&grounded&&arena.inside_circle([player.block_position.x,player.block_position.y,player.block_position.z]);
+        let placed=inside||super::native_talk::flag(45007993).unwrap_or(false);
+        let crossed=inside||super::native_talk::flag(45007991).unwrap_or(false);
         let progress = if arena.uses_circle(){travel.poll_circle(started.elapsed(),arrived&&placed,grounded,crossed)}else{travel.poll_fog(started.elapsed(), arrived&&placed, grounded,crossed)};
         if arrived&&placed&&!travel.resources_restored {
             let (_,_,saved_hp,saved_fp)=state.travel.as_ref().unwrap();

@@ -1,3 +1,5 @@
+/// 龙王圆形平台中心圈的半径（米）
+pub const CIRCLE_RADIUS:f32=8.0;
 #[derive(Clone, Copy)]
 pub struct Arena {
     pub block: i32,
@@ -20,6 +22,12 @@ static ARENAS:std::sync::LazyLock<Vec<Arena>>=std::sync::LazyLock::new(||include
 }).collect());
 impl Arena {
     pub fn uses_circle(self)->bool {self.block==0x0d000000&&is_built(self.block)}
+    /// 走进圈开战的场地：本机角色是否已在中心圈内（与地图里的中心区域同为半径 CIRCLE_RADIUS 的球，scene-builder DragonlordEntrance）。
+    /// 地图事件按实体 10000 判断，联机时对队员来说那是房主，队员要等房主进圈才触发；这里按本机位置判断
+    pub fn inside_circle(self,block_position:[f32;3])->bool {
+        let center=self.position([0.0,0.15,0.0]);
+        self.uses_circle()&&(block_position[0]-center[0]).hypot(block_position[2]-center[2])<=CIRCLE_RADIUS&&(block_position[1]-center[1]).abs()<=CIRCLE_RADIUS
+    }
     pub fn combat_entry(self)->u32 {self.entry+351}
     pub fn attendant_position(self)->[f32;3] {self.arrival.unwrap_or_else(||self.position([28.35,0.35,-4.06]))}
     pub fn position(self,local:[f32;3])->[f32;3] {
@@ -127,6 +135,17 @@ pub fn for_run(_run:&erdtree_tower::Run,_party:bool)->Arena {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_dragonlord_circle_is_checked_against_the_local_player() {
+        let run=erdtree_tower::Run::new(42,erdtree_tower::Class::Hero);let arena=super::for_run(&run,true);
+        assert!(arena.uses_circle());
+        let at=|x:f32,z:f32|arena.position([x,0.15,z]);
+        assert!(arena.inside_circle(at(0.0,0.0))&&arena.inside_circle(at(5.0,5.0)));
+        assert!(!arena.inside_circle([21.857,1009.726,300.433]),"players land about 30 m out and still walk in");
+        assert!(!arena.inside_circle(at(9.0,0.0))&&!arena.inside_circle(at(1.0,20.0)));
+        let mut high=at(0.0,0.0);high[1]+=20.0;assert!(!arena.inside_circle(high),"not while falling from the spawn height");
+        let colosseum=super::for_block(0x2d020000).unwrap();assert!(!colosseum.inside_circle(colosseum.position([0.0,0.0,0.0])),"fog-gate arenas keep their gate");
+    }
     #[test]
     fn all_acts_and_modes_use_dragonlord_platform() {
         for seed in [0,1,42,u64::MAX] {
