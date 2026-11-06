@@ -24,7 +24,8 @@ static class TalismanIconAssets {
         var icons=Required(input);
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
         var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="EquipParamAccessory");
-        var def=PARAMDEF.XmlDeserialize("work/SoulsRandomizers/diste/Defs/EquipParamAccessory.xml");
+        var defs=Environment.GetEnvironmentVariable("TOWER_PARAMDEFS")??"work/SoulsRandomizers/diste/Defs";
+        var def=PARAMDEF.XmlDeserialize(Path.Combine(defs,"EquipParamAccessory.xml"));
         var table=PARAM.Read(file.Bytes);table.ApplyParamdef(def);
         var original=PARAM.Read(file.Bytes);original.ApplyParamdef(def);
         int changed=0;

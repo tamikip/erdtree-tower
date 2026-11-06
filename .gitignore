@@ -25,3 +25,8 @@ GamePath.txt
 tower-options.ini
 /plugins/
 preview.launch.me3
+/SeamlessCoop/ersc.dll
+/SeamlessCoop/locale/
+/SeamlessCoop/crashpad/
+/config/
+/seamless-entry/

@@ -105,7 +105,12 @@ function Invoke-TowerLoader([string]$Root,[string]$Loader,[string]$GameExe,[stri
         $ini=ConvertTo-TowerYafsmlConfig ([IO.File]::ReadAllText($Profile)) (Split-Path -Parent $Profile)
         $config=Join-Path (Split-Path -Parent $Profile) 'yafsml.launch.ini'
         [IO.File]::WriteAllText($config,$ini,[Text.UTF8Encoding]::new($false))
-        & $exe --launch-target eldenring --game-path $GameExe --config $config --modloader-dll (Join-Path $Root 'loader/yafsml/YAFSML.dll')
+        $loaderArguments = @('--launch-target','eldenring','--game-path',('"'+$GameExe+'"'),'--config',('"'+$config+'"'),'--modloader-dll',('"'+(Join-Path $Root 'loader/yafsml/YAFSML.dll')+'"'))
+        $process = Start-Process -FilePath $exe -ArgumentList $loaderArguments -PassThru -WindowStyle Hidden
+        $handle = $process.Handle
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {throw "YAFSML loader exited with code $($process.ExitCode)"}
+        return
     }
     if($LASTEXITCODE -ne 0){throw "$Loader loader exited with code $LASTEXITCODE"}
 }

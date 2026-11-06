@@ -420,11 +420,25 @@
   align-items: center;
   gap: 10px;
   padding-left: var(--cta-pad);
-  transition: filter var(--dur) var(--ease), filter var(--dur) var(--ease);
+  transition: background-color var(--dur) var(--ease);
 }
 
-.btn-primary:hover {
-  filter: brightness(1.06);
+.btn-primary:not(.is-busy):not(:disabled):hover,
+.btn-primary:not(.is-busy):not(:disabled):focus-visible {
+  background: #242429;
+}
+
+.btn-primary:not(.is-busy):not(:disabled):is(:hover, :focus-visible) .label {
+  color: var(--brand);
+}
+
+.btn-primary:not(.is-busy):not(:disabled):is(:hover, :focus-visible) .disc {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.btn-primary:not(.is-busy):not(:disabled):is(:hover, :focus-visible) .disc .arrow {
+  background-color: var(--brand-ink);
 }
 
 /* ---- 下载/更新中：官方会把按钮从品牌色切成 Background-Primary(#0d0d0f) + 白字 ----
@@ -975,14 +989,38 @@
   margin: 0 0 6px;
 }
 
-.history-actions { display: flex; gap: 10px; margin: 10px 0 16px; }
-.history-actions button { padding: 6px 14px; border: 1px solid rgba(216,168,72,.45); border-radius: 5px; color: var(--c-text); }
-.history-actions button:hover { background: var(--c-hover); }
-.history-actions button:disabled { opacity: .45; cursor: wait; }
-.history-entry { border-top: 1px solid rgba(255,255,255,.12); padding: 12px 0; }
-.history-entry summary { cursor: pointer; color: var(--c-text); font-weight: 600; }
-.history-entry summary span { display: block; font-size: 12px; font-weight: normal; color: var(--c-text-dim); margin: 4px 0; }
-.history-entry pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 12px 0 0; color: var(--c-text); }
+.release-history-modal { width: min(760px, calc(100vw - 64px)); max-height: 84vh; border: 1px solid rgba(216,168,72,.2); }
+.release-history-modal .modal-head { height: 58px; padding-left: 26px; font-size: 18px; }
+.release-history-modal .modal-body { padding: 8px 20px 24px; }
+#releaseHistory { display: grid; gap: 12px; }
+.history-entry { border: 1px solid rgba(255,255,255,.09); border-radius: 10px; background: rgba(255,255,255,.025); overflow: hidden; }
+.history-entry[open] { border-color: rgba(216,168,72,.32); }
+.history-entry summary { position: relative; padding: 18px 50px 18px 20px; cursor: pointer; list-style: none; }
+.history-entry summary::-webkit-details-marker { display: none; }
+.history-entry summary::after { content: ''; position: absolute; right: 23px; top: 25px; width: 7px; height: 7px; border-right: 1.5px solid var(--c-text-dim); border-bottom: 1.5px solid var(--c-text-dim); transform: rotate(45deg); }
+.history-entry[open] summary::after { transform: rotate(225deg); top: 29px; }
+.history-entry summary:hover { background: rgba(216,168,72,.05); }
+.history-title { display: block; color: var(--c-text); font-size: 16px; font-weight: 600; line-height: 1.6; }
+.history-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; color: var(--c-text-dim); font-size: 12px; }
+.history-latest { color: var(--brand); }
+.release-notes { margin: 0 20px; padding: 4px 0 20px; border-top: 1px solid rgba(255,255,255,.07); font-size: 14px; line-height: 1.9; color: #c8c7c3; overflow-wrap: anywhere; }
+.release-notes h1, .release-notes h2, .release-notes h3, .release-notes h4 { color: #eee7d7; font-size: 15px; line-height: 1.5; margin: 22px 0 10px; font-weight: 600; }
+.release-notes h1, .release-notes h2 { padding-left: 10px; border-left: 3px solid var(--brand); }
+.release-notes p { margin: 12px 0; }
+.release-notes ul, .release-notes ol { padding-left: 23px; margin: 10px 0; list-style-position: outside; }
+.release-notes ul { list-style-type: disc; }
+.release-notes ol { list-style-type: decimal; }
+.release-notes li { margin: 7px 0; padding-left: 3px; }
+.release-notes li::marker { color: var(--brand); }
+.release-notes strong { color: #f0e6cf; font-weight: 600; }
+.release-notes code { padding: 2px 5px; border-radius: 4px; background: rgba(216,168,72,.09); color: #e6cf9a; font-size: 12px; }
+.release-notes pre { margin: 14px 0; padding: 12px 14px; border-radius: 6px; background: rgba(0,0,0,.25); overflow-x: auto; }
+.release-notes pre code { padding: 0; background: none; white-space: pre; }
+.release-notes blockquote { margin: 14px 0; padding: 1px 14px; border-left: 2px solid var(--brand); background: rgba(216,168,72,.04); }
+.release-notes a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+.release-notes hr { margin: 20px 0; border: 0; border-top: 1px solid rgba(255,255,255,.1); }
+.release-notes table { width: 100%; margin: 14px 0; border-collapse: collapse; font-size: 13px; }
+.release-notes th, .release-notes td { padding: 7px 10px; text-align: left; border: 1px solid rgba(255,255,255,.1); }
 
 /* ================= 设置弹窗 =================
    几何与配色来自官方真实 CSS：

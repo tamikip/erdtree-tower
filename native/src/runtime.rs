@@ -1314,8 +1314,8 @@ fn tick_locked() {
         return;
     };
     if state.departure.as_mut().is_some_and(|departure|departure.tick()){state.departure=None;}
-    // 调试的无敌、秒杀：联机（含无缝联机）时一律关掉
-    super::debug_menu::apply_cheats(state.party.is_some()||super::seamless::active());
+    // 无缝入口独自游玩仍可调试；实际组队时关闭。
+    super::debug_menu::apply_cheats(state.party.is_some()||!solo_session());
     let lobby=state.view.run.is_none();
     if state.party.as_mut().is_some_and(|link|link.poll_force_end(lobby)) {
         super::log("HOME_SYNC received host force end before room processing");
@@ -1445,8 +1445,14 @@ fn tick_locked() {
         });
         let arrival_flags=state.travel.as_ref().map(|_|[45007990,45007992,45007993].map(|id|super::native_talk::flag(id).ok()));
         let signature=format!("trace=3 player={player:?} grounded={grounded} physics={physics:?} arrival_flags={arrival_flags:?} target_block={:08x} entry={} ui_created={created:x?} ui_visible={visible:x?} party={party:?}",i32::from(game.move_map_target),game.initial_area_entity_id);
-        let detail=format!("{signature} position={pos:?} block_position={block_pos:?} loading_screen=unverified seamless_release=unverified");
         let trigger=game.warp_requested||state.view.travelling;
+        let detail=if state.load_trace.needs_detail(now,trigger,super::diagnostics::verbose()) {
+            format!("{signature} position={pos:?} block_position={block_pos:?} loading_screen=unverified seamless_release=unverified")
+        } else {
+            let player=player.map(|(block,dead)|format!("{block:08x}/{}",if dead{"dead"}else{"alive"})).unwrap_or_else(||"-".into());
+            let pos=pos.map(|p|format!("[{:.2},{:.2},{:.2}]",p[0],p[1],p[2])).unwrap_or_else(||"-".into());
+            format!("player={player} target_block={:08x} entry={} grounded={grounded} position={pos} party={}",i32::from(game.move_map_target),game.initial_area_entity_id,party.as_deref().unwrap_or("-"))
+        };
         if let Some(line)=state.load_trace.observe_state(now,trigger,stage,&signature,&detail){super::log(line);}
         if state.diagnostics.due(key.clone(),now) {
             super::log(format!("{key} hp={:?}",world.main_player.as_ref().map(|p|p.chr_ins.modules.data.hp)));
@@ -1639,7 +1645,8 @@ fn tick_locked() {
         state.view.dummy=Some(dummy.view(clock));
     } else if let Some(dummy)=state.dummy.take() {dummy.retire(world);state.view.dummy=None;}
     let contract_run=state.view.run.as_ref().filter(|_|state.hub.as_ref().is_some_and(|h|!h.active));
-    if let Some(player)=world.main_player.as_mut(){let light=super::contracts::light_load(unsafe {player.player_game_data.as_ref()});super::contracts::sync(&mut player.chr_ins,contract_run,light);super::elite::sync(&mut player.chr_ins,contract_run);super::passives::sync(&mut player.chr_ins,contract_run);super::auras::sync(&mut player.chr_ins);super::law::sync(&mut player.chr_ins,contract_run,state.law_fight.overtime());super::embers::sync(&mut player.chr_ins,contract_run,&state.ember_fight);let data=player.player_game_data.as_ptr();super::weapon_glow::sync(&mut player.chr_ins,unsafe {&*data},super::weapon_glow::clock());super::affix_stack::sync(&mut player.chr_ins,unsafe {&*data});}
+    let spirit_alive=super::embers::living_spirit(world);
+    if let Some(player)=world.main_player.as_mut(){let light=super::contracts::light_load(unsafe {player.player_game_data.as_ref()});super::contracts::sync(&mut player.chr_ins,contract_run,light);super::elite::sync(&mut player.chr_ins,contract_run);super::passives::sync(&mut player.chr_ins,contract_run);super::auras::sync(&mut player.chr_ins);super::law::sync(&mut player.chr_ins,contract_run,state.law_fight.overtime());super::embers::sync(&mut player.chr_ins,contract_run,&state.ember_fight,spirit_alive);let data=player.player_game_data.as_ptr();super::weapon_glow::sync(&mut player.chr_ins,unsafe {&*data},super::weapon_glow::clock());super::affix_stack::sync(&mut player.chr_ins,unsafe {&*data});}
     // 处决期间敌人不再无敌，我方照旧无敌（旅程进行中）
     super::throw_guard::sync(world,contract_run.is_some_and(|run|!matches!(run.phase,Phase::Dead|Phase::Won)));
     if let Some(player)=world.main_player.as_mut(){super::auras::countdown(&mut player.chr_ins,false);}
@@ -2454,7 +2461,7 @@ fn tick_locked() {
 /// 调试菜单命令：改旅程的命令只在路线图界面、没有战斗与传送时执行；任何命令都会把旅程标记为调试旅程
 fn debug_command(state:&mut Runtime,world:&mut WorldChrMan,command:super::debug_menu::Command)->Result<String,String> {
     use super::debug_menu::Command;
-    if state.party.is_some() {return Err("联机时不能使用调试功能".into());}
+    if state.party.is_some()||!solo_session() {return Err("联机时不能使用调试功能".into());}
     let busy=state.pending.as_ref().is_some_and(|p|!p.completed)||state.travel.is_some()||state.reward_wait.is_some()||state.view.travelling;
     let player=world.main_player.as_mut().ok_or("角色尚未就绪")?;
     let data=unsafe {player.player_game_data.as_mut()};

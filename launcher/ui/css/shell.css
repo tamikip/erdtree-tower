@@ -254,6 +254,18 @@
 }
 
 /* 窗口控制按钮：圆心 x = 1162 / 1206 / 1250，y = 24；图标用 1:1 抠图原尺寸显示 */
+.launcher-author {
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #c9b58d;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
 .winctl {
   position: absolute;
   top: calc(var(--winctl-y) - 12px);
@@ -277,6 +289,13 @@
   width: auto;
   height: auto;
   display: block;
+}
+
+.winctl button svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  color: #eee9dc;
 }
 
 .winctl button:hover {
@@ -320,6 +339,17 @@
 .social-item:hover svg {
   color: var(--brand);
 }
+
+.social-brand-icon {
+  width: 26px;
+  height: 26px;
+  background: #eee9dc;
+  -webkit-mask: var(--social-mask) center / contain no-repeat;
+  mask: var(--social-mask) center / contain no-repeat;
+}
+.social-brand-icon.social-qq { --social-mask: url('../assets/icons/social-qq.svg'); }
+.social-brand-icon.social-bilibili { --social-mask: url('../assets/icons/social-bilibili.svg'); }
+.social-item:hover .social-brand-icon { background: var(--brand); }
 
 .social-item img {
   width: var(--social-icon);

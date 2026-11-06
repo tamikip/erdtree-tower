@@ -20,8 +20,8 @@
   {
     "path": "scene-assets/enemy-pools.txt",
     "releaseSha256": "eb586ff2d31855f890ba15c8a7030121d7eea93edba30e06de02bb449499e990",
-    "sha256": "3463a3c5059b12b1cf74dba29305b3e8153a675ff4f9b4824feb87334a5b983f",
-    "reason": "Restore three act-two caster types with existing solo and co-op slots."
+    "sha256": "b7546b725770aa9a7f4c69e13d8f5e4fae2e04bbbe4929d78394b0a42c5549d0",
+    "reason": "Restore three act-two caster types with existing solo and co-op slots. v107: Retire the large exile and act-three Misbegotten Crusader without changing pool IDs."
   },
   {
     "path": "scene-assets/event/m10_00_00_00.emevd.dcx",
@@ -44,43 +44,55 @@
   {
     "path": "scene-assets/menu/hi/01_common.sblytbnd.dcx",
     "releaseSha256": "b976be74aae94bf12b0c27151b160020ffcef7d3d2862946ecbc55b1e86b64e4",
-    "sha256": "009fae15da4560c45eb28ad7218576de2c5cf378bec6a11573a54a7f3875b9b2",
-    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets."
+    "sha256": "2b44e717ee708f999455b622c2c0fb111f256b9681bcc180a6498ef7ae24be1b",
+    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets. Extend native ember pickup resources to 31 entries (e6f9216). Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Append the 109 talisman icons and regenerate the 36 active ember icons; original textures and layouts verified unchanged."
   },
   {
     "path": "scene-assets/menu/hi/01_common.tpf.dcx",
     "releaseSha256": "f1c17a0f8655aae4b388e520fc9ac97407aa233f450e74d3acc034794e0f015a",
-    "sha256": "6202d6f792781430f83b598c754f21d45fedd1f6c000c0b0f658368f43b3b706",
-    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets."
+    "sha256": "0d6423131f95faca6e135efaba6e151c887ee3417f7bbe204baf218b5eca1ebc",
+    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets. Extend native ember pickup resources to 31 entries (e6f9216). Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Append the 109 talisman icons and regenerate the 36 active ember icons; original textures and layouts verified unchanged."
   },
   {
     "path": "scene-assets/menu/low/01_common.sblytbnd.dcx",
     "releaseSha256": "c8205df8c98d3e83b42e22713a98c16c2f247c2572d9274887fae632058db007",
-    "sha256": "94c79afef5d5efc546fffd866bc7978e0779ae504ac22fe4441bf80f6b143a46",
-    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets."
+    "sha256": "be063e7721f00962b4e337aa77b3cec6d56b0063dd46e060fbc457a024895c7c",
+    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets. Extend native ember pickup resources to 31 entries (e6f9216). Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Append the 109 talisman icons and regenerate the 36 active ember icons; original textures and layouts verified unchanged."
   },
   {
     "path": "scene-assets/menu/low/01_common.tpf.dcx",
     "releaseSha256": "e9b0b7d018d41cea80bc7e21f7a901a6172a7402b19c75ccea9786bdc9f33b25",
-    "sha256": "d10bbd49221e33c5cf51c31eb90417157128e04b6f88bff01a9ab0b427988c3e",
-    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets."
+    "sha256": "6c72365c84a068e6abc2e77426a23ba3aa8d8347f063b980051543002b1671c4",
+    "reason": "Add native ember icon atlas/layout to the unchanged v103 UI assets. Extend native ember pickup resources to 31 entries (e6f9216). Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Append the 109 talisman icons and regenerate the 36 active ember icons; original textures and layouts verified unchanged."
   },
   {
     "path": "scene-assets/msg/zhocn/item_dlc02.msgbnd.dcx",
     "releaseSha256": "2f32bb1bd4cf0bc27633019aebfe4b393cd1e865ddf8b9d6857a5160a9f9bddf",
-    "sha256": "a3e155df6ec6be2b036aaf83f2711fa59be2a94ab84bfdccca60022d51650889",
-    "reason": "Preserve native ember names and add missing affixed weapon infusion info/captions; all other text tables unchanged."
+    "sha256": "60ffbb78ab7b6ec92de779ac59af41a57b9672c0be7ed9acff4add0c3efa36ad",
+    "reason": "Preserve native ember names and add missing affixed weapon infusion info/captions; all other text tables unchanged. Extend native ember pickup resources to 31 entries (e6f9216). Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Refresh talisman descriptions and active ember pickup text."
   },
   {
     "path": "scene-assets/msg/zhocn/menu_dlc02.msgbnd.dcx",
     "releaseSha256": "37ea2cd63e55286bc389cd1852bcc33c4e5193cda0afff35af1569c5545dd482",
-    "sha256": "dce737033cb8323b1df3b2c8fd93ef86143733684218af004ac2b8d80c133da9",
-    "reason": "Mausoleum event NPC choice, copy interaction and completion text."
+    "sha256": "6be0d2613580a90fb3b2c83260306749896c9887d272a7b2e978783f32c69de2",
+    "reason": "Mausoleum event NPC choice, copy interaction and completion text. Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Refresh fixed-seed multiplayer prompt and append the single-gargoyle preview name without renumbering existing names."
   },
   {
     "path": "scene-assets/regulation.bin",
     "releaseSha256": "0bf2dcd0d245e32a797f4b3633cf3a338af3d85208ab6cfa987e83255608fa15",
-    "sha256": "5470f8ba8dc1c891fc4faf97c935e1cd813fdf9f5e2b53ab346395be737e2c54",
-    "reason": "Preserve main weapon reinforcement, affix/oath/enchant updates and 26 native ember display goods; field-level three-way merge, zero conflicts."
+    "sha256": "5f6cfdb008dec856531673933dd7226a27a542fd4f104227ee92923072e01960",
+    "reason": "Preserve main weapon reinforcement, affix/oath/enchant updates and 26 native ember display goods; field-level three-way merge, zero conflicts. Extend native ember pickup resources to 31 entries (e6f9216). Preserve native greatshield guard state for Bulwark. Regenerated for d96595f: 37 ember pickup entries, furnace and battlemage menus; local fixes retained. v107: Apply 109 redrawn talisman icon IDs and regenerate 36 active ember pickup definitions, preserving other parameter rows."
+  },
+  {
+    "path": "scene-assets/talisman-definitions.tsv",
+    "releaseSha256": "ed898cae7cee0dfae7b39fd2ad85afea71075ed406a4c326e33ab052fd9bee13",
+    "reason": "v107: Use the upstream player-facing talisman descriptions.",
+    "sha256": "294e6a4742362ce15553d133a77cf74f943a6d366d82fa6f43977a8198383975"
+  },
+  {
+    "path": "scene-assets/talisman-details.tsv",
+    "releaseSha256": "44c9a1dff56dba0ffc7badc18e8410e3047a3456ce27f1a39b7d356b7755349b",
+    "reason": "v107: Use the 109 redrawn talisman icons and updated descriptions.",
+    "sha256": "7ea649ab8dbafffd1f7a2531f36f45e675873b671379ed65e97f3e04e96bba21"
   }
 ]

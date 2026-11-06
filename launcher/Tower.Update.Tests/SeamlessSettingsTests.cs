@@ -18,6 +18,40 @@ public sealed class SeamlessSettingsTests : IDisposable
     public void Dispose() { try { Directory.Delete(game, true); } catch (IOException) { } }
 
     [Fact]
+    public void BundledSettingsKeepPasswordPrivateAndPreserveExistingRuntime() {
+        var package=Path.Combine(game,"package");
+        Directory.CreateDirectory(Path.Combine(package,"SeamlessCoop"));
+        File.WriteAllText(Path.Combine(package,"SeamlessCoop","ersc.dll"),"test");
+        File.WriteAllText(Path.Combine(package,"SeamlessCoop","default.ini"),Sample);
+        WritePreset(package);
+        var runtime=Path.Combine(package,"seamless-entry","runtime","SeamlessCoop");
+        Directory.CreateDirectory(runtime);
+        File.WriteAllText(Path.Combine(runtime,"ersc_settings.ini"),Sample.Replace("cooppassword = ","cooppassword = existing"));
+        var original=File.ReadAllBytes(Path.Combine(game,"SeamlessCoop","ersc_settings.ini"));
+        var settings=SeamlessSettings.ForPackage(package);
+        Assert.True(settings.Installed);
+        Assert.Equal("existing",settings.Read()["cooppassword"]);
+        settings.Write("cooppassword","new-password");
+        Assert.Equal("new-password",SeamlessSettings.ForPackage(package).Read()["cooppassword"]);
+        Assert.Equal(original,File.ReadAllBytes(Path.Combine(game,"SeamlessCoop","ersc_settings.ini")));
+        Assert.DoesNotContain("new-password",File.ReadAllText(Path.Combine(package,"SeamlessCoop","default.ini")));
+    }
+
+    [Fact]
+    public void FreshPackageGetsItsOwnPassword() {
+        var package=Path.Combine(game,"fresh");
+        Directory.CreateDirectory(Path.Combine(package,"SeamlessCoop"));
+        File.WriteAllText(Path.Combine(package,"SeamlessCoop","default.ini"),Sample);
+        WritePreset(package);
+        var settings=SeamlessSettings.ForPackage(package);
+        Assert.Equal(32,settings.Read()["cooppassword"].Length);
+        Assert.Equal(settings.Read()["cooppassword"],SeamlessSettings.ForPackage(package).Read()["cooppassword"]);
+    }
+
+    static void WritePreset(string package) => File.WriteAllText(Path.Combine(package,"seamless-preset.ini"),
+        "[GAMEPLAY]\nallow_summons = 1\n[SCALING]\n"+string.Join("\n",SeamlessSettings.Scalings.Select(key=>key+" = 0")));
+
+    [Fact]
     public void TowerPresetIsDisplayedAndEditedWithoutChangingOriginalScaling()
     {
         var preset=Path.Combine(game,"seamless-preset.ini");

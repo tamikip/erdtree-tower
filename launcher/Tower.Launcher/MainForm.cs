@@ -85,7 +85,7 @@ namespace Tower.Launcher
             }
             if (!File.Exists(Path.Combine(paths.UiDir, "index.html")))
             {
-                MessageBox.Show(this, "启动器界面文件缺失（launcher\\ui）。请重新下载完整包，或用旧方式 Start-Solo.cmd 启动。", Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, "启动器界面文件缺失（launcher\\ui）。请重新下载完整包，或用 Start-Tower.cmd 启动。", Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Close();
                 return;
             }

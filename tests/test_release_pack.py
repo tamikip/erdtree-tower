@@ -18,6 +18,12 @@ def write(root, files):
 
 
 class ReleasePack(unittest.TestCase):
+    def test_private_seamless_config_and_runtime_are_rejected(self):
+        for relative in ('config/SeamlessCoop/ersc_settings.ini', 'seamless-entry/runtime/SeamlessCoop/ersc_settings.ini'):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as tmp:
+                write(tmp, {relative: b'private password'})
+                with self.assertRaisesRegex(ValueError, 'Private file'):
+                    pack.collect(Path(tmp))
     def test_display_version_does_not_replace_build_number(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

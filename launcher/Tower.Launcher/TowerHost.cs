@@ -179,7 +179,7 @@ namespace Tower.Launcher
                     PushStatus();
                     return;
                 case "mode":
-                    settings.Mode = value.ValueKind == JsonValueKind.String && value.GetString() == "无缝联机" ? HostSettings.Seamless : HostSettings.Solo;
+                    settings.Mode = HostSettings.Seamless;
                     settings.Save(paths.SettingsFile);
                     PushStatus();  // 首页主按钮下面的模式提示跟着变
                     return;
@@ -198,7 +198,7 @@ namespace Tower.Launcher
 
         // ---------------- 无缝联机 ----------------
 
-        SeamlessSettings? Seamless() => GameDir() is { } dir ? new SeamlessSettings(dir,Path.Combine(paths.InstallDir,"seamless-preset.ini")) : null;
+        SeamlessSettings? Seamless() => SeamlessSettings.ForPackage(paths.InstallDir);
 
         (string path, long size, DateTime time, string label)? versionCache;
 
@@ -329,7 +329,7 @@ namespace Tower.Launcher
                 var clash = TowerOptions.Hotkeys.Where(h => h.Id != hotkey.Id && TowerOptions.Key(values, h.Id, h.Default).Equals(text, StringComparison.OrdinalIgnoreCase)).Select(h => h.Label).ToList();
                 if (clash.Count > 0) Toast($"「{hotkey.Label}」和「{string.Join("」「", clash)}」都是 {text}，按一下会同时触发", "warn", 6000);
             }
-            if (key == "dlc" && text != "full" && settings.Mode == HostSettings.Seamless) Toast("无缝联机时仍按有 DLC 处理，这个设置只对单人生效", "info", 6000);
+            if (key == "dlc" && text != "full") Toast("当前内置无缝组件按完整 DLC 内容运行，启动前会检查并提示", "info", 6000);
             else if (GameRunning()) Toast("已保存，下次启动游戏生效", "info");
         }
 
@@ -348,7 +348,7 @@ namespace Tower.Launcher
                 case "seamlessDownload": OpenUrl("https://www.nexusmods.com/eldenring/mods/510"); break;
                 case "seamlessFolder":
                     if (Seamless() is { } folder && Directory.Exists(folder.Folder)) OpenFolder(folder.Folder);
-                    else Toast("还没有设置游戏目录，或游戏目录里没有 SeamlessCoop 文件夹", "warn");
+                    else Toast("包内无缝组件缺失，请校验并修复文件", "warn");
                     break;
                 case "seamlessIni":
                     if (Seamless() is { } ini && File.Exists(ini.IniFile)) OpenDocument(ini.IniFile, "https://www.nexusmods.com/eldenring/mods/510");
@@ -357,8 +357,8 @@ namespace Tower.Launcher
                 case "checkUpdate": _ = CheckAsync(true); break;
                 case "verify": _ = UpdateAsync(true); break;
                 case "chooseGameDir": ChooseGameDir(); break;
-                case "openGuide": OpenDocument(Path.Combine(paths.InstallDir, "安装教程.txt"), Repo + "#readme"); break;
-                case "openLicenses": OpenDocument(Path.Combine(paths.InstallDir, "THIRD_PARTY_NOTICES.md"), Repo + "/tree/main/licenses"); break;
+                case "openGuide": OpenDocument(PackageDocument("安装教程.md", "安装教程.txt"), Repo + "#readme"); break;
+                case "openLicenses": OpenDocument(PackageDocument("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"), Repo + "/tree/main/licenses"); break;
                 case "openLogs": OpenLogs(); break;
                 case "openModLogs": OpenModLogs(); break;
                 case "releaseHistory": _ = HistoryAsync(); break;
@@ -391,7 +391,7 @@ namespace Tower.Launcher
             var state = InstallState.Load(paths.InstallDir);
             var installed = IsInstalled(state);
             var updateTo = installed && latest != null && (state == null || latest.Version > state.Version) ? Label(latest) : null;
-            var note = settings.Mode == HostSettings.Seamless ? "无缝联机模式" : "单人模式";
+            var note = "统一入口 · 内置无缝联机";
             note += " · " + settings.Loader;
             form.Post("game", "status", new { game = Game, installed, version = PackageVersion(state), updateTo, note });
             PushValues(state);
@@ -421,14 +421,10 @@ namespace Tower.Launcher
             form.Post("settings", "values", values);
         }
 
-        /// <summary>「公告」分页换成最新版本的更新说明：每行一条（最多 4 条），点开是这个版本的发布页</summary>
+        /// <summary>页面从完整 Markdown 提取玩家更新要点。</summary>
         void PushNotes(ReleaseManifest release)
         {
-            var page = $"{Repo}/releases/tag/{Uri.EscapeDataString(release.Tag)}";
-            var lines = release.Notes.Split('\n').Select(l => l.Trim().TrimStart('-', '*', '·', ' ').Trim()).Where(l => l.Length > 0).Take(4).ToList();
-            if (lines.Count == 0) lines.Add($"{Label(release)} 更新说明");
-            var items = lines.Select((line, i) => new { title = line, date = i == 0 ? Label(release) : "", href = page }).ToList();
-            form.Post("game", "news", new { game = Game, tab = "notice", items });
+            form.Post("game", "news", new { game = Game, tab = "notice", notes = release.Notes, version = Label(release) });
         }
 
         void SetStatus(string text)
@@ -451,7 +447,7 @@ namespace Tower.Launcher
         bool IsInstalled(InstallState? state) => state != null || File.Exists(Path.Combine(paths.InstallDir, "Start-Tower.ps1"));
 
         static string Label(ReleaseManifest release) => release.UpdateKind == "launcher" && release.LauncherVersion.Length > 0
-            ? "启动器 " + release.LauncherVersion : Versions.Label(release.Version, release.DisplayVersion);
+            ? "启动器 " + release.LauncherVersion : Versions.PlayerLabel(release.DisplayVersion);
 
         static string LauncherVersionLabel(InstallState? state)
         {
@@ -459,7 +455,7 @@ namespace Tower.Launcher
             return !string.IsNullOrEmpty(state?.LauncherVersion) && state!.LauncherVersion != current
                 ? current + "（已安装 " + state.LauncherVersion + "，重启生效）" : current;
         }
-        static string Label(InstallState state) => Versions.Label(state.Version, state.DisplayVersion);
+        static string Label(InstallState state) => Versions.PlayerLabel(state.DisplayVersion);
         string PackageVersion(InstallState? state) => state != null ? Label(state) : IsInstalled(state) ? "开发版（未发布）" : "未安装";
 
         // ---------------- 检查与安装更新 ----------------
@@ -813,6 +809,12 @@ namespace Tower.Launcher
         async Task LaunchAsync(bool lobbyHost = false, Func<bool>? prepare = null)
         {
             if (!CanPrepareLaunch()) return;
+            var installedState = InstallState.Load(paths.InstallDir);
+            if (latest != null && (installedState == null || latest.Version > installedState.Version)) {
+                Toast("请先更新到最新版，再启动游戏", "warn", 6000);
+                PushStatus();
+                return;
+            }
             launching = true;
             try
             {
@@ -845,7 +847,7 @@ namespace Tower.Launcher
                 var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
                 using var process = Process.Start(new ProcessStartInfo(powershell, arguments) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = paths.InstallDir })!;
                 launchWorkerId = process.Id;
-                Toast(mode == HostSettings.Seamless ? "正在启动（无缝联机）…" : "正在启动（单人）…", "info", 6000);
+                Toast("正在启动黄金树爬塔…", "info", 6000);
                 var localAssets = UsesLocalAssets();
                 var launchWaitTicks = localAssets ? 3600 : 120;
                 if (localAssets) Toast("正在检查本地资源；首次生成或修复可能需要数分钟，请勿重复启动", "info", 12000);
@@ -1025,6 +1027,12 @@ namespace Tower.Launcher
                 PushHistory(rows,rows.Count>0?"在线刷新失败，正在显示本地历史记录":"暂时无法获取记录，请稍后重试或查看发布页",false);
             }
             finally {historyLoading=false;}
+        }
+
+        string PackageDocument(string name, string legacy)
+        {
+            var document = Path.Combine(paths.InstallDir, "docs", name);
+            return File.Exists(document) ? document : Path.Combine(paths.InstallDir, legacy);
         }
 
         static void OpenDocument(string path, string fallbackUrl)

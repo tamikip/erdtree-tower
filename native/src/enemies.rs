@@ -44,7 +44,8 @@ static PREVIEW_NAMES:LazyLock<Vec<&'static str>>=LazyLock::new(|| {
     let late=|e:&Enemy|e.npc>=950000000+LATE_BOSS_FIRST*2;
     for name in POOLS.iter().filter(|e|!e.dlc&&!e.appended).map(|e|e.name).chain(BOSSES.iter().filter(|(_,e)|!e.appended).map(|(_,e)|e.name))
         .chain(POOLS.iter().filter(|e|e.dlc).map(|e|e.name)).chain(BOSSES.iter().filter(|(_,e)|e.appended&&!late(e)).map(|(_,e)|e.name))
-        .chain(POOLS.iter().filter(|e|e.appended).map(|e|e.name)).chain(BOSSES.iter().filter(|(_,e)|late(e)).map(|(_,e)|e.name)) {if !names.contains(&name){names.push(name);}}
+        .chain(POOLS.iter().filter(|e|e.appended).map(|e|e.name)).chain(BOSSES.iter().filter(|(_,e)|late(e)).map(|(_,e)|e.name))
+        .chain(SINGLE_ELITES.iter().map(|(_,name)|*name)) {if !names.contains(&name){names.push(name);}}
     names
 });
 pub fn preview_texts(group:&[Enemy])->Vec<i32> {
@@ -607,7 +608,8 @@ mod tests {
         }}
         assert_eq!(seen.len(),8,"the appended rotting corpse is retired as too slow");
         // 追加的普通怪排在追加的 Boss 之后，再之后是序号 153 起的 DLC Boss
-        let names=&*PREVIEW_NAMES;assert_eq!(&names[names.len()-15..names.len()-6],&solo.iter().map(|e|e.name).collect::<Vec<_>>()[..]);
+        assert_eq!(PREVIEW_NAMES.last(),Some(&"英雄石像鬼"));
+        let names=&PREVIEW_NAMES[..PREVIEW_NAMES.len()-1];assert_eq!(&names[names.len()-15..names.len()-6],&solo.iter().map(|e|e.name).collect::<Vec<_>>()[..]);
         assert_eq!(&names[names.len()-6..],&["融泥骑士","黄金河马","“狂龙”贝勒","约定之王拉塔恩","“穿刺者”梅瑟莫","“碎星”拉塔恩"]);
     }
     #[test]
@@ -624,7 +626,7 @@ mod tests {
         let eligible:std::collections::HashSet<_>=trial.iter().filter(|(id,e)|[NodeKind::Boss,NodeKind::Elite].into_iter().any(|kind|boss_eligible(kind,e)&&encounter_allowed(kind,*id))).map(|(_,e)|e.npc).collect();
         assert_eq!(seen,eligible);
         // 原有 13 个追加 Boss 的名称编号保留；后加的 5 个仍位于列表末尾。
-        let names=&*PREVIEW_NAMES;assert_eq!(&names[names.len()-28..names.len()-15],&trial.iter().filter(|(_,e)|e.npc<950000000+LATE_BOSS_FIRST*2).map(|(_,e)|e.name).collect::<Vec<_>>()[..]);
+        let names=&PREVIEW_NAMES[..PREVIEW_NAMES.len()-1];assert_eq!(&names[names.len()-28..names.len()-15],&trial.iter().filter(|(_,e)|e.npc<950000000+LATE_BOSS_FIRST*2).map(|(_,e)|e.name).collect::<Vec<_>>()[..]);
     }
     #[test]
     fn synced_rennala_reaches_party_roster_with_second_phase_ai() {
@@ -705,7 +707,8 @@ mod tests {
         for act in 1..=3 {
             for kind in [NodeKind::Boss,NodeKind::Elite] {
                 if act==1&&kind==NodeKind::Elite {continue;}
-                let expected:std::collections::HashSet<_>=BOSSES.iter().filter(|(id,e)|encounter_act(e)==act&&boss_eligible(kind,e)&&encounter_allowed(kind,*id)).map(|(_,e)|e.npc).collect();
+                let expected:std::collections::HashSet<_>=BOSSES.iter().filter(|(id,e)|encounter_act(e)==act&&boss_eligible(kind,e)&&encounter_allowed(kind,*id))
+                    .filter(|(_,e)|kind!=NodeKind::Elite||e.npc!=950000154).map(|(_,e)|e.npc).collect();
                 let actual:std::collections::HashSet<_>=(0..10000).flat_map(|seed|roster(kind,seed,0,11,act)).filter(|e|boss_npc(e.npc)).map(|e|e.npc-if kind==NodeKind::Elite {1}else{0}).collect();
                 assert_eq!(actual,expected);
             }
@@ -766,14 +769,15 @@ mod tests {
         }
     }
     #[test]
-    fn the_carian_pair_is_one_act_three_option_among_the_single_bosses() {
+    fn act_three_bosses_are_single_after_the_carian_pair_is_retired() {
+        assert!(DUAL_PAIRS.is_empty());
         for party in [false,true] {
             let mut seen=std::collections::HashMap::new();
             for seed in 0..4000 {let group=roster_in(NodeKind::Boss,seed,0,11,3,party);*seen.entry(group.iter().map(|e|e.name).collect::<Vec<_>>()).or_insert(0)+=1;}
-            if !party {assert!(seen.keys().all(|names|names.len()==1));continue;}
-            let pair=seen.iter().find(|(names,_)|names.len()==2).map(|(_,n)|*n).expect("the pair is reachable");
+            assert!(seen.keys().all(|names|names.len()==1&&!names.contains(&"“圣树骑士”罗蕾塔")));
+            assert!(seen.contains_key(&vec!["“双月骑士”蕾拉娜"]));
             let options=seen.len() as i32;
-            assert!((pair as i32-4000/options).abs()<4000/options/2,"pair drawn {pair} times among {options} options");
+            for count in seen.values() {assert!((*count-4000/options).abs()<4000/options/2,"boss drawn {count} times among {options} options");}
         }
     }
     #[test]
@@ -925,7 +929,7 @@ mod tests {
         let first_dlc=POOL_NAMES.iter().position(|n|dlc.iter().any(|e|e.name==*n)).unwrap();
         assert!(POOL_NAMES[first_dlc..first_dlc+dlc.len()].iter().all(|n|dlc.iter().any(|e|e.name==*n)));
         let first_preview=PREVIEW_NAMES.iter().position(|n|dlc.iter().any(|e|e.name==*n)).unwrap();
-        assert_eq!(first_preview,PREVIEW_NAMES.len()-dlc.len()-28);
+        assert_eq!(first_preview,PREVIEW_NAMES.len()-dlc.len()-29);
         // 联机实体只包含地图里摆放过的敌人
         assert_eq!(MAP_ENTITIES.iter().filter(|(spec,_)|spec.dlc).map(|(_,ids)|ids.len()).sum::<usize>(),80);
         for act in 1..=3 {for seed in 0..200 {for kind in [NodeKind::Monster,NodeKind::Elite] {

@@ -6,7 +6,9 @@ import json
 import subprocess
 
 INPUTS = ('src', 'native', 'scene-builder', 'scene-assets', 'distribution', 'launcher', 'tests',
-          'Cargo.toml', 'Cargo.lock', 'release-preview/preview.me3')
+          'Cargo.toml', 'Cargo.lock', 'release-preview/preview.me3', 'Launch-Preview.ps1',
+          'Launch-Seamless-Tower.ps1', 'seamless-preset.ini', 'THIRD_PARTY_NOTICES.md',
+          'SeamlessCoop/default.ini', 'SeamlessCoop/README.md', 'licenses', 'loader/yafsml')
 
 
 def require_committed(root):

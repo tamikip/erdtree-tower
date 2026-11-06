@@ -93,9 +93,27 @@ if ($PartyConfig) {
 }
 $entry = Join-Path $root 'seamless-entry'
 $launcher = $base.LoaderPath
-$settingsPath = Join-Path $GameDir 'SeamlessCoop\ersc_settings.ini'
-$ersc = Join-Path $GameDir 'SeamlessCoop\ersc.dll'
-foreach ($file in @($launcher,$settingsPath,$ersc)) {
+$settingsPath = Join-Path $root 'config\SeamlessCoop\ersc_settings.ini'
+$ersc = Join-Path $root 'SeamlessCoop\ersc.dll'
+if (!(Test-Path -LiteralPath $settingsPath)) {
+    $previousSettings = Join-Path $entry 'runtime\SeamlessCoop\ersc_settings.ini'
+    $template = Join-Path $root 'SeamlessCoop\default.ini'
+    $source = if (Test-Path -LiteralPath $previousSettings) {$previousSettings} else {$template}
+    $initial = [IO.File]::ReadAllText($source)
+    if ($source -eq $template) {
+        $password = [guid]::NewGuid().ToString('N')
+        $initial = [regex]::Replace($initial,'(?m)^cooppassword\s*=[^\r\n]*',('cooppassword = '+$password))
+    }
+    if (!$CheckOnly) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $settingsPath) -Force | Out-Null
+        $stream = [IO.File]::Open($settingsPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write)
+        try {
+            $bytes = [Text.UTF8Encoding]::new($false).GetBytes($initial)
+            $stream.Write($bytes,0,$bytes.Length)
+        } finally { $stream.Dispose() }
+    }
+}
+foreach ($file in @($launcher,$ersc)) {
     if (!(Test-Path -LiteralPath $file -PathType Leaf)) {throw "Missing dependency: $file"}
 }
 # Seamless Co-op builds verified with this package. Other builds still launch: the tower DLL's revival fix checks the
@@ -115,7 +133,7 @@ if ($verifiedSeamless -notcontains $erscHash) {
 }
 $proxy = Join-Path $GameDir 'dinput8.dll'
 if (Test-Path -LiteralPath $proxy) {throw 'Existing dinput8.dll detected. It will not be overwritten.'}
-$settings = [IO.File]::ReadAllText($settingsPath)
+$settings = if (Test-Path -LiteralPath $settingsPath) {[IO.File]::ReadAllText($settingsPath)} else {$initial}
 if ([regex]::Matches($settings,'(?m)^save_file_extension\s*=.*$').Count -ne 1) {throw 'Expected one save extension setting.'}
 $saveExtension = if ($PartyConfig) {'ertowerparty'} else {'ertowercoop'}
 $modified = [regex]::Replace($settings,'(?m)^save_file_extension\s*=.*$',('save_file_extension = '+$saveExtension))
@@ -124,6 +142,8 @@ $preset = Join-Path $root 'seamless-preset.ini'
 if (!(Test-Path -LiteralPath $preset -PathType Leaf)) {throw 'Missing seamless-preset.ini; update the complete tower package.'}
 $modified = Set-TowerMultiplayerPreset $modified ([IO.File]::ReadAllText($preset))
 $modified = Set-TowerSpectatorMode $modified
+$modified = [regex]::Replace($modified,'(?m)^skip_splash_screens\s*=[^\r\n]*','skip_splash_screens = 1')
+$modified = [regex]::Replace($modified,'(?m)^allow_summons\s*=[^\r\n]*','allow_summons = 1')
 if ($CheckOnly) {[pscustomobject]@{Entry=$launcher;SaveExtension=$saveExtension;Assets= (Join-Path $root 'scene-assets');MultiplayerVerified=$false};return}
 if (Get-Process eldenring,ersc_launcher -ErrorAction SilentlyContinue) {throw 'Exit the game and Seamless launcher first.'}
 $assetMode = Join-Path $root 'asset-mode.txt'

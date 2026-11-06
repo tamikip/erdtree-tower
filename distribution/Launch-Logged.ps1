@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][string]$Entry,
-    [ValidateSet('Solo','Seamless')][string]$Mode = 'Solo',
+    [ValidateSet('Solo','Seamless')][string]$Mode = 'Seamless',
     [ValidateSet('ME3','YAFSML')][string]$Loader = 'ME3',
     [Parameter(Mandatory=$true)][string]$GameDir,
     [Parameter(Mandatory=$true)][string]$ErrorFile,

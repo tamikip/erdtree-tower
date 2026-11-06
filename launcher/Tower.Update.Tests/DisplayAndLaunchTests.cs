@@ -7,6 +7,14 @@ namespace Tower.Update.Tests;
 public sealed class DisplayAndLaunchTests
 {
     [Fact]
+    public void Player_labels_hide_internal_builds()
+    {
+        Assert.Equal("1.6.1", Versions.PlayerLabel("1.6.1"));
+        Assert.Equal("历史版本", Versions.PlayerLabel(null));
+        Assert.Equal("历史版本", Versions.PlayerLabel("v106"));
+        Assert.Equal("v106", Versions.Label(106, null));
+    }
+    [Fact]
     public void Display_version_survives_install_state_and_legacy_falls_back()
     {
         var root=Path.Combine(Path.GetTempPath(),Guid.NewGuid().ToString("N"));

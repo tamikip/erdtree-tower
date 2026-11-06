@@ -9,9 +9,6 @@
    真实的版本、下载进度、更新状态由宿主程序（launcher/Tower.Launcher）通过 bridge 推送。
    ============================================================ */
 
-/* 无缝联机多人缩放可选的百分比 */
-var SCALE_CHOICES = ['0', '5', '10', '15', '20', '25', '30', '35', '40', '45', '50', '60', '70', '80', '90', '100', '120', '150', '200'];
-
 /* 爬塔按键可选的键（与 src/options.rs 的 KEYS 对应的常用子集） */
 var KEY_CHOICES = ['None', 'Home', 'End', 'Insert', 'Delete', 'PageUp', 'PageDown', 'Backspace', 'Tab', 'Enter', 'Space', 'Up', 'Down', 'Left', 'Right', 'LeftCtrl', 'RightCtrl', 'LeftShift', 'RightShift', 'LeftAlt', 'RightAlt'].concat('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split(''), ['Num0', 'Num1', 'Num2', 'Num3', 'Num4', 'Num5', 'Num6', 'Num7', 'Num8', 'Num9', 'NumEnter', 'NumMultiply', 'NumSubtract', 'NumAdd', 'NumDecimal', 'NumDivide']);
 
@@ -30,13 +27,14 @@ window.HOYO_CONFIG = {
 
   /* 右侧栏：网址用系统浏览器打开；action 交给宿主 */
   social: [
-    { icon: 'social-community', label: 'QQ 交流群', panel:
+    { icon: 'social-qq', label: 'QQ 交流群', panel:
       '<p>黄金树爬塔玩家交流群</p>' +
       '<p style="user-select:text;font-size:20px;color:#fff">1 群：1127474860</p>' +
       '<p style="user-select:text;font-size:20px;color:#fff">2 群：996356584</p>' +
       '<p>选中群号后按 Ctrl+C 复制，在 QQ 中搜索群号加入。</p>' },
+    { icon: 'social-bilibili', label: '作者 B 站', href: 'https://space.bilibili.com/472900263' },
     { icon: 'social-home', label: '项目主页', href: 'https://github.com/tamikip/erdtree-tower' },
-    { icon: 'social-guide', label: '安装教程', action: 'openGuide' },
+    { icon: 'social-lobby', label: '联机大厅', action: 'lobby' },
     { icon: 'social-feedback', label: '问题反馈', href: 'https://github.com/tamikip/erdtree-tower/issues' },
     { icon: 'social-history', label: '更新日志与历史', action: 'releaseHistory' },
     { icon: 'social-folder', label: 'Mod 日志目录', action: 'openModLogs' },
@@ -76,7 +74,7 @@ window.HOYO_CONFIG = {
         { img: 'assets/img/tower-banner-5.webp', href: 'https://github.com/tamikip/erdtree-tower',
           detail: { name: '祷誓者', role: '祷告 · 治疗 · 辅助', mechanic: ['圣誓', '祷告专注消耗降低 15%；打赢一场战斗回复 25% 专注'], kit: '短矛、指头圣印记、治疗、招来火焰', bias: '圣印记、祷告与矛', accent: 'rgb(226, 196, 120)' } },
         { img: 'assets/img/tower-banner-6.webp', href: 'https://github.com/tamikip/erdtree-tower',
-          detail: { name: '召唤师', role: '骨灰为核心', mechanic: ['群灵', '胜利时每组召唤物独立判断，仍有成员存活就返还对应骨灰（含第二次召唤）；每页奖励都有骨灰，召唤流余烬必定可出'], kit: '短剑、熨斗形盾、圣印记、离群野狼与骸骨民兵的骨灰', bias: '骨灰、轻武器与祷告', accent: 'rgb(140, 196, 170)' } },
+          detail: { name: '召唤师', role: '骨灰为核心', mechanic: ['群灵', '召唤物全部阵亡后可以再召唤新的；胜利时每组召唤物独立判断，仍有成员存活就返还对应骨灰（含第二次召唤）；每页奖励都有骨灰，召唤流余烬必定可出'], kit: '短剑、熨斗形盾、圣印记、离群野狼与骸骨民兵的骨灰', bias: '骨灰、轻武器与祷告', accent: 'rgb(140, 196, 170)' } },
       ],
       /* 公告：宿主检查更新后换成最新版本的更新说明 */
       news: {
@@ -223,7 +221,6 @@ window.HOYO_CONFIG = {
           {
             title: '启动',
             rows: [
-              { type: 'seg', key: 'mode', label: '启动模式', value: '单人', options: ['单人', '无缝联机'] },
               { type: 'select', key: 'loader', label: '加载器', hint: '下次启动生效；两种加载器共用原有存档与联机设置', value: 'ME3', options: ['ME3', 'YAFSML'] },
               { type: 'static', label: '游戏目录', key: 'gameDir', value: '（未设置）' },
               { type: 'buttons', label: '目录', items: [{ text: '选择游戏目录…', action: 'chooseGameDir' }] },
@@ -233,7 +230,7 @@ window.HOYO_CONFIG = {
           {
             title: 'DLC（下次启动游戏生效）',
             rows: [
-              { type: 'select', key: 'dlc', label: '黄金树之影 DLC', hint: '只对单人生效；无缝联机时双方都要有 DLC',
+              { type: 'select', key: 'dlc', label: '黄金树之影 DLC', hint: '内置无缝组件按完整 DLC 内容运行，缺少 DLC 时启动前会警告',
                 value: '有 DLC', options: ['有 DLC', '没有 DLC', '没有 DLC，保留 DLC 武器（实验）'] },
             ],
           },
@@ -260,7 +257,7 @@ window.HOYO_CONFIG = {
         key: 'plugins', name: '插件',
         groups: [
           {
-            title: '额外 DLL 插件（下次启动游戏生效，单人和无缝联机都会加载）',
+            title: '额外 DLL 插件（下次启动游戏生效）',
             rows: [
               { type: 'plugins' },
               { type: 'buttons', label: '',
@@ -273,7 +270,6 @@ window.HOYO_CONFIG = {
             rows: [
               { type: 'static', label: '单个 DLL', value: '连同同名的配置文件、同名文件夹一起复制' },
               { type: 'static', label: '文件夹', value: '整个文件夹复制，顶层每个 DLL 都登记，用不到的关掉' },
-              { type: 'static', label: '手动配置', value: 'plugins\\natives.toml（ME3 的 [[natives]] 格式）' },
             ],
           },
         ],
@@ -282,7 +278,7 @@ window.HOYO_CONFIG = {
         key: 'coop', name: '联机',
         groups: [
           {
-            title: '无缝联机（Seamless Co-op，需自行安装到游戏目录）',
+            title: '内置无缝联机（Seamless Co-op，随整合包提供）',
             rows: [
               { type: 'static', label: '版本', key: 'erscInfo', value: '—' },
               { type: 'buttons', label: '',
@@ -291,31 +287,21 @@ window.HOYO_CONFIG = {
             ],
           },
           {
-            title: '联机设置（写入游戏目录的 ersc_settings.ini，下次启动生效）',
+            title: '联机设置（保存在包内 config，下次启动生效）',
             rows: [
               { type: 'input', key: 'ersc.cooppassword', label: '联机密码', hint: '双方填同一个；最多 64 字，不能含 ; # =', placeholder: '输入后按回车或点别处保存', value: '' },
               { type: 'static', label: '死亡惩罚', value: '关闭（爬塔固定）' },
-              { type: 'switch', key: 'ersc.allow_summons', label: '允许召唤骨灰', hint: '关掉后用不了骨灰（召唤师职业依赖骨灰）', value: true },
-              { type: 'switch', key: 'ersc.skip_splash_screens', label: '跳过开场动画', value: false },
             ],
           },
           {
             title: '多人缩放（爬塔预设，每多一名玩家增加的百分比）',
             rows: [
-              { type: 'select', key: 'ersc.enemy_health_scaling', label: '敌人生命', value: '35', options: SCALE_CHOICES },
-              { type: 'select', key: 'ersc.enemy_damage_scaling', label: '敌人伤害', value: '0', options: SCALE_CHOICES },
-              { type: 'select', key: 'ersc.enemy_posture_scaling', label: '敌人韧性', value: '15', options: SCALE_CHOICES },
-              { type: 'select', key: 'ersc.boss_health_scaling', label: 'Boss 生命', value: '100', options: SCALE_CHOICES },
-              { type: 'select', key: 'ersc.boss_damage_scaling', label: 'Boss 伤害', value: '0', options: SCALE_CHOICES },
-              { type: 'select', key: 'ersc.boss_posture_scaling', label: 'Boss 韧性', value: '20', options: SCALE_CHOICES },
-            ],
-          },
-          {
-            title: '由爬塔的无缝入口决定（在配置文件里改了也不生效）',
-            rows: [
-              { type: 'static', label: '存档后缀', value: 'ertowercoop（与单人、原版无缝存档分开）' },
-              { type: 'static', label: '入侵', value: '关闭' },
-              { type: 'static', label: '死亡后观战', value: '开启' },
+              { type: 'input', key: 'ersc.enemy_health_scaling', label: '敌人生命', value: '35', numeric: true, min: 0, max: 1000, placeholder: '0～1000（%）' },
+              { type: 'input', key: 'ersc.enemy_damage_scaling', label: '敌人伤害', value: '0', numeric: true, min: 0, max: 1000, placeholder: '0～1000（%）' },
+              { type: 'input', key: 'ersc.enemy_posture_scaling', label: '敌人韧性', value: '15', numeric: true, min: 0, max: 1000, placeholder: '0～1000（%）' },
+              { type: 'input', key: 'ersc.boss_health_scaling', label: 'Boss 生命', value: '100', numeric: true, min: 0, max: 1000, placeholder: '0～1000（%）' },
+              { type: 'input', key: 'ersc.boss_damage_scaling', label: 'Boss 伤害', value: '0', numeric: true, min: 0, max: 1000, placeholder: '0～1000（%）' },
+              { type: 'input', key: 'ersc.boss_posture_scaling', label: 'Boss 韧性', value: '20', numeric: true, min: 0, max: 1000, placeholder: '0～1000（%）' },
             ],
           },
         ],
@@ -329,7 +315,6 @@ window.HOYO_CONFIG = {
               { type: 'switch', key: 'autoCheck', label: '启动时自动检查更新', value: true },
               { type: 'seg', key: 'route', label: '下载线路', hint: '先走选中的线路；连不上或版本落后时自动换另一条',
                 value: '国内镜像', options: ['国内镜像', 'GitHub'] },
-              { type: 'static', label: '国内镜像', key: 'mirrorInfo', value: '—' },
               { type: 'static', label: '整合包版本', key: 'version', value: '—' },
               { type: 'static', label: '启动器版本', key: 'launcherVersion', value: '—' },
               { type: 'static', label: '更新状态', key: 'updateStatus', value: '尚未检查' },

@@ -118,7 +118,6 @@ def title_overlay():
     canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     font = ImageFont.truetype(str(TITLE_FONT), 150)
     latin = ImageFont.truetype(str(TITLE_FONT), 38)
-    sub = ImageFont.truetype(str(BODY_FONT), 34)
     x, y = 256, 418  # page coordinates (128, 209), left-aligned with the carousel below
     gilded(canvas, text_mask((W, H), (x, y), '黄金树爬塔', font, spacing=14), (y + 10, y + 176), shadow=14,
            glow=((214, 160, 64), 30, 0.45), outline=2)
@@ -128,7 +127,6 @@ def title_overlay():
     draw.polygon([(x + 136, rule_y - 8), (x + 144, rule_y), (x + 136, rule_y + 8), (x + 128, rule_y)], fill=(232, 196, 120, 240))
     gilded(canvas, text_mask((W, H), (x + 160, rule_y - 24), 'ERDTREE TOWER', latin, spacing=10), (rule_y - 20, rule_y + 24),
            shadow=6, outline=1)
-    draw.text((x + 4, rule_y + 44), '艾尔登法环爬塔模组 · 启动器', font=sub, fill=(222, 212, 192, 230))
     return canvas
 
 

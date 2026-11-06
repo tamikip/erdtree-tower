@@ -75,7 +75,9 @@ static class EmberAssets {
         // 战斗法师：受到的伤害按智力 / 信仰取高每点 -0.4%，两行轮换，运行时按能力值改写（这里写 1 点的值）
         for(int slot=0;slot<2;slot++){var mind=Player(p,First+26+slot,$"Tower ember battlemage {slot}",1f,-1f);foreach(var cut in new[]{"slash","blow","thrust","neutral","magic","fire","thunder","dark"})Set(mind,cut+"DamageCutRate",0.996f);rows.Add(mind);}
         var lastStand=Player(p,First+25,"Tower ember last stand",1f,-1f);Set(lastStand,"toughnessDamageCutRate",1f/3f);rows.Add(lastStand);
-        var bulwark=Player(p,First+24,"Tower ember bulwark",1f,-1f);Set(bulwark,"guardStaminaMult",0f);Set(bulwark,"equipWeightChangeRate",0.01f);rows.Add(bulwark);
+        var bulwark=Player(p,First+24,"Tower ember bulwark",1f,-1f);
+        Set(bulwark,"stateInfo",p.Rows.Single(r=>r.ID==341000)["stateInfo"].Value);
+        Set(bulwark,"guardStaminaMult",0f);Set(bulwark,"equipWeightChangeRate",0.01f);rows.Add(bulwark);
         for(int stack=1;stack<=FrenzyStacks;stack++)rows.Add(Player(p,First+30+stack,$"Tower ember frenzy {stack}",1f+FrenzyStep*stack,-1f));
         var flash=Enemy(p,First+40,"Tower ember flash",1f);Set(flash,"vfxId",FlashVfx);rows.Add(flash);
         // 灵唤铃的号令：挂在召唤物身上，伤害 +20%、受到的伤害 -20%（沿用敌人侧的中性模板）
@@ -125,7 +127,7 @@ static class EmberAssets {
         if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging output required");
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
         var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="SpEffectParam");
-        var def=PARAMDEF.XmlDeserialize("work/SoulsRandomizers/diste/Defs/SpEffect.xml");
+        var def=PARAMDEF.XmlDeserialize(Path.Combine(Environment.GetEnvironmentVariable("TOWER_PARAMDEFS")??"work/SoulsRandomizers/diste/Defs","SpEffect.xml"));
         var original=PARAM.Read(file.Bytes);original.ApplyParamdef(def);
         var effects=PARAM.Read(file.Bytes);effects.ApplyParamdef(def);
         var count=Build(effects).Count;

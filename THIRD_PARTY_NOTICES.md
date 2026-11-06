@@ -64,3 +64,21 @@ The tower configuration provider is built from native/native-settings/; no examp
 
 Slim packages include Tower.IconCodec.dll, built from bcdec 0.985 by Sergii Kudlai, commit 80859ed3b7afb1c527a2a99d70c61457bea72d0c.
 Source: https://github.com/iOrange/bcdec. Used under the MIT license; see licenses/bcdec.txt.
+
+## Seamless Co-op
+
+Seamless Co-op 2.0.2 by Yui: https://www.nexusmods.com/eldenring/mods/510
+Used as a separate runtime component. It is not covered by this project's license.
+See `SeamlessCoop/README.md` for provenance and distribution status.
+
+## Markdown-it
+
+Launcher release notes use markdown-it 14.1.0 (MIT), bundled locally.
+Source: https://github.com/markdown-it/markdown-it/tree/14.1.0
+License: launcher/ui/js/vendor/LICENSE-markdown-it.txt.
+
+## Font Awesome brand icons
+
+QQ and Bilibili icons from Font Awesome Free 6.7.2 by Fonticons, Inc.
+Source: https://github.com/FortAwesome/Font-Awesome/tree/6.7.2
+Icons are licensed under CC BY 4.0; see licenses/font-awesome.txt.

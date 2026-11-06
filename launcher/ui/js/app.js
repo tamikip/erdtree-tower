@@ -146,9 +146,8 @@
   /* ---------------- 外壳：窗口控制 ---------------- */
   var CONTROL_SVG = {
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-      'stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.1"/>' +
-      '<path d="M12 2.4v2.5M12 19.1v2.5M2.4 12h2.5M19.1 12h2.5' +
-      'M5.2 5.2l1.8 1.8M17 17l1.8 1.8M18.8 5.2L17 7M7 17l-1.8 1.8"/></svg>',
+      'stroke-width="1.7" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/>' +
+      '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33A1.65 1.65 0 0 0 14 20.83V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15 1.65 1.65 0 0 0 3.17 14H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68 1.65 1.65 0 0 0 10 3.17V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.32 9 1.65 1.65 0 0 0 20.83 10H21a2 2 0 0 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15Z"/></svg>',
     minimize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
       'stroke-width="2.4" stroke-linecap="round"><path d="M4 12h16"/></svg>',
     maximize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
@@ -172,8 +171,8 @@
       var b = el('button', name === 'close' ? 'is-close' : '');
       b.setAttribute('data-action', name);
       b.title = { settings: '设置', minimize: '最小化', maximize: '最大化', close: '关闭' }[name] || name;
-      b.innerHTML = '<img src="assets/icons/' + (CONTROL_ICON[name] || 'win-close') + '.png" alt="' +
-        (b.title) + '">';
+      b.innerHTML = name === 'settings' ? CONTROL_SVG.settings :
+        '<img src="assets/icons/' + (CONTROL_ICON[name] || 'win-close') + '.png" alt="' + (b.title) + '">';
       /* 齿轮：除了让 bridge 通知宿主，本地也把设置弹窗打开（假设宿主不接管） */
       if (name === 'settings') {
         b.addEventListener('click', function () {
@@ -257,9 +256,8 @@
      官方几何：容器 x=1228，每项 44x44，pitch 56，图标 36x36。
   ------------------------------------------------ */
   var SOCIAL_ICONS = {
-    'social-community': '<path d="M14 14h4l4 3V7a2 2 0 0 0-2-2h-4"/><path d="M4 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H7l-5 4V5a2 2 0 0 1 2-2Z"/><path d="M6 7h4M6 11h2"/>',
     'social-home': '<path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/>',
-    'social-guide': '<path d="M12 5v16M12 5C9 3 6 3 3 4v15c3-1 6-1 9 2 3-3 6-3 9-2V4c-3-1-6-1-9 1Z"/>',
+    'social-lobby': '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5.65"/>',
     'social-feedback': '<path d="M5 3h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8l-5 3V5a2 2 0 0 1 2-2Z"/><path d="M12 7v5M12 15h.01"/>',
     'social-history': '<path d="M3 4v5h5M3 9a9 9 0 1 1 0 6"/><path d="M12 7v5l3 2"/>',
     'social-folder': '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Zm0 3h18"/>',
@@ -274,7 +272,9 @@
       b.setAttribute('data-tip-place', 'left');
       b.setAttribute('aria-label', item.label || '');
       b.innerHTML =
-        (SOCIAL_ICONS[item.icon]
+        (item.icon === 'social-qq' || item.icon === 'social-bilibili'
+          ? '<span class="social-brand-icon ' + item.icon + '" aria-hidden="true"></span>'
+          : SOCIAL_ICONS[item.icon]
           ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + SOCIAL_ICONS[item.icon] + '</svg>'
           : '<img src="assets/icons/' + esc(item.icon) + '.png" alt="">') +
         (item.badge ? '<i class="badge"></i>' : '');
@@ -287,6 +287,7 @@
           return;
         }
         if (item.action) {
+          if (item.action === 'lobby') { openLobby(); return; }
           bridge.settings.action(item.action);
           return;
         }
@@ -501,14 +502,15 @@
     var cta = el('div', 'cta');
     var btn = el('button', 'btn-primary');
     btn.setAttribute('data-game', key);
-    btn.setAttribute('data-action', installed ? 'launch' : 'download');
+    btn.setAttribute('data-action', installed && !game.updateTo ? 'launch' : 'download');
     btn.innerHTML =
-      (installed
+      (installed && !game.updateTo
         ? '<span class="disc">' + CONTROL_PLAY_SVG + '</span>'
         : '<span class="disc"><i class="arrow"></i></span>') +
       '<span class="ring">' + ringSvg() + '</span>' +
-      '<span class="label">' + esc((game.cta && game.cta.text) ||
-        (installed ? '开始游戏' : '获取游戏')) + '</span>';
+      '<span class="label">' + esc(game.updateTo ? '立即更新' : installed
+        ? ((game.cta && game.cta.launchText) || '开始游戏')
+        : ((game.cta && game.cta.text) || '获取游戏')) + '</span>';
 
     /* 主按钮的状态机：失败→重试 / 待安装→安装 / 下载中⇄暂停 / 未安装→开始下载。
        这些分支都要 stopPropagation，否则会被 bridge 的 data-action 兜底再发一次。 */
@@ -529,7 +531,7 @@
         }
         return;
       }
-      if (!g.installed) {
+      if (!g.installed || g.updateTo) {
         e.stopPropagation();
         e.preventDefault();
         taskStart(key, g.updateTo ? 'update' : 'install');
@@ -541,12 +543,6 @@
     var sub = el('div', 'cta-sub', subRowFor(key));
     /* 已安装且有更新时，副行给一个次级入口「立即更新」 */
     sub.addEventListener('click', function (e) {
-      if (e.target.closest('[data-act="mode"]')) {
-        e.preventDefault();
-        e.stopPropagation();
-        onSettingChange('mode', setState.mode === '无缝联机' ? '单人' : '无缝联机');
-        return;
-      }
       if (e.target.closest('[data-act="lobby"]')) {
         e.preventDefault();
         e.stopPropagation();
@@ -604,11 +600,13 @@
     host.innerHTML = '';
     list.forEach(function (n) {
       var li = el('li', 'news-item');
-      li.innerHTML = '<span class="news-title">' + esc(n.title) + '</span>' +
+      var title = window.towerReleaseNotes.title(n.title);
+      li.innerHTML = '<span class="news-title">' + esc(title) + '</span>' +
         '<span class="news-date">' + esc(n.date) + '</span>';
       li.addEventListener('click', function () {
-        if (n.href && n.href !== '#') bridge.openExternal(n.href);
-        else openModal(n.title, '<p>' + esc(n.title) + '</p>' +
+        if (n.action === 'releaseHistory') bridge.settings.action('releaseHistory');
+        else if (n.href && n.href !== '#') bridge.openExternal(n.href);
+        else openModal(title, '<p>' + esc(title) + '</p>' +
           '<p style="color:rgba(255,255,255,.45)">这里可以放公告正文，或者改成用宿主打开真实网页。</p>');
       });
       host.appendChild(li);
@@ -800,20 +798,29 @@
     var previous = document.getElementById('releaseHistory');
     if (!data.loading && !previous) return;
     var items = data.items || [];
-    var html = '<section id="releaseHistory"><p role="status">' + esc(data.status || '') + '</p>' +
-      '<div class="history-actions"><button id="historyRefresh"' + (data.loading ? ' disabled' : '') + '>刷新</button>' +
-      '<button id="historyWebsite">完整发布页</button></div>';
+    var html = '<section id="releaseHistory">';
+    if (data.loading || !items.length) html += '<p role="status">' + esc(data.status || '') + '</p>';
     if (!items.length) html += '<p>暂无可显示的更新记录。</p>';
     items.forEach(function (item, index) {
       var published = item.date ? new Date(item.date) : null;
       var date = published && !isNaN(published.getTime()) ? published.toLocaleDateString('zh-CN') : '';
-      html += '<details class="history-entry"' + (index === 0 ? ' open' : '') + '><summary>' + esc(item.title || item.tag) +
-        '<span>' + esc(date) + ' · ' + esc(item.tag) + '</span></summary>' +
-        '<pre>' + esc(item.notes || '此版本未提供更新说明。') + '</pre></details>';
+      var notes = window.towerReleaseNotes.render(item.notes || '此版本未提供更新说明。');
+      html += '<details class="history-entry"' + (index === 0 ? ' open' : '') + '><summary>' +
+        '<span class="history-title">' + esc(window.towerReleaseNotes.title(item.title)) + '</span>' +
+        '<span class="history-meta">' +
+        (date ? '<time>' + esc(date) + '</time>' : '') +
+        (index === 0 ? '<span class="history-latest">最新记录</span>' : '') + '</span></summary>' +
+        '<div class="release-notes">' + (notes || '<p>此版本未提供面向玩家的更新说明。</p>') + '</div></details>';
     });
     openModal('更新日志与历史', html + '</section>');
-    document.getElementById('historyRefresh').addEventListener('click', function () { bridge.settings.action('releaseHistory'); });
-    document.getElementById('historyWebsite').addEventListener('click', function () { bridge.openExternal('https://github.com/tamikip/erdtree-tower/releases'); });
+    var history = document.getElementById('releaseHistory');
+    history.closest('.modal').classList.add('release-history-modal');
+    history.addEventListener('click', function (event) {
+      var link = event.target.closest('.release-notes a');
+      if (!link) return;
+      event.preventDefault();
+      if (/^https?:\/\//i.test(link.href)) bridge.openExternal(link.href);
+    });
   }
 
   /* 立绘点击：只认人物身上不透明的像素（图片四周的透明区域不算），点了弹出对应职业介绍 */
@@ -1068,12 +1075,20 @@
 
     } else if (r.type === 'input') {
       var tx = el('input', 'inp');
-      tx.type = 'text';
+      tx.type = r.numeric ? 'number' : 'text';
+      if (r.numeric) { tx.min = r.min; tx.max = r.max; tx.step = 1; }
       tx.value = v == null ? '' : v;
       if (r.placeholder) tx.placeholder = r.placeholder;
       tx.addEventListener('change', function () {
+        if (r.numeric && (!/^\d+$/.test(tx.value) || +tx.value < r.min || +tx.value > r.max)) {
+          toast('请输入 ' + r.min + '～' + r.max + ' 的整数百分比', 'warn');
+          return;
+        }
         setState[r.key] = tx.value;
         onSettingChange(r.key, tx.value);
+      });
+      tx.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); tx.blur(); }
       });
       box.appendChild(tx);
 
@@ -1391,10 +1406,9 @@
     var g = gameOf(key) || {};
     if (g.installed) {
       if (g.updateTo) {
-        return '有可用更新 ' + esc(g.updateTo) +
-          ' · <a data-act="update">立即更新</a>';
+        return '新版本 ' + esc(g.updateTo);
       }
-      return (g.note ? esc(g.note) + ' · <a data-act="mode">切换</a> · ' : '') + '<a data-act="lobby">联机大厅</a>';
+      return '';
     }
     /* 模组装在启动器所在文件夹，没有「定位已有安装」这一说，只显示配置里的提示 */
     return esc((g.cta && g.cta.hint) || '');
@@ -1669,12 +1683,12 @@
         var inst = !!g.installed;
         /* 文案按安装状态取：cta.text 是未安装时的（获取/下载），
            cta.launchText 是装好后的（开始游戏） */
-        label.textContent = inst
+        label.textContent = g.updateTo ? '立即更新' : inst
           ? ((g.cta && g.cta.launchText) || '开始游戏')
           : ((g.cta && g.cta.text) || '获取游戏');
-        /* data-action 跟着安装状态走：装好了就是 launch。
-           有更新时更新走副行的「立即更新」次级入口，不占主按钮语义。 */
-        btn.setAttribute('data-action', inst ? 'launch' : 'download');
+        btn.setAttribute('data-action', inst && !g.updateTo ? 'launch' : 'download');
+        var disc = btn.querySelector('.disc');
+        if (disc) disc.innerHTML = inst && !g.updateTo ? CONTROL_PLAY_SVG : '<i class="arrow"></i>';
         btn.classList.remove('is-busy', 'is-paused', 'entering');
       }
     }
@@ -1901,7 +1915,7 @@
       '<div><div class="nick">' + esc(g.name || key) + '</div>' +
       '<div class="uid">整合包 ' + esc(g.version || '—') + '</div></div></div>';
     if (g.installed) {
-      html += '<button class="pop-item" data-a="launch">' + esc(T('menu.launch', '启动游戏')) + '</button>' +
+      html += (g.updateTo ? '<button class="pop-item" data-a="download">立即更新</button>' : '<button class="pop-item" data-a="launch">' + esc(T('menu.launch', '启动游戏')) + '</button>') +
         '<button class="pop-item" data-a="locate">' + esc(T('menu.locate', '打开安装目录')) + '</button>' +
         '<button class="pop-item" data-a="verify">' + esc(T('menu.verify', '校验文件完整性')) + '</button>';
     } else {
@@ -2011,7 +2025,13 @@
         var ng = gameOf(p.game);
         if (ng) {
           ng.news = ng.news || {};
-          ng.news[p.tab] = p.items || [];
+          if (typeof p.notes === 'string') {
+            var points = window.towerReleaseNotes.summary(p.notes);
+            if (!points.length) points = ['查看本次更新内容'];
+            ng.news[p.tab] = points.map(function (point, index) {
+              return { title: point, date: index === 0 ? p.version || '' : '', action: 'releaseHistory' };
+            });
+          } else ng.news[p.tab] = p.items || [];
           if (state.route === 'launcher' && state.game === p.game) renderNews();
         }
         return;

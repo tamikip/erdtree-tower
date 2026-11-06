@@ -6,6 +6,17 @@ namespace Tower.Launcher {
 namespace Tower.Update.Tests {
     public sealed class LoaderSettingsTests {
         [Fact]
+        public void LegacySoloSettingsUseUnifiedEntryWithoutChangingLoader() {
+            var path=Path.GetTempFileName();
+            try {
+                File.WriteAllText(path,"{\"Mode\":\"Solo\",\"Loader\":\"YAFSML\"}");
+                var settings=Tower.Launcher.HostSettings.Load(path);
+                Assert.Equal("Seamless",settings.Mode);
+                Assert.Equal("YAFSML",settings.Loader);
+                Assert.Equal("Seamless",new Tower.Launcher.HostSettings().Mode);
+            } finally {File.Delete(path);}
+        }
+        [Fact]
         public void LoaderDefaultsAndSelectionSurviveRestart() {
             var path=Path.GetTempFileName();
             try {

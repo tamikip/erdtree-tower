@@ -22,7 +22,7 @@ SCHEMA = 1
 MANIFEST = 'tower-release.json'
 # Files that belong to the player or to a running session and are never part of a release
 PRIVATE = ('tower-install.json', 'GamePath.txt', 'tower-options.ini', 'preview.launch.me3')
-PRIVATE_DIRS = ('.tower-update/', 'plugins/')
+PRIVATE_DIRS = ('.tower-update/', 'plugins/', 'config/', 'seamless-entry/')
 
 
 def pack_name(version):

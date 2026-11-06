@@ -17,6 +17,7 @@ pub fn replace_cheats(god:bool,one_shot:bool)->(bool,bool){(GOD.swap(god,Orderin
 static APPLIED:Mutex<Option<(bool,bool)>>=Mutex::new(None);
 /// 攻击立刻爆条（单人调试）：每帧把敌人的韧性压到接近 0，下一下韧性伤害就失衡
 static INSTANT_BREAK:AtomicBool=AtomicBool::new(false);
+static CHEATS_BLOCKED:AtomicBool=AtomicBool::new(false);
 /// 离玩家最近的敌人的韧性：调试菜单打开时游戏任务线程每帧写，菜单里显示
 static NEAREST:Mutex<Option<String>>=Mutex::new(None);
 /// 每帧（游戏任务线程）：攻击立刻爆条开着时压低全部敌人的韧性；菜单打开时记下最近那个敌人的韧性。只看敌人，不动玩家、队友与召唤物
@@ -30,15 +31,15 @@ pub fn tick_enemies(world:&mut eldenring::cs::WorldChrMan) {
     let mut nearest:Option<(f32,String)>=None;
     for chr in world.chr_sets.iter().flatten().flat_map(|set|set.characters()) {
         if friends.contains(&chr.field_ins_handle)||chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag()||chr.debug_flags.character_disabled(){continue;}
-        if chr.modules.toughness.toughness_max<=0.0 {continue;}
-        if instant {let t=&mut chr.modules.toughness;t.toughness=t.toughness.min(crate::embers::BREAK_TOUGHNESS);}
+        if chr.modules.super_armor.sa_durability_max<=0.0 {continue;}
+        if instant {crate::embers::prime_stance_break(chr);}
         if !open {continue;}
         let p=&chr.modules.physics.position;
         let distance=((p.0-origin[0]).powi(2)+(p.1-origin[1]).powi(2)+(p.2-origin[2]).powi(2)).sqrt();
         if nearest.as_ref().is_some_and(|(best,_)|*best<=distance) {continue;}
         let (t,armor)=(&chr.modules.toughness,&chr.modules.super_armor);
-        nearest=Some((distance,format!("最近的敌人：NPC {}　距离 {distance:.1} 米　生命 {}/{}\n韧性（失衡条）{:.1} / {:.1}　恢复计时 {:.1} 秒\n霸体（韧度）{:.1} / {:.1}",
-            chr.npc_param_id,chr.modules.data.hp,chr.modules.data.max_hp,t.toughness,t.toughness_max,t.recover_time,armor.sa_durability,armor.sa_durability_max)));
+        nearest=Some((distance,format!("最近的敌人：NPC {}　距离 {distance:.1} 米　生命 {}/{}\n架势（处决失衡）{:.3} / {:.1}　恢复计时 {:.1} 秒\n装备韧度 {:.1} / {:.1}",
+            chr.npc_param_id,chr.modules.data.hp,chr.modules.data.max_hp,armor.sa_durability,armor.sa_durability_max,armor.recover_time,t.toughness,t.toughness_max)));
     }
     if open&&let Ok(mut shown)=NEAREST.lock() {*shown=Some(nearest.map_or_else(||"附近没有敌人".to_owned(),|(_,text)|text));}
 }
@@ -68,6 +69,7 @@ fn write_cheat_flags(flags:&mut eldenring::cs::WorldChrManDbgFlags,want:(bool,bo
 /// 每帧：把开关写进游戏的调试标志；联机或调试菜单不可用时全部关掉
 pub fn apply_cheats(party:bool) {
     use fromsoftware_shared::FromStatic;
+    CHEATS_BLOCKED.store(party,Ordering::Relaxed);
     if party||!enabled() {GOD.store(false,Ordering::Relaxed);ONE_SHOT.store(false,Ordering::Relaxed);BOUT_PROTECT.store(false,Ordering::Relaxed);INSTANT_BREAK.store(false,Ordering::Relaxed);}
     if let Ok(world)=unsafe {eldenring::cs::WorldChrMan::instance_mut()}{sync_player_hit(world);}
     let want=(GOD.load(Ordering::Relaxed),ONE_SHOT.load(Ordering::Relaxed));
@@ -341,11 +343,15 @@ impl Menu {
         }
         ui.separator();
         if ui.button("回满生命、专注与圣杯瓶") {send(Command::Heal);}
+        let blocked=CHEATS_BLOCKED.load(Ordering::Relaxed);
+        let disabled=ui.begin_disabled(blocked);
         let (mut god,mut one_shot)=(GOD.load(Ordering::Relaxed),ONE_SHOT.load(Ordering::Relaxed));
         let changed=ui.checkbox("无敌（仅玩家免伤，可正常攻击）",&mut god)|{ui.same_line();ui.checkbox("秒杀（每次命中 9999999 伤害）",&mut one_shot)};
         if changed {GOD.store(god,Ordering::Relaxed);ONE_SHOT.store(one_shot,Ordering::Relaxed);send(Command::Cheats(god,one_shot));}
         let mut instant=INSTANT_BREAK.load(Ordering::Relaxed);
-        if ui.checkbox("攻击立刻爆条（敌人韧性一直压到 0，打中就失衡）",&mut instant) {INSTANT_BREAK.store(instant,Ordering::Relaxed);send(Command::InstantBreak(instant));}
+        if ui.checkbox("攻击立刻爆条（压低敌人架势，下一次削韧命中触发失衡）",&mut instant) {INSTANT_BREAK.store(instant,Ordering::Relaxed);send(Command::InstantBreak(instant));}
+        drop(disabled);
+        if blocked {ui.text_disabled("组队或无缝会话尚未就绪，暂不可启用；独自游玩可使用。");}
         if let Some(text)=NEAREST.lock().ok().and_then(|n|n.clone()) {crate::fancy_text::text_wrapped(ui,text);}
         if ui.button("卢恩 +10000") {send(Command::Runes(10000));}
         ui.same_line();if ui.button("卢恩 +100000") {send(Command::Runes(100000));}

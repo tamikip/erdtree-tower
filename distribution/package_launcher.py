@@ -15,7 +15,8 @@ def is_launcher(path):
     name = path.lower()
     return name in ('erdtreetowerlauncher.exe', 'erdtreetowerlauncher.exe.config',
                     'start-tower.ps1', 'launch-logged.ps1', 'tower-loader.ps1',
-                    'launch-preview.ps1', 'launch-seamless-tower.ps1') or name.startswith(('launcher/', 'loader/yafsml/'))
+                    'launch-preview.ps1', 'launch-seamless-tower.ps1', 'start-tower.cmd',
+                    'start-solo.cmd', 'start-seamless.cmd') or name.startswith(('launcher/', 'loader/yafsml/'))
 
 
 def build_update(stage, previous, version, launcher_version, output, notes=''):
@@ -68,6 +69,9 @@ def main():
     project = Path(__file__).resolve().parents[1]
     csproj = project / 'launcher/Tower.Launcher/Tower.Launcher.csproj'
     version = ET.parse(csproj).findtext('.//Version')
+    old = json.loads(args.previous.read_text(encoding='utf-8'))
+    if not any(f['path'] == 'SeamlessCoop/ersc.dll' for f in old['files']):
+        parser.error('Unified entry requires bundled Seamless: publish a full package update first')
     with tempfile.TemporaryDirectory(prefix='tower-launcher-build-') as tmp:
         root = Path(tmp)
         published = root / 'publish'
@@ -86,6 +90,9 @@ def main():
             shutil.copy2(project / 'distribution' / name, stage / name)
         for name in ('Launch-Preview.ps1', 'Launch-Seamless-Tower.ps1'):
             shutil.copy2(project / name, stage / name)
+        (stage / 'Start-Tower.cmd').write_text(
+            '@echo off\n"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" '
+            '-NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-Tower.ps1" %*\n', encoding='ascii')
         shutil.copytree(project / 'loader/yafsml', stage / 'loader/yafsml')
         release = build_update(stage, args.previous, args.build_number, version, args.output,
                                args.notes.read_text(encoding='utf-8') if args.notes else '')

@@ -2,7 +2,7 @@ use crate::party_rewards::Request;
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, io::{self, Read, Write}, net::{SocketAddr, TcpListener, TcpStream}, time::{Duration, Instant}};
 
-pub const VERSION: u32 = 47;
+pub const VERSION: u32 = 48;
 const MAX_FRAME: usize = 256 * 1024;
 const MAX_QUEUE: usize = 1024 * 1024;
 const HELLO_TIMEOUT: Duration = Duration::from_secs(2);

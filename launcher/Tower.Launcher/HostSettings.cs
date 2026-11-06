@@ -11,7 +11,7 @@ namespace Tower.Launcher
         public const string Me3 = "ME3", Yafsml = "YAFSML";
         public const string MirrorFirst = "mirror", GitHubFirst = "github";
 
-        public string Mode { get; set; } = Solo;
+        public string Mode { get => Seamless; set { } }
         public string Loader { get; set; } = Me3;
         /// <summary>优先走哪条下载线路（另一条兜底）</summary>
         public string Route { get; set; } = MirrorFirst;
@@ -25,7 +25,6 @@ namespace Tower.Launcher
                 if (File.Exists(path))
                 {
                     var settings = JsonSerializer.Deserialize<HostSettings>(File.ReadAllText(path)) ?? new HostSettings();
-                    if (settings.Mode != Seamless) settings.Mode = Solo;
                     if (settings.Loader != Yafsml) settings.Loader = Me3;
                     if (settings.Route != GitHubFirst) settings.Route = MirrorFirst;
                     return settings;

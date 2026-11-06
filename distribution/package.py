@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 from native_build import build_native
 from release_pack import build as build_release
 from resource_filter import include_scene_asset
+from bundle_seamless import stage_component
 
 LATEST_MANIFEST = 'https://github.com/tamikip/erdtree-tower/releases/latest/download/tower-release.json'
 parser = argparse.ArgumentParser(description='Build the release folder, ZIP and launcher update pack')
@@ -94,20 +95,23 @@ copy_file(built_native, native[0])
 copy_file(built_native.with_name('tower_transmog.dll'), 'tower_transmog.dll')
 copy_tree(built_native.parent / 'native-ui', 'native-ui')
 for name in ['LICENSE', 'ADDITIONAL-TERMS.md']:
-    copy_file(source / name, name)
+    copy_file(project / name, 'docs/' + name)
 (stage / 'preview.me3').write_text(profile, encoding='utf-8')
 # Ship launcher sources directly so a stale release-preview copy cannot leak into the package.
-for name in ['Launch-Preview.ps1', 'Launch-Seamless-Tower.ps1', 'New-PartyConfig.ps1', 'seamless-preset.ini', 'THIRD_PARTY_NOTICES.md']:
+for name in ['Launch-Preview.ps1', 'Launch-Seamless-Tower.ps1', 'New-PartyConfig.ps1', 'seamless-preset.ini']:
     copy_file(project / name, name)
+copy_file(project / 'THIRD_PARTY_NOTICES.md', 'docs/THIRD_PARTY_NOTICES.md')
 for name in ['scene-assets', 'licenses']:
     copy_tree(project / name, name)
 copy_tree(source / 'loader/bin', 'loader/bin')
 copy_tree(project / 'loader/yafsml', 'loader/yafsml')
+stage_component(project / 'SeamlessCoop', stage / 'SeamlessCoop', project / 'SeamlessCoop/default.ini')
+copy_file(project / 'SeamlessCoop/README.md', 'SeamlessCoop/README.md')
 for name in ['LICENSE-MIT', 'LICENSE-APACHE']:
     copy_file(source / 'loader' / name, 'loader/' + name)
-for name in ['Start-Tower.ps1', 'Launch-Logged.ps1', 'Tower-Loader.ps1', '安装教程.md', '额外DLL插件说明.txt']:
+for name in ['Start-Tower.ps1', 'Launch-Logged.ps1', 'Tower-Loader.ps1']:
     copy_file(Path(__file__).parent / name, name)
-copy_file(project / 'reference/联机战斗验证.md', '联机战斗验证.md')
+copy_file(Path(__file__).parent / '安装教程.md', 'docs/安装教程.md')
 for name in ['ErdtreeTowerLauncher.exe', 'ErdtreeTowerLauncher.exe.config']:
     copy_file(launcher_build / name, name)
 for library in sorted(launcher_build.glob('*.dll')):
@@ -120,14 +124,13 @@ mirror_url = json.loads((launcher_build / 'launcher/sources.json').read_text(enc
 if not mirror_url:
     print('Warning: launcher/sources.json has no mirror, players will only update from GitHub')
 shutil.rmtree(launcher_build)
-for mode in ['Solo', 'Seamless']:
-    (stage / f'Start-{mode}.cmd').write_text(
+for entry in ['Start-Tower']:
+    (stage / f'{entry}.cmd').write_text(
         '@echo off\nsetlocal\n'
         '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" '
-        f'-NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-Tower.ps1" -Mode {mode} %*\n'
+        '-NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-Tower.ps1" %*\n'
         'set "tower_exit_code=%errorlevel%"\nif not "%tower_exit_code%"=="0" pause\n'
         'exit /b %tower_exit_code%\n', encoding='ascii')
-(stage / '安装教程.txt').write_text((stage / '安装教程.md').read_text(encoding='utf-8'), encoding='utf-8-sig')
 (stage / 'asset-mode.txt').write_text('full\n', encoding='ascii')
 if args.local_test:
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=project).decode().strip()
@@ -136,7 +139,7 @@ if args.local_test:
     extras = {name: hashlib.sha256((project / name).read_bytes()).hexdigest() for name in untracked if name and (project / name).is_file()}
     (stage / 'BUILD-INFO.json').write_text(json.dumps({'localTest': True, 'gitHead': head, 'includesLocalChanges': bool(patch or extras), 'patchSha256': hashlib.sha256(patch).hexdigest(), 'additionalSourceHashes': extras}, ensure_ascii=False, indent=2), encoding='utf-8')
     if args.notes:
-        (stage / '好友测试说明.txt').write_text(args.notes.read_text(encoding='utf-8'), encoding='utf-8-sig')
+        (stage / 'docs/好友测试说明.txt').write_text(args.notes.read_text(encoding='utf-8'), encoding='utf-8-sig')
 if args.slim_game:
     from slim_assets import prepare
     prepare(project, stage, args.slim_game)

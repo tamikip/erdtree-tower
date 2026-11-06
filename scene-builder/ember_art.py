@@ -27,8 +27,7 @@ ATLASES = [("emblems.png", 4, 3, ["无声处刑", "鲜血君王的赐福", "永�
            ("emblems-laststand.png", 1, 1, ["红狮子的不退"]),
            ("emblems-martyr.png", 1, 1, ["殉道者的苦修"]),
            ("emblems-mercy.png", 1, 1, ["黄金树的恩泽"]),
-           ("emblems-battlemage.png", 1, 1, ["战斗法师"]),
-           ("emblems-stride.png", 1, 1, ["疾行者的轻羽"])]
+           ("emblems-battlemage.png", 1, 1, ["战斗法师"])]
 
 assets = Path(sys.argv[1])
 destination = assets / "reward-icons"

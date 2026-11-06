@@ -17,7 +17,7 @@ static class MelinaAssets {
             .Concat(pool.Where(Solo).Select(p=>p[4]))
             .Concat(bosses.Where(p=>SoloBoss(p)&&!Late(p)).Select(p=>p[7]))
             .Concat(pool.Where(SoloEnemy).Select(p=>p[4]))
-            .Concat(bosses.Where(Late).Select(p=>p[7])).Distinct().ToArray();
+            .Concat(bosses.Where(Late).Select(p=>p[7])).Concat(new[]{"英雄石像鬼"}).Distinct().ToArray();
     }
     public static IEnumerable<(int id,string text)> PreviewTexts(string[] names) {
         for(int i=0;i<names.Length;i++)for(int n=1;n<=15;n++)yield return (PreviewFirst+i*16+n,$"{names[i]} ×{n}");
@@ -49,16 +49,22 @@ static class MelinaAssets {
             }
             Console.WriteLine($"Verified Melina services: {group.Key}, {group.Count()}");
         }
+        PatchText(input,output);
+    }
+    public static void PatchText(string input,string output) {
+        if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging required");
         const string msg="msg/zhocn/menu_dlc02.msgbnd.dcx";
         var menu=BND4.Read(Path.Combine(input,msg));var file=menu.Files.Single(f=>f.ID==33);var fmg=FMG.Read(file.Bytes);
         var texts=new Dictionary<int,string>{{9500100,"圣杯瓶状态"},{9500101,"雾门内的敌人"},{9500102,"当前没有待挑战的敌人"},{9500104,"通过种子开始游戏"},{9500105,"只有房主可以用种子开局，房主设定的种子会同步给全队。"}};
         for(int n=0;n<=255;n++){texts[9501000+n]=$"红圣杯瓶上限：{n}";texts[9501300+n]=$"蓝圣杯瓶上限：{n}";}
-        var names=PreviewNames("outputs/erdtree-tower/scene-assets");
+        var before=fmg.Entries.ToDictionary(e=>e.ID,e=>e.Text);
+        var names=PreviewNames(input);
         foreach(var (id,text) in PreviewTexts(names))texts[id]=text;
         foreach(var (id,text) in texts){fmg.Entries.RemoveAll(e=>e.ID==id);fmg.Entries.Add(new(id,text));}
         file.Bytes=fmg.Write();var dest=Path.Combine(output,msg);Directory.CreateDirectory(Path.GetDirectoryName(dest)!);menu.Write(dest);
         var verified=FMG.Read(BND4.Read(dest).Files.Single(f=>f.ID==33).Bytes);
         foreach(var (id,text) in texts)if(verified.Entries.Single(e=>e.ID==id).Text!=text)throw new Exception("Navigation text mismatch");
+        foreach(var (id,text) in before)if(!texts.ContainsKey(id)&&verified.Entries.Single(e=>e.ID==id).Text!=text)throw new Exception("Unrelated navigation text changed");
         Console.WriteLine($"Verified flask limits and {names.Length} enemy names");
     }
 }

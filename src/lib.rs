@@ -1178,6 +1178,13 @@ impl Run {
         });
         if offer {value["regional_event"]["trial"]=serde_json::Value::Bool(true);}
         let mut run: Self = serde_json::from_value(value).map_err(|e| e.to_string())?;
+        let old_rewards=if let Phase::Reward{id,offers}=&run.phase {
+            let mut previous=run.offers(*id);
+            if let Some(ember)=embers::before_stride_removal(&run,*id) {if let Some(last)=previous.last_mut(){*last=Reward::Ember(ember);}}
+            (previous==*offers).then_some(*id)
+        }else{None};
+        run.embers.retain(|ember|!ember.retired());
+        if let Some(id)=old_rewards {run.phase=Phase::Reward{id,offers:run.offers(id)};}
         if run.ruby_spells {
             run.ruby_spells=false;
             if let Phase::Reward{id,..}=run.phase {run.phase=Phase::Reward{id,offers:run.offers(id)};}
