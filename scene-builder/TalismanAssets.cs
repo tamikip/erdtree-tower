@@ -24,13 +24,46 @@ static class TalismanAssets {
             for(int i=0;i<5;i++)yield return($"spEffectId{i}","SpEffectParam");
         }
     }
+    static Definition[] Definitions(string input)=>File.ReadAllLines(Path.Combine(input,"talisman-definitions.tsv")).Select(l=>l.Split('\t')).Select(p=>new Definition(int.Parse(p[0]),int.Parse(p[1]),int.Parse(p[2]),int.Parse(p[3]),p[4],p[5],p[6])).ToArray();
+    static string Caption(Definition d)=>d.Info+"\n\n装备后生效，占用护符栏位。";
+    /// 护符名称（13）、效果说明（23）与详细说明（27），按品质着色
+    static void WriteText(Dictionary<int,FMG> textTables,Definition d,Dictionary<int,string> colors) {
+        string Color(string text)=>$"<font color=\"#{colors[d.Tier]}\">{text}</font>";
+        foreach(var (table,text) in new[]{(13,d.Name),(23,d.Info),(27,Caption(d))}) {
+            var entries=textTables[table].Entries;entries.RemoveAll(e=>e.ID==d.Id);entries.Add(new FMG.Entry(d.Id,Color(text)));
+        }
+    }
+    static Dictionary<int,string> Colors(string input)=>File.ReadAllLines(Path.Combine(input,"equipment-colors.txt")).Select(l=>l.Split('|')).ToDictionary(p=>int.Parse(p[0]),p=>p[1]);
+    /// talisman-text-patch：只按 talisman-definitions.tsv 重写护符的名称与说明（不需要原包 regulation），其余文本不变
+    public static void PatchText(string input,string output) {
+        if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging required");
+        const string name="msg/zhocn/item_dlc02.msgbnd.dcx";
+        var messages=BND4.Read(Path.Combine(input,name));var colors=Colors(input);var definitions=Definitions(input);
+        var textTables=new[]{13,23,27}.ToDictionary(id=>id,id=>FMG.Read(messages.Files.Single(f=>f.ID==id).Bytes));
+        var before=textTables.ToDictionary(p=>p.Key,p=>p.Value.Entries.ToDictionary(e=>e.ID,e=>e.Text));
+        foreach(var d in definitions) {
+            if(!before[13].ContainsKey(d.Id))throw new Exception($"Talisman text missing, run talisman-affix-patch first: {d.Id}");
+            WriteText(textTables,d,colors);
+        }
+        foreach(var (id,fmg) in textTables){fmg.Entries.Sort((a,b)=>a.ID.CompareTo(b.ID));messages.Files.Single(f=>f.ID==id).Bytes=fmg.Write();}
+        var original=BND4.Read(Path.Combine(input,name));
+        var path=Path.Combine(output,name);Directory.CreateDirectory(Path.GetDirectoryName(path)!);messages.Write(path);
+        var check=BND4.Read(path);var ids=definitions.Select(d=>d.Id).ToHashSet();int changed=0;
+        foreach(var f in original.Files.Where(f=>!textTables.ContainsKey(f.ID)))if(!f.Bytes.SequenceEqual(check.Files.Single(x=>x.ID==f.ID).Bytes))throw new Exception("Unrelated message file changed");
+        foreach(var (id,_) in textTables) {
+            var actual=FMG.Read(check.Files.Single(f=>f.ID==id).Bytes).Entries.ToDictionary(e=>e.ID,e=>e.Text);
+            foreach(var (entry,text) in before[id])if(!ids.Contains(entry)&&actual[entry]!=text)throw new Exception($"Unrelated text changed: {id}/{entry}");
+            changed+=ids.Count(entry=>actual[entry]!=before[id][entry]);
+        }
+        Console.WriteLine($"Talisman texts rewritten for {definitions.Length} talismans ({changed} entries changed); other texts preserved");
+    }
     public static void Build(string input,string output) {
         if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging required");
         var sourcePath=Environment.GetEnvironmentVariable("ERDTREE_RUBY_SOURCE")??throw new Exception("Set ERDTREE_RUBY_SOURCE to the supplied Ruby regulation.bin");
         var source=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(sourcePath);
         var target=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
         var before=target.Files.ToDictionary(f=>f.Name,f=>f.Bytes.ToArray());
-        var definitions=File.ReadAllLines(Path.Combine(input,"talisman-definitions.tsv")).Select(l=>l.Split('\t')).Select(p=>new Definition(int.Parse(p[0]),int.Parse(p[1]),int.Parse(p[2]),int.Parse(p[3]),p[4],p[5],p[6])).ToArray();
+        var definitions=Definitions(input);
         var tables=new[]{"SpEffectParam","BehaviorParam_PC","Bullet","AtkParam_Pc","SpEffectVfxParam"};
         var sources=tables.ToDictionary(t=>t,t=>Read(source,t).Rows.ToDictionary(r=>r.ID));
         var targets=tables.ToDictionary(t=>t,t=>Read(target,t));
@@ -51,10 +84,10 @@ static class TalismanAssets {
         }
         var sourceItems=Read(source,"EquipParamAccessory").Rows.ToDictionary(r=>r.ID);var accessories=Read(target,"EquipParamAccessory");
         var kinds=definitions.Select(d=>d.Kind).Distinct().Order().Select((name,i)=>(name,i)).ToDictionary(p=>p.name,p=>p.i);
-        var messages=BND4.Read(Path.Combine(input,"msg/zhocn/item_dlc02.msgbnd.dcx"));var colors=File.ReadAllLines(Path.Combine(input,"equipment-colors.txt")).Select(l=>l.Split('|')).ToDictionary(p=>int.Parse(p[0]),p=>p[1]);
-        string Color(string text,int tier)=>$"<font color=\"#{colors[tier]}\">{text}</font>";
+        var messages=BND4.Read(Path.Combine(input,"msg/zhocn/item_dlc02.msgbnd.dcx"));var colors=Colors(input);
         var textTables=new[]{13,23,27}.ToDictionary(id=>id,id=>FMG.Read(messages.Files.Single(f=>f.ID==id).Bytes));
         var catalog=new List<string>();var details=new List<string>();var rarities=new List<string>();var manifest=new List<object>();
+        var redrawn=TalismanIconAssets.Icons(input);
         foreach(var d in definitions) {
             var row=new PARAM.Row(sourceItems[d.Source]){ID=d.Id,Name=$"Tower talisman accessory:{d.Effect}"};
             if(I(row,"refId")!=d.Effect)throw new Exception("Source accessory reference mismatch");
@@ -62,15 +95,13 @@ static class TalismanAssets {
             bool onHit=I(sources["SpEffectParam"][d.Effect],"stateInfo") is 303 or 304 or 305 or 306;
             int group=onHit?24900+d.Tier:25000+kinds[d.Kind]*4+(d.Info.Contains("同类效果不能重复")?0:d.Tier);
             Set(row,"accessoryGroup",group);Set(row,"sellValue",100*(d.Tier+1));
+            if(redrawn!=null)Set(row,"iconId",redrawn[d.Id]);
             int icon=I(row,"iconId");if(!File.Exists(Path.Combine(input,"reward-icons",icon+".rgba"))){icon=18000;Set(row,"iconId",icon);}
             if(!File.Exists(Path.Combine(input,"reward-icons",icon+".rgba")))throw new Exception("Talisman icon missing");
             if(accessories.Rows.Any(r=>r.ID!=d.Id&&I(r,"accessoryGroup")==group&&!definitions.Any(x=>x.Id==r.ID)))throw new Exception("Accessory group collision");
             var old=accessories.Rows.SingleOrDefault(r=>r.ID==d.Id);if(old!=null&&old.Name!=row.Name)throw new Exception("Accessory ID collision");
             if(old!=null)accessories.Rows.Remove(old);accessories.Rows.Add(row);
-            string caption=d.Info+"\n\n装备后生效，占用护符栏位。";
-            foreach(var (table,text) in new[]{(13,d.Name),(23,d.Info),(27,caption)}) {
-                var entries=textTables[table].Entries;entries.RemoveAll(e=>e.ID==d.Id);entries.Add(new FMG.Entry(d.Id,Color(text,d.Tier)));
-            }
+            string caption=Caption(d);WriteText(textTables,d,colors);
             uint full=0x20000000u|(uint)d.Id;
             catalog.Add($"talisman|{d.Id}|{d.Name}");
             details.Add($"{full}\t{icon}\t{d.Name}\t{d.Info}\t{caption.Replace("\n","\\n")}\t重量：{row["weight"].Value}\t");
@@ -114,6 +145,7 @@ static class TalismanAssets {
             if(!text["AccessoryName"].Entries.Any(e=>e.ID==id&&EquipmentStyleAssets.Plain(e.Text)==p[5]))throw new Exception("Talisman name mismatch");
             if(!text["AccessoryInfo"].Entries.Any(e=>e.ID==id&&EquipmentStyleAssets.Plain(e.Text)==p[6]))throw new Exception("Talisman effect description mismatch");
             var d=details[0x20000000u|(uint)id];if(d.Length!=7||new FileInfo(Path.Combine(input,"reward-icons",d[1]+".rgba")).Length!=102400)throw new Exception("Talisman presentation incomplete");
+            if(int.Parse(d[1])!=I(row,"iconId"))throw new Exception($"Talisman icon differs between regulation and reward card: {id}");
         }
         int links=0;
         foreach(var (table,rows) in tables)foreach(var row in rows.Values.Where(r=>r.Name?.StartsWith("Tower talisman ")==true)) {

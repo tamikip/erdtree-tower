@@ -18,6 +18,10 @@ if(args.Length==4&&args[3]=="ember-pickup-patch") {
     Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
     EmberPickupAssets.Build(args[2],args[1]);return;
 }
+if(args.Length==4&&args[3]=="talisman-icon-menu") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    TalismanIconAssets.PatchMenu(args[2],args[1]);return;
+}
 string[] modes=["advanced-affix-patch","advanced-affix-verify","affix-patch","affix-pool-patch","affix-text-test","archer-patch","archer-verify","arena-chariot-build","arena-chariot-loading","arena-inspect","arrow-shop-inspect","arrow-shop-stage","balance-patch","bandit-fix","battlefield-inspect","battlefields","bgm-audit","bolus-audit","boss-affix-patch","weapon-glow-patch","boss-append-patch","boss-export","camp-inspect","catalog-assets","chariot-build","chest-text","comet-inspect","contract-audit","contract-patch","descent-patch","descent-verify","ember-patch","full-build","game-version-rebase","hub-standing-patch","inspect","law-patch","class-patch","level-inspect","melina-inspect","melina-patch","music-inspect","oath-patch","native-inspect","party-camp-stage","party-collision-inspect","party-completion-patch","party-enemy-audit","party-enemy-events-test","party-enemy-load-patch","party-enemy-stage","party-entity-inspect","party-guard-flags","party-guard-stage","party-guard-test","party-hub-stage","party-model-audit","party-model-patch","party-param-audit","party-param-stage","party-placement-audit","party-scarab-stage","party-service-inspect","party-service-load-patch","party-service-load-test","party-service-stage","party-status-patch","passive-patch","personal-chest-patch","personal-chest-test","personal-events-patch","personal-events-test","pool-inspect","portal-inspect","rarity-assets","recovery-text","resistance-shop-stage","retired-spell-strip","reward-assets","reward-inspect","rune-audit","scaling-correction-fix","scarab-inspect","shop-inspect","shop-order-patch","stormveil-build","stormveil-inspect","talisman-inspect","talisman-menu-text","team-attack-patch","text-update","tower-scaling-patch","text-inspect","trial-stage","trial-verify","verify-native","weapon-sale-patch","bgm-patch","affix-append","advanced-affix-append","dlc-pool-verify","whetblade-menu-patch","equipment-style-patch","unrestricted-ashes-patch","affinity-name-verify","talisman-affix-patch","talisman-affix-verify","enemy-pool-patch","enchant-patch","weapon-level-patch","affix-quality-patch"];
 modes=modes.Append("party-dlc-patch").ToArray();
 modes=modes.Append("bout-patch").ToArray();
@@ -38,6 +42,8 @@ modes=modes.Append("stormveil-no-runes-patch").ToArray();
 modes=modes.Append("stormveil-sidewall-patch").ToArray();
 modes=modes.Append("stormveil-grace-patch").ToArray();
 modes=modes.Append("battlemage-patch").ToArray();
+modes=modes.Append("talisman-icon-patch").ToArray();
+modes=modes.Append("talisman-text-patch").ToArray();
 modes=modes.Append("title-texture-patch").ToArray();
 modes=modes.Append("portal-reveal-test").ToArray();
 modes=modes.Append("portal-rise-patch").ToArray();
@@ -99,6 +105,8 @@ if(args.Contains("stormveil-no-runes-patch")){StormveilRuneAssets.Patch(cache,ou
 if(args.Contains("stormveil-sidewall-patch")){StormveilBarrierAssets.Patch(cache,output);return;}
 if(args.Contains("stormveil-grace-patch")){StormveilAssets.PatchGraces(cache,output);return;}
 if(args.Contains("battlemage-patch")){BattlemageAssets.Patch(cache,output);return;}
+if(args.Contains("talisman-icon-patch")){TalismanIconAssets.PatchParams(cache,output);return;}
+if(args.Contains("talisman-text-patch")){TalismanAssets.PatchText(cache,output);return;}
 if(args.Contains("bgm-patch")){MusicAssets.Patch(cache,output);return;}
 if(args.Contains("party-dlc-patch")){PartyDlcAssets.Build(game,cache,output);return;}
 if(args.Contains("arena-build")){PortalRuneFfx.Build(cache,output);ArenaAssets.Build(game,cache,output);MelinaEntranceAssets.Patch(output,output);return;}

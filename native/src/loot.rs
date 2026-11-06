@@ -34,6 +34,14 @@ pub fn bag_items(data:&eldenring::cs::PlayerGameData)->Vec<eldenring::cs::ItemId
     let bag=&data.equipment.equip_inventory_data.items_data;
     bag.normal_entries().iter().chain(bag.key_entries()).chain(bag.multiplay_key_entries()).non_empty().filter(|e|e.quantity>0).map(|e|e.item_id).collect()
 }
+/// 诊断：某个道具在背包普通列表、单机重要物品列表、联机重要物品列表里各有几个
+pub fn goods_lists(data:&eldenring::cs::PlayerGameData,id:u32)->[u64;3] {
+    use fromsoftware_shared::NonEmptyIteratorExt;
+    let sum=|list:&[fromsoftware_shared::MaybeEmpty<eldenring::cs::EquipInventoryDataListEntry>]|list.iter().non_empty()
+        .filter(|e|e.item_id.category()==eldenring::cs::ItemCategory::Goods&&e.item_id.param_id()==id).map(|e|u64::from(e.quantity)).sum::<u64>();
+    let bag=&data.equipment.equip_inventory_data.items_data;
+    [sum(bag.normal_entries()),sum(bag.key_entries()),sum(bag.multiplay_key_entries())]
+}
 pub fn held(data:&eldenring::cs::PlayerGameData,owns:impl Fn(eldenring::cs::ItemId)->bool)->u64 {
     use fromsoftware_shared::NonEmptyIteratorExt;
     let sum=|list:&[fromsoftware_shared::MaybeEmpty<eldenring::cs::EquipInventoryDataListEntry>]|list.iter().non_empty().filter(|e|owns(e.item_id)).map(|e|u64::from(e.quantity)).sum::<u64>();

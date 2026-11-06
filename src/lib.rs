@@ -745,6 +745,7 @@ impl Run {
     pub fn set_law(&mut self,law:law::Law)->RuleResult<()> {
         if !law.valid() {return Err("苦难律法无效".into());}
         if self.act!=1||!self.visited.is_empty()||self.phase!=Phase::Map {return Err("苦难律法只能在开局时立下".into());}
+        let law=law.current();
         let full=self.flasks==self.flask_limit;
         self.law=law;self.flask_limit=self.full_flask_limit();
         self.flasks=if full {self.flask_limit}else{self.flasks.min(self.flask_limit)};

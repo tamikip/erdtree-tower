@@ -1,0 +1,154 @@
+词条护符重绘图标：talismans-1.png … talismans-9.png（4 列 × 3 行）与 talismans-10.png（单个）由 OpenAI 兼容图像接口 gpt-image-2 按下方提示词生成
+（background=transparent，quality=high，图集返回 1448×1086，单图 1254×1254，原图像素未改动）。顺序为 talisman-definitions.tsv 里各类护符第一次出现的顺序。
+然后在仓库根目录运行 python scene-builder/talisman_art.py scene-assets，切成 reward-icons/65100.rgba … 65208.rgba 并改写 talisman-details.tsv 的图标列；
+游戏内图标再在 Windows 上依次运行 scene-builder 的 talisman-icon-menu 与 talisman-icon-patch。
+要求：透明背景（PNG 带 alpha）、严格等大正方形格子、格子之间无分隔线、不出现任何文字。重生成时以整张图集为单位，不要手工拼接不同批次。
+
+talismans-1.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 heavy bronze medallion embossed with a clenched fist gripping a war hammer, accent ember orange.
+2 slim silver pendant of a hare leaping mid-jump, accent pale teal.
+3 blue glintstone set in a silver crescent frame engraved with an open eye, accent glintstone blue.
+4 old gold pendant of two hands pressed together in prayer inside a ring of light, accent golden.
+5 dark oxidized pendant with a crimson-veined eye encircled by a coiled serpent, accent deep red.
+6 bronze pendant of a swift swallow bird inside a swirl of wind, accent soft green.
+7 bronze pendant shaped like a drawn longbow with an arrow aimed upward, accent pale gold.
+8 silver hourglass pendant with blue sparks streaming from its neck, accent bright blue.
+9 carved stone tablet charm showing a closed book with a small lit candle on top, accent warm candlelight.
+10 mottled grey-green stone charm with lizard-skin pattern and three small inset gems red green and violet, accent muted multicolor.
+11 two bronze wing shapes curving around a hollow ring with wisps of breath passing through, accent pale green.
+12 carved red amber heart inside a gold laurel wreath, accent crimson.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-2.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 blue glazed teardrop pendant with silver filigree and a glowing droplet at its center, accent blue.
+2 iron charm shaped like a great hammer head with cracks radiating from it, accent orange.
+3 silver pendant of a sword plunging straight downward out of a small cloud, accent white.
+4 small round shield charm covered in spikes like a hedgehog shell, accent dull red.
+5 bronze pendant of a spearhead piercing through a small round shield, accent steel.
+6 golden scarab with wings spread holding a glowing gold coin, accent gold.
+7 bronze owl head pendant with lantern-bright eyes, accent amber.
+8 black iron pendant of a hooded figure hiding a dagger behind its back, accent dark crimson.
+9 pendant of three blades in a row, the last one larger and glowing hot, accent orange red.
+10 bronze statuette charm of a kneeling titan carrying a boulder on his back, accent earthy brown.
+11 bandage-wrapped silver pendant with a small green leaf sprouting from it, accent soft green.
+12 dark blue enamel disc with swirling starry wind and tiny stars, accent starlight blue.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-3.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 full gold chalice brimming with red light, accent crimson gold.
+2 round crystal orb pendant crackling with gathered energy at its core, accent bright white gold.
+3 grey ash-covered pendant holding a glowing ember-like crystal shard, accent orange.
+4 balance-scale pendant with a blue droplet on one pan and a red heart on the other, accent blue and red.
+5 balance-scale pendant with a small sword on one pan and a green leaf on the other, accent green and silver.
+6 small cerulean blue flask-shaped pendant glowing from within, accent cerulean.
+7 cracked crimson flask-shaped pendant with a pulsing heartbeat glow, accent crimson.
+8 thick tower shield charm with iron bands and rivets, accent steel grey.
+9 spiral silver pendant with blue light trailing in endless loops, accent blue.
+10 large brown-grey rough dragon scale set in a bronze mount, accent earth brown.
+11 blue crystalline dragon scale set in a silver mount, accent glintstone blue.
+12 red-orange smoldering dragon scale set in a blackened mount, accent fire orange.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-4.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 yellow dragon scale with crackling lightning veins in a bronze mount, accent lightning yellow.
+2 radiant golden dragon scale with a faint holy halo, accent holy gold.
+3 ancient petrified grey-white dragon scale with faint blue red yellow and gold glints along its edge, accent pale multicolor.
+4 silver pendant of a dancing figure with flowing veils holding a thin blade, accent pale rose.
+5 bronze lion head roaring with rings of sound around it, accent orange.
+6 small ornate perfume bottle pendant releasing colored vapor, accent violet.
+7 bronze bull head with heavy curved horns, accent dark red.
+8 dark silver disc with a soft black cat silhouette creeping, accent muted grey.
+9 tiny sturdy clay jar pendant bound with iron bands, accent clay orange.
+10 bronze pendant of a horned spectral steed rearing, accent pale teal.
+11 silver pendant of a crescent moon cradling a full moon, glowing pale blue, accent moonlight blue.
+12 slender pendant of a royal blue sword crossed with a small crown, accent royal blue.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-5.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 round pendant ringed by small floating glintstone blades around a central gem, accent blue.
+2 rough stone pendant with a small glintstone pickaxe embedded, accent blue grey.
+3 cluster of blue crystal shards held in an iron frame, accent crystal cyan.
+4 dark purple-blue orb holding a tiny swirling galaxy and comet, accent violet blue.
+5 obsidian pendant with glowing lava cracks, accent molten orange.
+6 blood-red thorn bramble wrapped tightly around a silver ring, accent blood red.
+7 black and gold pendant with a small skull wreathed in dark purple flame, accent purple gold.
+8 dark meteorite rock pendant with purple gravity rings orbiting it, accent purple.
+9 half-faded glass pendant, partly transparent like a ghostly veil, accent faint blue.
+10 gold-framed pendant enclosing a black flame, accent black and crimson.
+11 rough stone ring charm with a bright giant's flame burning in its center, accent bright orange.
+12 ancient dragon tooth pendant wrapped in red lightning, accent red.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-6.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 beast claw pendant set with a brown beast eye, accent amber.
+2 gold pendant of interlocking concentric rings and lines like a holy order emblem, accent holy gold.
+3 grotesque bone pendant of a dragon maw with green-red fire, accent green and red.
+4 pendant of three yellow flames forming an eye, accent sickly yellow.
+5 heavy iron boot sole pendant over cracked ground, accent dust brown.
+6 two gauntleted hands gripping one sword hilt, accent steel.
+7 crossed throwing knife and star-shaped throwing dagger pendant, accent silver.
+8 pendant of a sidestepping figure with a curved blade arc behind it, accent white.
+9 pendant of a charging figure with three claw slash marks, accent red.
+10 crimson glass vial pendant with blood droplets swirling inside, accent blood red.
+11 thorn-like needle pendant dripping green-purple poison, accent toxic green.
+12 silver hand pendant drawing blue wisps out of a small crystal, accent blue.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-7.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 silver hand pendant drawing red wisps out of a small heart, accent red.
+2 small bronze war banner pendant with a crossed sword and laurel, accent orange.
+3 cracked mask pendant with a yellow glow behind the cracks, accent yellow.
+4 feathered arrow in flight with wind trails, accent white.
+5 silver pendant of a weeping ghostly maiden face with a single tear, accent spectral teal.
+6 pendant of a closed eye surrounded by violet sleeping flowers, accent violet.
+7 blue glass orb mid-burst with shards flying out, accent blue white.
+8 rotten bulbous pouch charm leaking a yellow-green stink cloud, accent sickly green.
+9 dragon head pendant emitting a ring of lightning, accent lightning yellow.
+10 giant stone hand pendant holding a huge fireball, accent orange.
+11 black flame burst wheel ringed in gold, accent black and crimson gold.
+12 small golden bell pendant radiating soft healing light waves, accent soft gold.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-8.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 large curved beast claw with three scratch marks, accent amber.
+2 circular blue magic sigil disc with light rising from it, no writing, accent blue.
+3 three small glintstone pebbles orbiting a silver ring, accent blue.
+4 shattered glintstone crystal fragments arranged in a ring, accent cyan.
+5 icy black frost circle with skeletal hands rising from it, accent cold blue black.
+6 round pendant with small floating blue swords pointing outward all around it, accent blue.
+7 large blue spectral greatsword standing over a small shield, accent deep blue.
+8 thorn brambles bursting outward from a bleeding heart, accent red.
+9 glowing magma ball inside a stone cage pendant, accent lava orange.
+10 swirling gust wheel pendant, accent pale green.
+11 round pendant with a spinning wind vortex flecked with red droplets, accent red and white.
+12 dark spear falling from a small storm cloud, accent dark violet.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-9.png prompt (transparent background, size 2048x1536):
+Production game inventory icon sprite atlas on a truly transparent background. Landscape 4:3 image, EXACT regular grid of 4 columns by 3 rows, TWELVE equal square cells, one object centered in each cell with generous empty transparent padding, no gutters drawn, no grid lines, no frames around cells, no backdrop, no cast shadows. Every object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. All twelve have the same scale (each object fills about 70% of its cell), same lighting and same rendering so they read as one set, but each has a clearly distinct silhouette. Most have a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Layout row-major, left to right, top to bottom:
+1 white spear wrapped in spiraling wind, accent white green.
+2 war hammer wreathed in purple gravity rings, accent purple.
+3 several golden spears raining down in a fan, accent gold.
+4 volcano-shaped pendant spewing fire from its top, accent orange.
+5 frosty dragon head exhaling icy mist, accent ice blue.
+6 coiled thunder dragon inside a small storm cloud pendant, accent lightning yellow.
+7 concentric radiant golden rings pendant, accent gold white.
+8 golden heart with small phoenix wings, accent gold and red.
+9 snowflake ring pendant, accent ice cyan.
+10 dragon foot claw stamping down on cracked ground, accent earthy red.
+11 horned crucible knight helmet pendant with a red-orange glow, accent crucible orange.
+12 iridescent opal shield pendant, accent opal rainbow.
+All twelve talismans share identical style, scale and lighting. Transparent canvas outside the objects.
+
+talismans-10.png prompt (transparent background, size 1024x1024):
+Production game inventory icon sprite atlas on a truly transparent background. Square image with ONE single object centered with generous empty transparent padding, no frame, no backdrop, no cast shadows. The object is a single Elden Ring style talisman: a small hand-crafted antique amulet, pendant or charm, painted in the realistic painterly style of Elden Ring inventory item icons, front view with slight depth, worn bronze, tarnished silver, old gold, carved stone, bone and enamel materials, soft top-left lighting, fine detail, muted desaturated palette with one restrained accent color tied to its power. It fills about 70% of the canvas and has a small suspension loop or ring at the top. Absolutely NO text, letters, runes, numbers, labels or watermarks. Object:
+crouching golden figure statuette pendant, accent gold.
+

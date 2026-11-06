@@ -2,13 +2,8 @@ use std::{path::PathBuf, time::{Duration,Instant}};
 use eldenring::cs::{BlockId,GameMan,WorldChrMan};
 use erdtree_tower::{Class,Phase,Run};
 pub const BLOCK: i32=0x0b0a0000;
-fn seeded_start_allowed()->bool {
-    use fromsoftware_shared::FromStatic;
-    if super::party::manual_config().is_some(){return false;}
-    if !super::seamless::active(){return true;}
-    unsafe {eldenring::cs::CSSessionManager::instance()}.ok()
-        .is_some_and(|session|session.lobby_state==eldenring::cs::LobbyState::None||super::seamless::roster(session).is_ok_and(|r|r.members.len()==1&&r.local==r.host))
-}
+/// 固定种子开局：单人，或联机时的房主（种子同步给全队，见 Link::reseed）；队员不能自己设种子
+fn seeded_start_allowed()->bool {law_start_allowed()}
 fn law_start_allowed()->bool {
     use fromsoftware_shared::FromStatic;
     if let Some(path)=super::party::manual_config() {
@@ -152,6 +147,8 @@ pub struct Hub {
     chosen: u8,
     resume: Option<Run>,
     seed:Option<u64>,
+    /// 刚开局的旅程用的固定种子（见 take_fixed_seed）
+    fixed_seed:Option<u64>,
     law:erdtree_tower::law::Law,
     settled:bool,
 }
@@ -174,7 +171,7 @@ impl Hub {
         let paused=!reset&&path(owner,"paused").exists();
         if paused {if let Some(run)=&resume {super::run_screen::summary_with((erdtree_tower::journal::Record::new(run,super::run_log::read(&super::run_log::path(owner)),vec![],0),None));}}
         let settled=resume.as_ref().is_some_and(|r|matches!(r.phase,Phase::Dead|Phase::Won));
-        Ok(Self {active:true,paused,owner,room:None,clock:Instant::now(),warp:WarpGate::default(),reset,start:false,chosen,resume,seed:None,law:Default::default(),settled})
+        Ok(Self {active:true,paused,owner,room:None,clock:Instant::now(),warp:WarpGate::default(),reset,start:false,chosen,resume,seed:None,fixed_seed:None,law:Default::default(),settled})
     }
     pub fn finish(&mut self) { self.active=true;self.paused=false;self.settled=true;self.reset=true;self.start=false;self.resume=None;self.seed=None;self.law=Default::default();self.warp=WarpGate::default(); }
     /// 选职业界面默认选中上次的职业
@@ -184,6 +181,8 @@ impl Hub {
         self.chosen=class.archetype();self.seed=seed;self.law=law;self.reset=true;self.start=true;
         super::log(format!("Hub start: class={class:?} seeded={} law={}",seed.is_some(),law.code()));
     }
+    /// 刚开局的旅程是否用了固定种子（联机房主据此把队伍种子换成它）；取一次就清掉
+    pub fn take_fixed_seed(&mut self)->Option<u64> {self.fixed_seed.take()}
     pub fn ready_for_party_restart(&self)->bool {self.active&&!self.reset&&!self.start&&matches!(self.warp,WarpGate::Ready)}
     pub fn reopen_for_party(&mut self,world:&mut WorldChrMan) {
         if let Some(room)=self.room.take(){room.retire(world);}
@@ -248,11 +247,15 @@ impl Hub {
             self.active=false;self.start=false;
             if let Some(room)=self.room.take(){room.retire(world);}
             let class=super::class_from_archetype(self.chosen).unwrap_or(Class::Vagabond);
-            let seed=self.seed.take().unwrap_or_else(||std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(42,|t|t.as_nanos() as u64));
+            let fixed=self.seed.take();self.fixed_seed=fixed;
+            let seed=fixed.unwrap_or_else(||std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(42,|t|t.as_nanos() as u64));
             let player=world.main_player.as_mut().unwrap();
             player.chr_ins.modules.data.hp=player.chr_ins.modules.data.max_hp;
             player.chr_ins.modules.data.fp=player.chr_ins.modules.data.max_fp;
-            let mut run=Run::new_personal(seed,class,super::party::random_entropy()?);run.enable_contracts();
+            // 固定种子（只有单人能用，见 seeded_start_allowed）：奖励随机数也由种子决定，同一种子、同样的职业与选择得到同样的奖励；
+            // 随机开局仍另取随机数（联机开局后 align_party_start 换成队伍种子，奖励随机数保持各人自己的）
+            let reward_seed=match fixed {Some(seed)=>seed,None=>super::party::random_entropy()?};
+            let mut run=Run::new_personal(seed,class,reward_seed);run.enable_contracts();
             run.set_law(std::mem::take(&mut self.law))?;
             if !run.law.is_empty() {super::log(format!("TOWER_LAW start code={} score={}",run.law.code(),run.law.score()));}
             run.set_start_talisman(talisman)?;

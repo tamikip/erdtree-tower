@@ -32,7 +32,7 @@ fn moved(focus:usize,dx:i32,dy:i32)->usize {
     let center=|i:usize|{let (row,[x,_])=place(i);(row as i32,x+TILE[0]*0.5)};
     let (row,x)=center(focus);
     let key=|i:usize|{let (r,ix)=center(i);if dx!=0 {(ix-x).abs()}else{(r-row).abs() as f32*10_000.0+(ix-x).abs()}};
-    (0..NODES.len()).filter(|&i|{let (r,ix)=center(i);if dx!=0 {r==row&&(ix-x)*dx as f32>0.0}else{(r-row)*dy>0}})
+    (0..NODES.len()).filter(|&i|Law::listed(i)).filter(|&i|{let (r,ix)=center(i);if dx!=0 {r==row&&(ix-x)*dx as f32>0.0}else{(r-row)*dy>0}})
         .min_by(|&a,&b|key(a).total_cmp(&key(b))).unwrap_or(focus)
 }
 
@@ -161,7 +161,7 @@ pub fn draw(ui:&Ui,screen:&mut LawScreen,record:Option<(u32,&str)>)->Option<LawA
             None=>text(1556.0,40.0,"尚无纪录",fade(MUTED,head),19.0,1.0),
         }
         // ── 左：分组与律法链 ──
-        let rows_of=|b:usize|{let rows:Vec<usize>=(0..NODES.len()).filter(|&i|NODES[i].branch==b).map(|i|place(i).0).collect();(rows.iter().copied().min().unwrap_or(0),rows.iter().copied().max().unwrap_or(0))};
+        let rows_of=|b:usize|{let rows:Vec<usize>=(0..NODES.len()).filter(|&i|Law::listed(i)&&NODES[i].branch==b).map(|i|place(i).0).collect();(rows.iter().copied().min().unwrap_or(0),rows.iter().copied().max().unwrap_or(0))};
         let row_y=|row:usize,b:usize|124.0+row as f32*66.0+b as f32*28.0;
         for (b,name) in BRANCHES.iter().enumerate() {
             let (first,last)=rows_of(b);let (top,bottom)=(row_y(first,b),row_y(last,b)+TILE[1]);
@@ -173,7 +173,7 @@ pub fn draw(ui:&Ui,screen:&mut LawScreen,record:Option<(u32,&str)>)->Option<LawA
             text(64.0,top-4.0,name,fade(WHITE,a),30.0,0.0);
             micro(65.0,top+36.0,LABELS[b],fade(MUTED,a),11.0,0.0);
             if last>first {
-                let count=(0..NODES.len()).filter(|&i|NODES[i].branch==b).count();let on=(0..NODES.len()).filter(|&i|NODES[i].branch==b&&screen.law.has(i)).count();
+                let count=(0..NODES.len()).filter(|&i|Law::listed(i)&&NODES[i].branch==b).count();let on=(0..NODES.len()).filter(|&i|Law::listed(i)&&NODES[i].branch==b&&screen.law.has(i)).count();
                 text(65.0,top+58.0,&format!("{on} / {count}"),fade(if on>0{AMBER}else{DIM},a),16.0,0.0);
             }
         }
@@ -181,14 +181,15 @@ pub fn draw(ui:&Ui,screen:&mut LawScreen,record:Option<(u32,&str)>)->Option<LawA
         {
             let draw=ui.get_window_draw_list();
             for (id,node) in NODES.iter().enumerate() {
-                let Some(parent)=node.parent else{continue};
+                let Some(parent)=node.parent.filter(|_|Law::listed(id)) else{continue};
                 let ((row,[x,y]),(_,[px,_]))=(place(id),place(parent));
                 let a=ease(t,0.08+row as f64*0.045+f64::from(node.col)*0.03,0.35);
                 let cy=y+TILE[1]*0.5;let on=screen.law.has(id);
                 draw.add_line(p(px+TILE[0],cy),p(x,cy),if on {col(AMBER,a)}else{col(WHITE,0.22*a)}).thickness(if on{2.0}else{1.2}*s).build();
             }
         }
-        for (id,node) in NODES.iter().enumerate() {
+        // 停用的节点（孤狼）不画、不能点
+        for (id,node) in NODES.iter().enumerate().filter(|&(id,_)|Law::listed(id)) {
             let (row,[x0,y])=place(id);
             let a=ease(t,0.08+row as f64*0.045+f64::from(node.col)*0.03,0.35);let x=x0-(1.0-a)*14.0;
             let (clicked,hover)=hit(&format!("##law-{id}"),[x0,y],[x0+TILE[0],y+TILE[1]]);

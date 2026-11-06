@@ -78,7 +78,10 @@ impl<H: Copy + Eq> Encounter<H> {
 pub enum Role {Weak,Strong,Boss}
 /// 单人同时在场的敌人上限（Boss 组除外）
 pub const SOLO_CAP:usize=2;
-pub const WAVE_GAP:std::time::Duration=std::time::Duration::from_secs(3);
+/// 后续波次：前一波的条件满足后再等这么久才出场
+pub const WAVE_GAP:std::time::Duration=std::time::Duration::from_secs(2);
+/// 后续波次的敌人出场后这么久内不出招（防止贴脸突袭）；同批、第一波不受影响
+pub const WAVE_GRACE:std::time::Duration=std::time::Duration::from_millis(1500);
 #[derive(Clone,Debug,Default)]
 pub struct SpawnGap {
     blocked:bool,
@@ -86,13 +89,15 @@ pub struct SpawnGap {
     admitted:bool,
 }
 impl SpawnGap {
-    /// 同批直接出场；曾等待前批的敌人，条件满足后再等三秒。放行后不再重新拦截。
+    /// 同批直接出场；曾等待前批的敌人，条件满足后再等 WAVE_GAP。放行后不再重新拦截。
     pub fn allows(&mut self,now:std::time::Duration,eligible:bool)->bool {
         if self.admitted {return true;}
         if !eligible {self.blocked=true;self.ready_since=None;return false;}
         if self.blocked&&now.saturating_sub(*self.ready_since.get_or_insert(now))<WAVE_GAP{return false;}
         self.admitted=true;true
     }
+    /// 已经放行、而且是等过前批才出场的（后续波次）：出场后有 WAVE_GRACE 的出招保护期
+    pub fn later_wave(&self)->bool {self.admitted&&self.blocked}
 }
 /// 联机与 Boss 组一起出（联机的精英战仍按苦难律法「精英成双」等前面的精英，房主与成员按同一规则各自放出预置实体）；
 /// 其余单人战斗同时在场最多 SOLO_CAP 只，普通战清完弱怪后才出强怪。
@@ -127,32 +132,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn later_wave_waits_three_seconds_after_spawn_conditions_clear() {
+    fn later_wave_waits_two_seconds_after_spawn_conditions_clear() {
         use std::time::Duration as D;
         let mut gap=SpawnGap::default();
         assert!(!gap.allows(D::ZERO,false));
         assert!(!gap.allows(D::from_secs(10),false));
         assert!(!gap.allows(D::from_secs(20),true));
-        assert!(!gap.allows(D::from_millis(22999),true));
-        assert!(gap.allows(D::from_secs(23),true));
+        assert!(!gap.allows(D::from_millis(21999),true));assert!(!gap.later_wave());
+        assert!(gap.allows(D::from_secs(22),true));assert!(gap.later_wave(),"it waited for the earlier wave");
         assert!(gap.allows(D::from_secs(25),true));
         assert!(gap.allows(D::from_secs(26),false),"an admitted enemy must not be held again while loading or fighting");
     }
     #[test]
     fn first_wave_and_same_wave_members_have_no_extra_serial_delay() {
         use std::time::Duration as D;
-        let mut first=SpawnGap::default();assert!(first.allows(D::ZERO,true));
+        let mut first=SpawnGap::default();assert!(first.allows(D::ZERO,true));assert!(!first.later_wave(),"the first wave has no grace");
         let mut second=[SpawnGap::default(),SpawnGap::default()];
         for gap in &mut second {assert!(!gap.allows(D::ZERO,false));assert!(!gap.allows(D::from_secs(5),true));}
         for gap in &mut second {assert!(gap.allows(D::from_secs(8),true));}
     }
     #[test]
-    fn interrupted_spawn_eligibility_restarts_the_three_second_gap() {
+    fn interrupted_spawn_eligibility_restarts_the_wave_gap() {
         use std::time::Duration as D;
         let mut gap=SpawnGap::default();
         assert!(!gap.allows(D::ZERO,false));assert!(!gap.allows(D::from_secs(1),true));
-        assert!(!gap.allows(D::from_secs(3),false));assert!(!gap.allows(D::from_secs(10),true));
-        assert!(!gap.allows(D::from_millis(12999),true));assert!(gap.allows(D::from_secs(13),true));
+        assert!(!gap.allows(D::from_secs(2),false));assert!(!gap.allows(D::from_secs(10),true));
+        assert!(!gap.allows(D::from_millis(11999),true));assert!(gap.allows(D::from_secs(12),true));
     }
 
     #[test]

@@ -216,6 +216,8 @@ struct Foe {
     /// 双王共命：在这里（尸体的位置）重新生成
     respawn: Option<[f32;3]>,
     spawn_gap:erdtree_tower::encounter::SpawnGap,
+    /// 后续波次的出招保护期：从这只敌人绑定上算起（WAVE_GRACE 内禁止攻击，到点放开后记 None 并标记 graced）
+    grace:Option<Instant>,graced:bool,
 }
 type MemberSpawnGaps=((u64,u64,u8,usize),Vec<erdtree_tower::encounter::SpawnGap>);
 struct Pending {
@@ -701,6 +703,14 @@ fn apply_party_order(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan
         Order::ForceEnd=>{
             super::log("HOME_SYNC received host force end; scheduling terminal settlement");
             QUICK_END.store(true,std::sync::atomic::Ordering::Relaxed);Ok(())
+        },
+        Order::Reseed{seed,..}=>{
+            // 房主用固定种子开局：已经开了新旅程（还没出发）的队员按新种子重排路线；还在大赐福的开局时自然对齐
+            if let Some(run)=state.view.run.as_ref() {
+                let mut next=run.clone();next.align_party_start(seed)?;
+                record_checked(&next)?;state.view.run=Some(next);
+            }
+            report(state,format!("房主设定了本局种子 {seed}，路线已同步。"));Ok(())
         },
         Order::NewRun{..}=>{
             if state.view.run.is_some()||!state.hub.as_ref().is_some_and(|h|h.active) {return Err("新局同步时角色尚未返回大赐福".into());}
@@ -1817,6 +1827,13 @@ fn tick_locked() {
                     if let Some(hub)=&state.hub {super::run_log::clear(&super::run_log::path(hub.owner));}
                     // 新旅程：上一局留下的强化石作废
                     if let Some(player)=world.main_player.as_mut() {super::smith::clear(unsafe {player.player_game_data.as_mut()});}
+                }
+                // 房主用固定种子开局：先把队伍种子换成它（广播给队友），下面再照常对齐
+                let fixed=state.hub.as_mut().and_then(|h|h.take_fixed_seed());
+                if let (Some(seed),Some(link))=(fixed,state.party.as_mut()) && link.host() && let Err(error)=link.reseed(seed) {
+                    if let Some(hub)=state.hub.as_mut(){hub.reopen_for_party(world);}
+                    super::log(format!("Party reseed refused: {error}; hub reopened"));
+                    report(&mut state,format!("{error}。请等队友都回到大赐福后再用种子开局。"));return;
                 }
                 if let Some(link)=&state.party {
                     let aligned=erdtree_tower::party_game::act_seed(link.config.seed,run.act).and_then(|seed|run.align_party_start(seed));
@@ -3084,6 +3101,13 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
             if room.shop_refresh_pending {
                 let count=state.view.run.as_ref().and_then(|r|r.shop_stock.as_ref()).filter(|s|s.node==room.node).ok_or("新商店货单未准备完成")?.items.len();
                 super::native_shop::reset_arrived_stock(count)?;room.shop_refresh_pending=false;
+                // F013 诊断：联机时进店记下限购道具（露滴、钥匙等）在三份列表里各有几个，对照之后买不买得到
+                if let (Some(link),Some(player))=(state.party.as_ref(),world.main_player.as_ref()) {
+                    let data=unsafe {player.player_game_data.as_ref()};
+                    let goods:Vec<_>=state.view.run.as_ref().and_then(|r|r.shop_stock.as_ref()).map(|s|s.items.iter().enumerate()
+                        .filter(|(_,i)|i[0]==3&&i[3]==1).map(|(slot,i)|(slot,i[1],super::loot::goods_lists(data,i[1] as u32))).collect()).unwrap_or_default();
+                    super::log(format!("SHOP_STOCK party goods role={} (slot,id,[bag,key,multiplay_key])={goods:?}",if link.host(){"host"}else{"member"}));
+                }
             }
             // 诊断：售出计数每秒比一次，变了就记下（本机买东西时卢恩会同时减少；卢恩没变而计数变了，说明是别人的旗标同步过来的）
             if room.shop_counters.as_ref().is_none_or(|(at,_)|at.elapsed()>=Duration::from_secs(1)) {
@@ -3094,6 +3118,14 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
                         let runes=world.main_player.as_ref().map(|p|unsafe {p.player_game_data.as_ref()}.rune_count);
                         super::log(format!("SHOP_STOCK counters changed role={} runes={runes:?} (slot,before,after)={changed:?}",
                             state.party.as_ref().map_or("solo",|p|if p.host(){"host"}else{"member"})));
+                        // F013 诊断：联机时买露滴等重要物品，看它进了哪份列表（单机重要物品 / 联机重要物品）
+                        let stock=state.view.run.as_ref().and_then(|r|r.shop_stock.as_ref()).map(|s|s.items.clone()).unwrap_or_default();
+                        if let Some(player)=world.main_player.as_ref() {
+                            for &(slot,_,_) in &changed {
+                                let Some(&[kind,id,..])=stock.get(slot) else{continue};
+                                if kind==3 {super::log(format!("SHOP_STOCK goods slot={slot} id={id} lists={:?}",super::loot::goods_lists(unsafe {player.player_game_data.as_ref()},id as u32)));}
+                            }
+                        }
                     }
                     room.shop_counters=Some((Instant::now(),counts));
                 }
@@ -3200,9 +3232,10 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
                     transact(state, world, Action::Camp(choice), false, false)
                 };
                 if let Err(error) = &result {
-                    super::log(error);
+                    super::log(format!("Camp refill failed: {error}"));
                 }
                 if result.is_ok() {
+                    super::log(format!("Camp refill done: {choice:?} party={}",state.party.is_some()));
                     // 补瓶代替强化：用掉营地发的那块强化石，身上其他强化石保留
                     if let Err(error)=super::smith::consume_one(unsafe {world.main_player.as_mut().unwrap().player_game_data.as_mut()}) {super::log(format!("Camp refill stone: {error}"));}
                     room.complete("服务已完成，使用传送门继续".into());
@@ -3478,7 +3511,7 @@ fn tick_regional_event(state:&mut Runtime,world:&mut WorldChrMan,room:&mut super
             if roster.iter().any(|e|params.get::<NpcParam>(e.npc as u32).is_none()||params.get::<NpcThinkParam>(e.think).is_none()) {return Err("事件守卫参数缺失".into());}
             state.pending=Some(Pending {
                 entity_base:None,networked:false,
-                spirits:Default::default(),foes:roster.into_iter().map(|spec|Foe{spec,fight:Encounter::default(),requested:None,entity_address:None,respawn:None,spawn_gap:Default::default()}).collect(),
+                spirits:Default::default(),foes:roster.into_iter().map(|spec|Foe{spec,fight:Encounter::default(),requested:None,entity_address:None,respawn:None,spawn_gap:Default::default(),grace:None,graced:false}).collect(),
                 next_run:run.clone(),block:room.block,completed:false,stall:None,
             });
         }
@@ -3726,7 +3759,7 @@ fn request_spawn(state: &mut Runtime, world: &mut WorldChrMan, id: usize) -> Res
     state.pending = Some(Pending {
         entity_base:None,networked:state.party.is_some(),
         spirits:Default::default(),
-        foes: roster.into_iter().map(|spec| Foe { spec, fight: Encounter::default(), requested: None, entity_address: None, respawn: None,spawn_gap:Default::default() }).collect(),
+        foes: roster.into_iter().map(|spec| Foe { spec, fight: Encounter::default(), requested: None, entity_address: None, respawn: None,spawn_gap:Default::default(),grace:None,graced:false }).collect(),
         next_run, block: i32::from(player.current_block_id), completed: false, stall: None,
     });
     state.spawn_used = true;
@@ -3857,6 +3890,13 @@ fn poll_group(pending: &mut Pending, world: &mut WorldChrMan, dead: bool, block:
             }
         }
         spawning |= foe.fight.handle().is_none() && foe.requested.is_some();
+        // 后续波次刚出场的敌人先停 WAVE_GRACE 不出招（只禁攻击等动作，可以移动；敌人由房主或单人这边的 AI 控制）
+        if authority&&!foe.graced&&foe.spawn_gap.later_wave() && let Some(chr)=foe.fight.handle().and_then(|h|world.chr_ins_by_handle_mut(&h)) {
+            let started=*foe.grace.get_or_insert_with(Instant::now);
+            let holding=started.elapsed()<erdtree_tower::encounter::WAVE_GRACE;
+            chr.debug_flags.set_disabled_secondary_actions(holding);
+            if !holding {foe.graced=true;foe.grace=None;}
+        }
         let enemy = foe.fight.handle().and_then(|h| world.chr_ins_by_handle(&h));
         let observation = match enemy {
             Some(chr) if chr.npc_id != foe.spec.model || chr.npc_param_id != foe.spec.npc
@@ -4286,13 +4326,13 @@ mod tests {
         let mut delays=None;let key=(7,1,1,3);
         assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::ZERO,false));
         assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::from_secs(1),true));
-        assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::from_millis(3999),true));
-        assert!(super::member_gaps(&mut delays,key,2)[1].allows(D::from_secs(4),true));
+        assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::from_millis(2999),true));
+        assert!(super::member_gaps(&mut delays,key,2)[1].allows(D::from_secs(3),true));
         let next=super::member_gaps(&mut delays,(7,2,1,3),2);
         assert!(!next[1].allows(D::from_secs(5),false));
         assert!(!next[1].allows(D::from_secs(6),true));
-        assert!(!next[1].allows(D::from_millis(8999),true));
-        assert!(next[1].allows(D::from_secs(9),true));
+        assert!(!next[1].allows(D::from_millis(7999),true));
+        assert!(next[1].allows(D::from_secs(8),true));
         assert!(super::member_gaps(&mut delays,(8,2,1,3),2)[0].allows(D::from_secs(10),true));
     }
     #[test]

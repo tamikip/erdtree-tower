@@ -433,6 +433,22 @@ mod tests {
         }
     }
     #[test]
+    fn fixed_seed_runs_draw_the_same_rewards() {
+        // 大厅里输入固定种子开局时，奖励随机数也用这个种子（native/src/hub.rs）
+        for seed in 1..20 {
+            let (mut a,mut b)=(Run::new_personal(seed,Class::Samurai,seed),Run::new_personal(seed,Class::Samurai,seed));
+            for step in 0..3 {
+                assert_eq!(a.available(),b.available());
+                for node in 0..a.nodes.len() {assert_eq!(offers(&a,node),offers(&b,node),"seed {seed} step {step} node {node}");}
+                let id=a.available()[0];
+                if a.nodes[id].kind!=crate::NodeKind::Monster {break;}
+                for r in [&mut a,&mut b] {r.enter(id).unwrap();r.win_combat().unwrap();}
+                assert_eq!(a.phase,b.phase);
+                for r in [&mut a,&mut b] {r.claim_reward(0).unwrap();}
+            }
+        }
+    }
+    #[test]
     fn personal_draws_share_routes_but_not_reward_rng() {
         for seed in 1..40 {
             let mut a=Run::new_personal(seed,Class::Samurai,101);

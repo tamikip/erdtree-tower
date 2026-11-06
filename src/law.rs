@@ -39,7 +39,11 @@ pub const NODES:[Node;34]=[
     // 32 起超出原来的 32 位：律法以 64 位记录，前 32 个节点的律法码不变
     n("精英成双 I",0,Some(2),10,"精英战里第一只精英生命降到一半时，第二只上场（平时第一只倒下后才出来）",17,4,0),
     n("精英成双 II",0,Some(32),20,"精英战里的两只精英同时上场",17,5,0),
-];pub const GRADES:[(u32,&str);4]=[(70,"老练"),(140,"艰难"),(210,"噩梦"),(280,"危机")];
+];
+/// 停用的节点：位置与编号保留（存档、旅程档案与律法码里的位不变），界面不再显示，新开局选不上；
+/// 已经带着它开局的旅程照旧生效。14 孤狼（2026-11-06 移除）
+pub const RETIRED:[usize;1]=[14];
+pub const GRADES:[(u32,&str);4]=[(70,"老练"),(140,"艰难"),(210,"噩梦"),(280,"危机")];
 
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq,serde::Serialize,serde::Deserialize)]
 #[serde(transparent)]
@@ -81,10 +85,15 @@ impl Law {
     pub fn envy_world(self)->bool {self.has(26)}
     pub fn has(self,id:usize)->bool {id<NODES.len()&&self.0&(1u64<<id)!=0}
     pub fn available(self,id:usize)->bool {id<NODES.len()&&NODES[id].parent.is_none_or(|p|self.has(p))}
+    /// 律法界面与调试菜单列出的节点（不含停用的）
+    pub fn listed(id:usize)->bool {id<NODES.len()&&!RETIRED.contains(&id)}
+    /// 去掉停用的节点（开局时、读律法码时用）
+    pub fn current(self)->Self {Law(RETIRED.iter().fold(self.0,|mask,&id|mask&!(1u64<<id)))}
     pub fn valid(self)->bool {u64::from(self.0)>>NODES.len()==0&&(0..NODES.len()).all(|id|!self.has(id)||self.available(id))}
     /// 选择时连同这条路线上还没选的前置节点一起选上；取消会连带取消其后的节点
     pub fn toggle(self,id:usize)->Self {
         if id>=NODES.len() {return self;}
+        if !self.has(id)&&!Self::listed(id) {return self;}
         if self.has(id) {
             let mut next=self.0&!(1u64<<id);
             loop {let before=next;for (i,node) in NODES.iter().enumerate(){if node.parent.is_some_and(|p|next&(1u64<<p)==0){next&=!(1u64<<i);}}if next==before{break;}}
@@ -121,7 +130,7 @@ impl Law {
         if code.is_empty()||code.len()>8 {return None;}
         let value=code.chars().try_fold(0u64,|v,c|DIGITS.find(c).map(|d|v<<5|d as u64))?;
         let law=Law(value>>5);
-        (value&31==checksum(law.0)&&law.valid()).then_some(law)
+        (value&31==checksum(law.0)&&law.valid()).then_some(law.current())
     }
 }
 /// 校验：前 32 位的算法不变（旧律法码照常通过）；用到更高的位时接着折算
@@ -155,7 +164,7 @@ mod tests {
         assert!(paired.elite_pacing()==crate::encounter::Pacing::Together&&paired.has(32));
         assert_eq!(Law::default().elite_pacing(),crate::encounter::Pacing::Apart);
         assert_eq!(Law::parse(&paired.code()),Some(paired));assert_eq!(Law::parse(&half.code()),Some(half));
-        let all=Law((1u64<<NODES.len())-1);assert!(all.valid());assert_eq!(Law::parse(&all.code()),Some(all));
+        let all=Law((1u64<<NODES.len())-1);assert!(all.valid());assert_eq!(Law::parse(&all.code()),Some(all.current()));
         assert!(!Law(1u64<<NODES.len()).valid());
     }
     #[test]
@@ -185,9 +194,20 @@ mod tests {
         let law=Law::default().toggle(0).toggle(1).toggle(2);assert_eq!(law.score(),60);
         assert_eq!(law.toggle(1),Law::default().toggle(0),"removing a node removes its successors");
         let all=(0..NODES.len()).fold(Law::default(),|l,id|l.toggle(id));
-        assert_eq!(all.score(),510);assert_eq!(all.grade(),Some("危机"));assert!(all.valid());
+        assert_eq!(all.score(),480,"everything except the retired lone wolf");assert_eq!(all.grade(),Some("危机"));assert!(all.valid());
         assert_eq!(Law::default().grade(),None);assert_eq!(Law::default().toggle(24).toggle(25).toggle(26).toggle(0).grade(),Some("老练"));
         assert!(!Law(1<<1).valid());
+    }
+    #[test]
+    fn retired_nodes_stay_readable_but_cannot_be_chosen() {
+        let lone=Law(Law::default().toggle(13).0|1<<14);
+        assert!(lone.valid()&&lone.lone_wolf(),"old runs and records still read it");
+        assert_eq!(Law::default().toggle(14),Law::default());assert_eq!(Law::default().toggle(13).toggle(14),Law::default().toggle(13));
+        assert_eq!(lone.toggle(14),Law::default().toggle(13),"it can still be removed");
+        assert_eq!(Law::parse(&lone.code()),Some(Law::default().toggle(13)),"shared codes drop it");
+        assert_eq!(lone.current(),Law::default().toggle(13));
+        assert!(RETIRED.iter().all(|&id|!Law::listed(id))&&(0..NODES.len()).filter(|&id|Law::listed(id)).count()==NODES.len()-RETIRED.len());
+        let mut run=crate::Run::new(3,crate::Class::Samurai);run.set_law(lone).unwrap();assert!(!run.law.lone_wolf(),"new runs drop it");
     }
     #[test]
     fn effects_follow_each_route() {
@@ -199,7 +219,8 @@ mod tests {
         assert_eq!((law(&[19,20,21]).price_percent(),law(&[19,20,21,22]).price_percent()),(115,130));
         assert_eq!((law(&[24]).time_limit(),law(&[24,25]).time_limit(),law(&[]).time_limit()),(Some(180),Some(120),None));
         let all=law(&(0..NODES.len()).collect::<Vec<_>>());
-        assert!(all.lone_wolf()&&all.stingy()&&all.envy_world()&&all.elite_affixes()&&all.empowered_affixes());
+        assert!(!all.lone_wolf()&&Law(1<<14).lone_wolf(),"retired: cannot be chosen, old runs keep it");
+        assert!(all.stingy()&&all.envy_world()&&all.elite_affixes()&&all.empowered_affixes());
         assert!(!law(&[3,4]).empowered_affixes()&&law(&[3,4,5,31]).empowered_affixes());
         assert_eq!((all.fragile(),all.fatigue(),all.focus(),all.toughness()),(3,2,2,2));
     }
@@ -225,7 +246,7 @@ mod tests {
         let mut started=plain.clone();let id=started.available()[0];started.enter(id).unwrap();assert!(started.set_law(law(&[0])).is_err());
         let mut lone=0;
         for seed in 0..300 {
-            let mut free=Run::new(seed,Class::Astrologer);let mut bound=free.clone();bound.set_law(law(&[11,12,13,14,19,20,21,22,23])).unwrap();
+            let mut free=Run::new(seed,Class::Astrologer);let mut bound=free.clone();bound.set_law(law(&[11,12,13,19,20,21,22,23])).unwrap();bound.law=Law(bound.law.0|1<<14);
             let id=free.available()[0];assert_eq!(free.nodes[id].kind,NodeKind::Monster);
             for r in [&mut free,&mut bound] {r.enter(id).unwrap();r.win_combat().unwrap();}
             let (Phase::Reward{offers:a,..},Phase::Reward{offers:b,..})=(&free.phase,&bound.phase) else{panic!()};

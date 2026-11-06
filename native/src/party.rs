@@ -179,6 +179,15 @@ impl Link {
         self.steam.as_ref().map_or_else(Vec::new,|s|s.latency.rows(&s.roster))
     }
     pub fn host(&self)->bool {self.config.player==self.config.host}
+    /// 房主在大赐福用固定种子开局：先把队伍种子换成它并广播（队友的新旅程按它重排路线），房主自己的旅程随后照常对齐到队伍种子
+    pub fn reseed(&mut self,seed:u64)->Result<(),String> {
+        if !self.host() {return Err("只有房主可以设定种子".into());}
+        if seed==self.config.seed {return Ok(());}
+        let order=self.gate.reseed(seed)?;
+        self.send(Send::Broadcast(order))?;
+        self.config.seed=seed;self.ballots.clear();self.selected=None;
+        super::log(format!("Party reseeded by host: epoch={} seed={seed}",self.epoch));Ok(())
+    }
     pub fn chariot_pose(&mut self,pose:[f32;3])->Result<(),String> {
         if !self.host()||self.event.storm_decision!=Some(erdtree_tower::stormveil::Decision::Engage){return Ok(());}
         if self.event.chariot_pose.is_some_and(|(_,_,at)|at.elapsed()<Duration::from_millis(100)){return Ok(());}
@@ -310,6 +319,12 @@ impl Link {
                 if self.event.storm_decision==Some(*decision){return Ok(false);}
                 if !matches!((self.event.storm_decision,*decision),(None,Decision::Challenge|Decision::Skip)|(Some(Decision::Challenge),Decision::Engage|Decision::Complete)|(Some(Decision::Engage),Decision::Complete)) {return Err("跑城事件同步次序无效".into());}
                 self.event.storm_decision=Some(*decision);
+            },
+            Order::Reseed{epoch,seed}=>{
+                if *seed==self.config.seed{return Ok(false);}
+                if *epoch!=self.epoch||*seed==0{return Err("种子同步指令无效或过期".into());}
+                self.config.seed=*seed;self.ballots.clear();self.selected=None;
+                super::log(format!("Party reseed committed: epoch={epoch} seed={seed}"));
             },
             Order::NewRun{epoch,seed}=>{
                 if *epoch==self.epoch&&*seed==self.config.seed{return Ok(false);}

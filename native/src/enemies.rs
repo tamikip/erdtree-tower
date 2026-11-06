@@ -95,7 +95,7 @@ fn roster_in(kind: NodeKind, seed: u64, ordinal: usize, layer: usize,act:u8,part
         _ => (2, 2),
     };
     (0..strong).map(|i| if kind==NodeKind::Elite&&act==1 {
-        let models=[3010,3800,4351,4352,4353,4354,4355,4290,3020,4340,2270,4490];
+        let models=[3010,3800,4351,4352,4353,4354,4355,4290,4340,2270,4490];
         select(POOLS.iter().copied().filter(|e|e.act==1&&e.kind==NodeKind::Elite&&(models.contains(&e.model)||e.dlc))
             .chain(BOSSES.iter().filter(|(_,e)|e.act==1&&elite_only(e)).map(|(_,e)|Enemy{npc:e.npc+1,kind:NodeKind::Elite,bar:0,..*e})).collect(),seed,ordinal*strong+i,party)
     } else if kind==NodeKind::Monster {
@@ -235,8 +235,8 @@ fn boss_roster(kind:NodeKind,seed:u64,ordinal:usize,act:u8,party:bool)->Vec<Enem
 }
 /// Windows party-boss-model-sync 已验证模型与 AI；当前无待同步的联机 Boss。
 const PARTY_UNSYNCED:[&str;0]=[];
-/// 第三幕双王共命的组合（Boss 名）：卡利亚双骑
-pub const DUAL_PAIRS:[[&str;2];1]=[["“圣树骑士”罗蕾塔","“双月骑士”蕾拉娜"]];
+/// 第三幕双王共命的组合（Boss 名）。原来唯一的一组卡利亚双骑（“圣树骑士”罗蕾塔 + “双月骑士”蕾拉娜）随罗蕾塔移出第三幕一起停用，蕾拉娜改为单独出场；机制（dual_bosses.rs）保留
+pub const DUAL_PAIRS:[[&str;2];0]=[];
 /// 这一幕的 Boss 战可能是双王
 pub fn dual(kind:NodeKind,act:u8)->bool {kind==NodeKind::Boss&&act==3}
 /// 能当 Boss 的组合只当 Boss：同一幕的精英战不再抽到它们的精英版
@@ -253,6 +253,8 @@ fn encounter_allowed(kind:NodeKind,id:usize)->bool {
         &&!BOSSES.iter().any(|(group,e)|*group==id&&matches!(e.model,4570|4580|4050|4602|4480))
         &&!BOSSES.iter().any(|(group,e)|*group==id&&kind==NodeKind::Elite&&e.act==3&&e.model==4911)
         &&!BOSSES.iter().any(|(group,e)|*group==id&&kind==NodeKind::Boss&&e.act==1&&e.name=="死亡仪式鸟")
+        // 第三幕不再出现“圣树骑士”罗蕾塔与混种圣骑士（Boss 与精英版都不抽）
+        &&!BOSSES.iter().any(|(group,e)|*group==id&&e.act==3&&matches!(e.name,"“圣树骑士”罗蕾塔"|"混种圣骑士"))
         &&(kind!=NodeKind::Boss||BOSSES.iter().filter(|(group,_)|*group==id).count()==1)
 }
 /// 调试菜单：所有还会抽到的怪物池敌人
@@ -512,8 +514,8 @@ mod tests {
                 let mut gap=SpawnGap::default();
                 assert!(!gap.allows(D::ZERO,eligible(pacing,&alive)));
                 assert!(!gap.allows(D::from_secs(10),eligible(pacing,&dead)));
-                assert!(!gap.allows(D::from_millis(12999),eligible(pacing,&dead)));
-                assert!(gap.allows(D::from_secs(13),eligible(pacing,&dead)));
+                assert!(!gap.allows(D::from_millis(11999),eligible(pacing,&dead)));
+                assert!(gap.allows(D::from_secs(12),eligible(pacing,&dead)));
                 let half=Law::default().toggle(32).elite_pacing();
                 assert!(!eligible(half,&alive));
                 assert!(eligible(half,&[(Outcome::Waiting,Some((50,100)))]));
@@ -639,7 +641,7 @@ mod tests {
     }
     #[test]
     fn first_act_elites_use_curated_combatants_and_tree_sentinel() {
-        let allowed=[3010,3800,4351,4352,4353,4354,4355,4290,3020,4340,2270,4490,5040,5192,3251];
+        let allowed=[3010,3800,4351,4352,4353,4354,4355,4290,4340,2270,4490,5040,5192,3251];
         let mut seen=std::collections::HashSet::new();
         for seed in 0..100 {for ordinal in 0..24 {for layer in 0..12 {
             let group=roster_in(NodeKind::Elite,seed,ordinal,layer,1,false);
@@ -652,6 +654,22 @@ mod tests {
             assert_eq!(group,roster_in(NodeKind::Elite,seed,ordinal,layer,1,false));
         }}}
         assert_eq!(seen,allowed.into_iter().collect());
+    }
+    #[test]
+    fn act_three_has_no_loretta_or_misbegotten_crusader() {
+        let mut lerana=false;
+        for party in [false,true] {for kind in [NodeKind::Monster,NodeKind::Elite,NodeKind::Boss] {for seed in 0..300 {for ordinal in 0..24 {
+            let group=roster_in(kind,seed,ordinal,11,3,party);
+            assert!(group.iter().all(|e|!matches!(e.name,"“圣树骑士”罗蕾塔"|"混种圣骑士")),"{group:?}");
+            if party&&kind==NodeKind::Boss&&group.iter().any(|e|e.name=="“双月骑士”蕾拉娜") {assert_eq!(group.len(),1);map_entities(&group).unwrap();lerana=true;}
+        }}}}
+        assert!(lerana,"Lerana stays as a single party boss");
+    }
+    #[test]
+    fn large_exile_soldiers_never_appear() {
+        for party in [false,true] {for kind in [NodeKind::Monster,NodeKind::Elite] {for seed in 0..300 {for ordinal in 0..24 {
+            assert!(roster_in(kind,seed,ordinal,seed as usize%12,1,party).iter().all(|e|e.model!=3020));
+        }}}}
     }
     #[test]
     fn first_act_ordinary_pool_excludes_passive_and_fodder_types() {

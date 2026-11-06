@@ -130,30 +130,30 @@
 960229	7003290	9306	1	lingering magic	稀有·延续魔力护符	法术持续时间提高 8%。
 960230	7003300	9429	2	lingering magic	史诗·延续魔力护符	法术持续时间提高 11%。
 960231	7003310	9403	3	lingering magic	传说·延续魔力护符	法术持续时间提高 15%。
-960232	7003320	9035	0	earth dragon scales	普通·岩龙鳞护符	物理承伤降低 2%。
-960233	7003330	9980	1	earth dragon scales	稀有·岩龙鳞护符	物理承伤降低 3%。
-960234	7003340	9187	2	earth dragon scales	史诗·岩龙鳞护符	物理承伤降低 6%。
-960235	7003350	10832	3	earth dragon scales	传说·岩龙鳞护符	物理承伤降低 8%。
-960236	7003360	9552	0	glintstone dragon scales	普通·辉石龙鳞护符	魔力承伤降低 2%。
-960237	7003370	9277	1	glintstone dragon scales	稀有·辉石龙鳞护符	魔力承伤降低 4%。
-960238	7003380	9124	2	glintstone dragon scales	史诗·辉石龙鳞护符	魔力承伤降低 7%。
-960239	7003390	9213	3	glintstone dragon scales	传说·辉石龙鳞护符	魔力承伤降低 10%。
-960240	7003400	9407	0	fire dragon scales	普通·火龙鳞护符	火属性承伤降低 2%。
-960241	7003410	9011	1	fire dragon scales	稀有·火龙鳞护符	火属性承伤降低 4%。
-960242	7003420	9231	2	fire dragon scales	史诗·火龙鳞护符	火属性承伤降低 8%。
-960243	7003430	9514	3	fire dragon scales	传说·火龙鳞护符	火属性承伤降低 12%。
-960244	7003440	9245	0	thunder dragon scales	普通·雷龙鳞护符	雷属性承伤降低 2%。
-960245	7003450	9006	1	thunder dragon scales	稀有·雷龙鳞护符	雷属性承伤降低 4%。
-960246	7003460	9098	2	thunder dragon scales	史诗·雷龙鳞护符	雷属性承伤降低 8%。
-960247	7003470	9342	3	thunder dragon scales	传说·雷龙鳞护符	雷属性承伤降低 12%。
-960248	7003480	9390	0	golden dragon scales	普通·金龙鳞护符	圣属性承伤降低 2%。
-960249	7003490	9058	1	golden dragon scales	稀有·金龙鳞护符	圣属性承伤降低 4%。
-960250	7003500	9682	2	golden dragon scales	史诗·金龙鳞护符	圣属性承伤降低 8%。
-960251	7003510	9756	3	golden dragon scales	传说·金龙鳞护符	圣属性承伤降低 12%。
-960252	7003520	9775	0	long forgotten dragon scales	普通·古龙鳞护符	所有元素承伤降低 2%。
-960253	7003530	9145	1	long forgotten dragon scales	稀有·古龙鳞护符	所有元素承伤降低 4%。
-960254	7003540	9083	2	long forgotten dragon scales	史诗·古龙鳞护符	所有元素承伤降低 8%。
-960255	7003550	9385	3	long forgotten dragon scales	传说·古龙鳞护符	所有元素承伤降低 12%。
+960232	7003320	9035	0	earth dragon scales	普通·岩龙鳞护符	受到的物理伤害降低 2%。
+960233	7003330	9980	1	earth dragon scales	稀有·岩龙鳞护符	受到的物理伤害降低 3%。
+960234	7003340	9187	2	earth dragon scales	史诗·岩龙鳞护符	受到的物理伤害降低 6%。
+960235	7003350	10832	3	earth dragon scales	传说·岩龙鳞护符	受到的物理伤害降低 8%。
+960236	7003360	9552	0	glintstone dragon scales	普通·辉石龙鳞护符	受到的魔力伤害降低 2%。
+960237	7003370	9277	1	glintstone dragon scales	稀有·辉石龙鳞护符	受到的魔力伤害降低 4%。
+960238	7003380	9124	2	glintstone dragon scales	史诗·辉石龙鳞护符	受到的魔力伤害降低 7%。
+960239	7003390	9213	3	glintstone dragon scales	传说·辉石龙鳞护符	受到的魔力伤害降低 10%。
+960240	7003400	9407	0	fire dragon scales	普通·火龙鳞护符	受到的火焰伤害降低 2%。
+960241	7003410	9011	1	fire dragon scales	稀有·火龙鳞护符	受到的火焰伤害降低 4%。
+960242	7003420	9231	2	fire dragon scales	史诗·火龙鳞护符	受到的火焰伤害降低 8%。
+960243	7003430	9514	3	fire dragon scales	传说·火龙鳞护符	受到的火焰伤害降低 12%。
+960244	7003440	9245	0	thunder dragon scales	普通·雷龙鳞护符	受到的雷电伤害降低 2%。
+960245	7003450	9006	1	thunder dragon scales	稀有·雷龙鳞护符	受到的雷电伤害降低 4%。
+960246	7003460	9098	2	thunder dragon scales	史诗·雷龙鳞护符	受到的雷电伤害降低 8%。
+960247	7003470	9342	3	thunder dragon scales	传说·雷龙鳞护符	受到的雷电伤害降低 12%。
+960248	7003480	9390	0	golden dragon scales	普通·金龙鳞护符	受到的神圣伤害降低 2%。
+960249	7003490	9058	1	golden dragon scales	稀有·金龙鳞护符	受到的神圣伤害降低 4%。
+960250	7003500	9682	2	golden dragon scales	史诗·金龙鳞护符	受到的神圣伤害降低 8%。
+960251	7003510	9756	3	golden dragon scales	传说·金龙鳞护符	受到的神圣伤害降低 12%。
+960252	7003520	9775	0	long forgotten dragon scales	普通·古龙鳞护符	受到的魔力、火焰、雷电与神圣伤害降低 2%。
+960253	7003530	9145	1	long forgotten dragon scales	稀有·古龙鳞护符	受到的魔力、火焰、雷电与神圣伤害降低 4%。
+960254	7003540	9083	2	long forgotten dragon scales	史诗·古龙鳞护符	受到的魔力、火焰、雷电与神圣伤害降低 8%。
+960255	7003550	9385	3	long forgotten dragon scales	传说·古龙鳞护符	受到的魔力、火焰、雷电与神圣伤害降低 12%。
 960256	7003560	9417	0	deadly dance	普通·轻装死舞护符	装备越轻，伤害提升越高；原包说明上限约为 3 倍的 2%。
 960257	7003570	9096	1	deadly dance	稀有·轻装死舞护符	装备越轻，伤害提升越高；原包说明上限约为 3 倍的 4%。
 960258	7003580	9244	2	deadly dance	史诗·轻装死舞护符	装备越轻，伤害提升越高；原包说明上限约为 3 倍的 6%。

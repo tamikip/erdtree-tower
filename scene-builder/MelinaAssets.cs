@@ -51,7 +51,7 @@ static class MelinaAssets {
         }
         const string msg="msg/zhocn/menu_dlc02.msgbnd.dcx";
         var menu=BND4.Read(Path.Combine(input,msg));var file=menu.Files.Single(f=>f.ID==33);var fmg=FMG.Read(file.Bytes);
-        var texts=new Dictionary<int,string>{{9500100,"圣杯瓶状态"},{9500101,"雾门内的敌人"},{9500102,"当前没有待挑战的敌人"},{9500104,"通过种子开始游戏"},{9500105,"请先退出联机队伍，设置种子并开始旅程后，再邀请队友。"}};
+        var texts=new Dictionary<int,string>{{9500100,"圣杯瓶状态"},{9500101,"雾门内的敌人"},{9500102,"当前没有待挑战的敌人"},{9500104,"通过种子开始游戏"},{9500105,"只有房主可以用种子开局，房主设定的种子会同步给全队。"}};
         for(int n=0;n<=255;n++){texts[9501000+n]=$"红圣杯瓶上限：{n}";texts[9501300+n]=$"蓝圣杯瓶上限：{n}";}
         var names=PreviewNames("outputs/erdtree-tower/scene-assets");
         foreach(var (id,text) in PreviewTexts(names))texts[id]=text;

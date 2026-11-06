@@ -360,7 +360,12 @@ impl NativeTalk {
                     self.event(22, &[super::native_shop::GOODS as i32, (super::native_shop::GOODS+super::native_shop::MAX_STOCK-1) as i32])?;
                     self.state = 3;
                 } else if self.service == 0 {
-                    if !self.camp.request(choice) {return self.dialog(9500011);}
+                    // 日志：联机有人反馈小红帽被一人用过之后别人补不了瓶，记下每次请求与被拒的原因
+                    if !self.camp.request(choice) {
+                        super::log(format!("Camp refill refused: choice={choice} used={} pending={:?}",self.camp.used,self.camp.pending));
+                        return self.dialog(9500011);
+                    }
+                    super::log(format!("Camp refill requested: choice={choice}"));
                     self.state = 2;
                 }
             }

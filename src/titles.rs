@@ -29,7 +29,7 @@ pub const TITLES:[Title;7]=[
     Title{id:4,text:"长夜之王",style:Style::Blood,unlock:"苦难律法 210 分以上登顶"},
     Title{id:5,text:"危机之王",style:Style::Star,unlock:"苦难律法 280 分以上登顶"},
     Title{id:6,text:"百战之身",style:Style::Frost,unlock:"完成 20 局旅程"},
-    Title{id:7,text:"孤狼",style:Style::Moon,unlock:"立下「孤狼」登顶"},
+    Title{id:7,text:"孤狼",style:Style::Moon,unlock:"立下「孤狼」登顶（该律法已停用，之前解锁的保留）"},
 ];
 /// 称号与名字之间的分隔符（原版 Boss 名里也用它，原版字体有）
 pub const SEPARATOR:char='·';
@@ -97,7 +97,8 @@ mod tests {
         let lost=Record::new(&run,vec![],vec![],0);
         assert!(unlocked(1,&[])&&!unlocked(2,&[lost.clone()])&&unlocked(2,&[won.clone()]));
         assert!(!unlocked(3,&[won.clone()]));
-        let mut hard=won.clone();hard.law=(0..crate::law::NODES.len()).fold(Default::default(),|l:crate::law::Law,id|l.toggle(id));
+        // 孤狼已停用，选不上；之前带着它登顶的档案照样解锁称号
+        let mut hard=won.clone();hard.law=crate::law::Law((0..crate::law::NODES.len()).fold(crate::law::Law::default(),|l,id|l.toggle(id)).0|1<<14);
         assert!(unlocked(3,std::slice::from_ref(&hard))&&unlocked(5,std::slice::from_ref(&hard))&&unlocked(7,std::slice::from_ref(&hard)));
         let mut debug=hard.clone();debug.debug=true;assert!(!unlocked(5,&[debug]),"debug runs do not count");
         assert!(!unlocked(6,&vec![lost.clone();19])&&unlocked(6,&vec![lost;20]));

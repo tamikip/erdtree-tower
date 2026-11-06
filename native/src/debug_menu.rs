@@ -300,7 +300,7 @@ impl Menu {
         ui.same_line();if ui.small_button("清空律法") {send(Command::Law(Law::default()));}
         // 与律法界面相同：一条路线一行，从左到右依次解锁
         let mut row=None;
-        for (id,node) in NODES.iter().enumerate() {
+        for (id,node) in NODES.iter().enumerate().filter(|&(id,_)|Law::listed(id)) {
             if row==Some(node.row) {ui.same_line_with_pos(10.0+f32::from(node.col-1)*150.0);} else {row=Some(node.row);}
             let mut has=run.law.has(id);
             let _disabled=ui.begin_disabled(!run.law.available(id));

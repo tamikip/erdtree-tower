@@ -86,6 +86,8 @@ pub enum Order {
     Trial{epoch:u64,choice:crate::regional_events::Trial},
     Stormveil{epoch:u64,decision:crate::stormveil::Decision},
     NewRun{epoch:u64,seed:u64},
+    /// 房主在大赐福用固定种子开局：换成这个队伍种子（同一轮次，不重置队伍）；还没出发的新旅程按它重排路线
+    Reseed{epoch:u64,seed:u64},
     Votes{epoch:u64,ballots:Vec<crate::party_vote::Ballot>},
     Enter{epoch:u64,act:u8,visited:Vec<usize>,node:usize,has_stonesword_key:bool},
     EventStart(crate::party_events::Job),
@@ -181,6 +183,14 @@ impl Gate {
         self.epoch=self.epoch.checked_add(1).ok_or("队伍序号耗尽")?;
         self.stage=Stage::Map;self.events=None;self.stormveil=None;self.trial=None;for p in &mut self.peers {p.1=None;}
         Ok(Some(Order::NewRun{epoch:self.epoch,seed}))
+    }
+    /// 房主用固定种子开局：只在地图阶段、每个人都还在大赐福或刚开的新旅程（第一幕、没走过任何节点）时可以换种子
+    pub fn reseed(&self,seed:u64)->RuleResult<Order> {
+        if seed==0 {return Err("种子无效".into());}
+        if self.stage!=Stage::Map {return Err("队伍正在进行中，不能更换种子".into());}
+        let fresh=|r:&Report|!r.present||r.epoch!=self.epoch||r.at_hub||(r.act==1&&r.visited.is_empty());
+        if !self.peers.iter().all(|(_,r)|r.as_ref().is_none_or(fresh)) {return Err("有队友已经出发，不能更换种子".into());}
+        Ok(Order::Reseed{epoch:self.epoch,seed})
     }
     pub fn begin_events(&mut self)->RuleResult<()> {
         if self.stage!=Stage::Service||self.events.is_some(){return Err("事件房尚未进入或已经初始化".into());}
@@ -640,6 +650,20 @@ mod tests {
         for id in [1,2] {report.event_applied=Some(second.wave);gate.report(id,report.clone()).unwrap();}
         assert!(gate.event_start().unwrap().is_none());
         assert!(gate.resolve_votes(&run,0).unwrap().is_some());
+    }
+    #[test]
+    fn host_can_reseed_only_before_anyone_sets_out() {
+        let run=Run::new(42,crate::Class::Samurai);let mut gate=Gate::new(vec![1,2]);
+        assert!(matches!(gate.reseed(77),Ok(Order::Reseed{epoch:0,seed:77})),"nobody has reported yet");
+        gate.report(1,Report::at_hub(0)).unwrap();gate.report(2,Report::new(&run,0,false,false,true)).unwrap();
+        assert!(gate.reseed(77).is_ok(),"one at the hub, one on a fresh route");
+        assert!(gate.reseed(0).is_err());
+        let mut moved=run.clone();let id=moved.available()[0];moved.finish(id);
+        gate.report(2,Report::new(&moved,0,false,false,true)).unwrap();
+        assert!(gate.reseed(77).is_err(),"a teammate has already set out");
+        gate.report(2,Report::new(&run,0,false,false,true)).unwrap();gate.stage=Stage::Travel;
+        assert!(gate.reseed(77).is_err(),"not while travelling");
+        let mut aligned=run.clone();aligned.align_party_start(77).unwrap();assert_eq!((aligned.seed,aligned.nodes.clone()),(77,Run::new(77,crate::Class::Samurai).nodes));
     }
     #[test]
     fn services_never_spawn_enemies_and_wait_for_both_personal_exits() {

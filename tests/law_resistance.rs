@@ -12,7 +12,7 @@ fn resistance_paths_are_independent_and_preserve_old_codes() {
     assert_eq!(Law::default().toggle(30),status,"choosing II also chooses I");
     for mask in [0,(1<<27)-1,elements.0,status.0,(1<<31)-1,u64::from(u32::MAX),(1u64<<34)-1] {
         let law=Law(mask);assert!(law.valid());
-        assert_eq!(Law::parse(&law.code()),Some(law));
+        assert_eq!(Law::parse(&law.code()),Some(law.current()),"old codes stay readable; the retired lone wolf is dropped");
     }
     assert_eq!(Law((1<<27)-1).code().len(),7);
     assert_eq!(status.code().len(),8);
