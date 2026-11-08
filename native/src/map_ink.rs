@@ -3,7 +3,9 @@ use hudhook::imgui::{ImColor32,MouseButton,Ui};
 #[derive(Clone,Copy,Default,PartialEq,Eq)]
 pub enum Mode {#[default] Select,Draw,Erase}
 #[derive(Default)]
-struct Ink {scope:Option<Scope>,mode:Mode,draft:Vec<Point>,erased:Vec<StrokeId>,active:bool,last_time:f64}
+struct Ink {scope:Option<Scope>,mode:Mode,draft:Vec<Point>,erased:Vec<StrokeId>,active:bool,last_time:f64,
+    /// 上一次画路线图时已走过的节点数：换到新的一层就回到「选路」
+    layer:Option<usize>}
 thread_local! {static INK:std::cell::RefCell<Ink>=std::cell::RefCell::new(Ink::default());}
 /// 地图工具：选路 / 划线 / 擦除三个并排的主题按钮（当前模式金底），下面一行当前模式的说明。
 /// pos 为屏幕坐标，size 为整排按钮的宽高
@@ -16,7 +18,10 @@ pub fn toolbar(ui:&Ui,scope:Scope,pos:[f32;2],size:[f32;2],scale:f32,ready:bool)
             let min=[pos[0]+i as f32*(w+gap),pos[1]];let max=[min[0]+w,pos[1]+size[1]];
             let tone=if !ready {crate::archive_style::Tone::Disabled}else if ink.mode==mode {crate::archive_style::Tone::Primary}else{crate::archive_style::Tone::Normal};
             ui.set_window_font_scale(0.9*scale);
-            if crate::archive_style::button(ui,&format!("map-tool-{i}"),label,min,max,tone,0.9*scale) {ink.mode=mode;ink.active=false;ink.draft.clear();ink.erased.clear();}
+            if crate::archive_style::button(ui,&format!("map-tool-{i}"),label,min,max,tone,0.9*scale) {
+                if ink.mode!=mode {crate::log(format!("MAP_INK mode={label}"));}
+                ink.mode=mode;ink.active=false;ink.draft.clear();ink.erased.clear();
+            }
         }
         let hint=match ink.mode {Mode::Select=>"拖动地图或滚轮翻页",Mode::Draw=>"按住左键划线，松开同步",Mode::Erase=>"按住左键擦除整条笔迹"};
         ui.set_window_font_scale(14.0/20.0*scale);let tw=ui.calc_text_size(hint)[0];
@@ -25,6 +30,16 @@ pub fn toolbar(ui:&Ui,scope:Scope,pos:[f32;2],size:[f32;2],scale:f32,ready:bool)
     });
 }
 pub fn selecting()->bool {INK.with(|ink|ink.borrow().mode==Mode::Select)}
+/// 每到新的一层（已走过的节点数变了）地图工具回到「选路」：划线 / 擦除模式下节点不能点，
+/// 玩家（尤其用手柄误按到工具栏）可能以为是选不了路
+pub fn new_layer(visited:usize) {
+    INK.with(|ink|{
+        let mut ink=ink.borrow_mut();
+        if ink.layer==Some(visited) {return;}
+        ink.layer=Some(visited);
+        if ink.mode!=Mode::Select {crate::log("MAP_INK new layer: back to route selection");ink.mode=Mode::Select;ink.active=false;ink.draft.clear();ink.erased.clear();}
+    });
+}
 fn screen(p:Point,origin:[f32;2],size:[f32;2])->[f32;2] {
     [origin[0]+f32::from(p.x)*size[0]/10000.0,origin[1]+f32::from(p.y)*size[1]/10000.0]
 }

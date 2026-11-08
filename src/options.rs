@@ -8,6 +8,7 @@
 //!   key.build=C          构筑面板（地图界面）
 //!   key.debug=Delete     调试菜单；None 表示未绑定
 //!   sfx=70               界面音效音量（0–100，0 为关闭）
+//!   prompts=keyboard     界面按键提示：keyboard 键鼠；pad 手柄。固定显示所选的一种，不随最近用的设备切换
 
 pub const FILE: &str = "tower-options.ini";
 
@@ -57,6 +58,26 @@ pub const KEYS: &[&str] = &[
     "Num0", "Num1", "Num2", "Num3", "Num4", "Num5", "Num6", "Num7", "Num8", "Num9",
 ];
 
+/// 界面按键提示画成键鼠键帽还是手柄按键（启动器设置页选择）
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Prompts {
+    #[default]
+    Keyboard,
+    Pad,
+}
+
+impl Prompts {
+    pub fn id(self) -> &'static str {
+        match self {
+            Prompts::Keyboard => "keyboard",
+            Prompts::Pad => "pad",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        [Prompts::Keyboard, Prompts::Pad].into_iter().find(|p| p.id().eq_ignore_ascii_case(value.trim()))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
     pub debug: bool,
@@ -64,11 +85,12 @@ pub struct Options {
     keys: [&'static str; 6],
     /// 界面音效音量（0–100）
     pub sfx: u8,
+    pub prompts: Prompts,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { debug: false, dlc: crate::dlc::Mode::Full, keys: Hotkey::ALL.map(Hotkey::default_key), sfx: 70 }
+        Options { debug: false, dlc: crate::dlc::Mode::Full, keys: Hotkey::ALL.map(Hotkey::default_key), sfx: 70, prompts: Prompts::Keyboard }
     }
 }
 
@@ -96,6 +118,10 @@ pub fn parse(text: &str) -> Options {
         } else if name == "sfx" {
             if let Ok(volume) = value.trim().parse::<u32>() {
                 options.sfx = volume.min(100) as u8;
+            }
+        } else if name == "prompts" {
+            if let Some(prompts) = Prompts::parse(value) {
+                options.prompts = prompts;
             }
         } else if name == "dlc" {
             if let Some(mode) = crate::dlc::Mode::parse(value) {
@@ -132,11 +158,13 @@ mod tests {
         assert_eq!(options.key(Hotkey::Overlay), "F9");
         assert_eq!(options.key(Hotkey::Archive), "Num5");
         assert_eq!(options.key(Hotkey::Build), "C");
+        assert_eq!(options.prompts, Prompts::Keyboard, "keyboard prompts unless chosen otherwise");
+        assert_eq!(parse("prompts = Pad").prompts, Prompts::Pad);
     }
 
     #[test]
     fn unknown_keys_values_and_lines_are_ignored() {
-        let options = parse("debug=maybe\ndlc=sometimes\nkey.settle=Ctrl\nkey.jump=F1\nnonsense\nkey.debug=");
+        let options = parse("debug=maybe\ndlc=sometimes\nprompts=touch\nkey.settle=Ctrl\nkey.jump=F1\nnonsense\nkey.debug=");
         assert_eq!(options, Options::default());
     }
 }

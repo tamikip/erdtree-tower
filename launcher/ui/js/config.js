@@ -226,12 +226,19 @@ window.HOYO_CONFIG = {
               { type: 'buttons', label: '目录', items: [{ text: '选择游戏目录…', action: 'chooseGameDir' }] },
             ],
           },
-          /* 下面两组写进模组目录的 tower-options.ini，游戏启动时读取（用 .cmd 启动也生效） */
+          /* 下面几组写进模组目录的 tower-options.ini，游戏启动时读取（用 .cmd 启动也生效） */
           {
             title: 'DLC（下次启动游戏生效）',
             rows: [
               { type: 'select', key: 'dlc', label: '黄金树之影 DLC', hint: '内置无缝组件按完整 DLC 内容运行，缺少 DLC 时启动前会警告',
                 value: '有 DLC', options: ['有 DLC', '没有 DLC', '没有 DLC，保留 DLC 武器（实验）'] },
+            ],
+          },
+          {
+            title: '界面（下次启动游戏生效）',
+            rows: [
+              { type: 'select', key: 'prompts', label: '按键提示', hint: '界面里的按键提示固定显示所选的一种，不随最近用的手柄或键鼠来回切换',
+                value: '键鼠', options: ['键鼠', '手柄'] },
             ],
           },
           {

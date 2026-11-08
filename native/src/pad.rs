@@ -1,8 +1,8 @@
-// 按键提示：手柄与键盘共用一套标签。最后用的是手柄就画手柄键（A/B/X/Y 实心圆、LB/RB/View 圆角条、方向键十字），
-// 用的是键盘或鼠标就画键帽（Enter、Esc、方向键……）。样式与结算页、苦难律法页的按键标签一致。
+// 按键提示：手柄与键盘共用一套标签。启动器设置页选「手柄」就画手柄键（A/B/X/Y 实心圆、LB/RB/View 圆角条、方向键十字），
+// 选「键鼠」就画键帽（Enter、Esc、方向键……）；固定显示所选的一种，不随最近用的设备来回切换（tower-options.ini 的 prompts）。样式与结算页、苦难律法页的按键标签一致。
 // 文字用黑体（scene-assets/fonts/TowerSans-Bold.otf），按目标像素换算缩放，画完把窗口字号还原，不影响调用方后面的文字。
-use std::sync::atomic::{AtomicBool,Ordering};
-use hudhook::imgui::{ImColor32,Key,StyleColor,Ui};
+use std::sync::atomic::{AtomicU8,Ordering};
+use hudhook::imgui::{ImColor32,StyleColor,Ui};
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
 pub enum Pad {A,B,X,Y,View,
@@ -25,41 +25,14 @@ pub const TABS:Input=Input::new(Pad::Bumpers,"Q / E");
 /// 手柄 X 与键盘 Enter 都是“开始”的界面（种子输入、苦难律法）
 pub const START:Input=Input::new(Pad::X,"Enter");
 
-/// 最近一次输入来自手柄
-static PAD:AtomicBool=AtomicBool::new(false);
-/// 这一帧有手柄输入（路线图上摇杆会移动鼠标，这一帧的鼠标移动不算键鼠输入）
-static PAD_FRAME:AtomicBool=AtomicBool::new(false);
-/// 已经见过手柄连接：第一次连上时直接切到手柄提示
-static CONNECTED:AtomicBool=AtomicBool::new(false);
-/// 这一帧鼠标真的动了（游戏的 DirectInput 鼠标读数，不受游戏自己移动光标影响）
-static MOUSE_FRAME:AtomicBool=AtomicBool::new(false);
-/// 界面接管输入时光标位置可信（游戏移动光标的调用被拦下）；平时游戏会自己把光标挪回中间，那种移动不算键鼠输入
-static TRUST_CURSOR:AtomicBool=AtomicBool::new(false);
-pub fn using_pad()->bool {PAD.load(Ordering::Relaxed)}
+/// 预览工具指定的样式：0 按设置，1 键鼠，2 手柄
+static PREVIEW:AtomicU8=AtomicU8::new(0);
+pub fn using_pad()->bool {
+    match PREVIEW.load(Ordering::Relaxed) {1=>false,2=>true,_=>crate::options::get().prompts==erdtree_tower::options::Prompts::Pad}
+}
 /// 直接指定提示用哪种设备（Linux 预览工具录两种样式用）
 #[allow(dead_code)]
-pub fn set_pad(pad:bool) {PAD.store(pad,Ordering::Relaxed);}
-/// 读手柄时调用（reward_ui::poll_pad）：found 为连着手柄，active 为有按键按下或摇杆推动
-pub fn note_pad(found:bool,active:bool) {
-    if found&&!CONNECTED.swap(true,Ordering::Relaxed) {PAD.store(true,Ordering::Relaxed);}
-    if found&&active {PAD.store(true,Ordering::Relaxed);PAD_FRAME.store(true,Ordering::Relaxed);}
-}
-/// 读游戏输入设备时调用（reward_ui::poll_game_devices）：moved 为鼠标真的动了；trust_cursor 为界面接管输入、光标位置可信
-pub fn note_mouse(moved:bool,trust_cursor:bool) {
-    if moved {MOUSE_FRAME.store(true,Ordering::Relaxed);}
-    TRUST_CURSOR.store(trust_cursor,Ordering::Relaxed);
-}
-/// 光标位移算不算键鼠输入：只在光标可信时算；打开界面时光标从无效位置跳到画面中间的那一下不算
-fn cursor_moved(delta:[f32;2],trust:bool)->bool {trust&&delta.iter().all(|d|d.is_finite()&&d.abs()<400.0)&&delta.iter().any(|d|d.abs()>0.5)}
-/// 每帧调用一次：键盘按键、鼠标点击或真实的鼠标移动都切回键盘提示（摇杆带动的、游戏自己挪光标的不算）
-pub fn update(ui:&Ui) {
-    let moved=MOUSE_FRAME.swap(false,Ordering::Relaxed);
-    if PAD_FRAME.swap(false,Ordering::Relaxed) {return;}
-    let io=ui.io();
-    let mouse=moved||cursor_moved(io.mouse_delta,TRUST_CURSOR.load(Ordering::Relaxed))||io.mouse_down.iter().any(|d|*d);
-    let key=Key::VARIANTS.iter().any(|k|{let name=format!("{k:?}");!name.starts_with("Gamepad")&&!name.starts_with("Mouse")&&!name.starts_with("Mod")&&ui.is_key_pressed(*k)});
-    if mouse||key {PAD.store(false,Ordering::Relaxed);}
-}
+pub fn set_pad(pad:bool) {PREVIEW.store(if pad {2}else{1},Ordering::Relaxed);}
 
 /// 标签配色：Light 浅底深字（深色界面上的默认）；Dark 深底金字（放在金色 / 琥珀色按钮上）；Outline 只有描边
 #[derive(Clone,Copy,PartialEq,Eq,Debug)]
@@ -230,11 +203,8 @@ mod tests {
         assert!(parts(Input::new(Pad::X,""),false).is_empty());
     }
     #[test]
-    fn only_trusted_real_cursor_motion_means_keyboard() {
-        assert!(cursor_moved([3.0,0.0],true));
-        assert!(!cursor_moved([3.0,0.0],false),"the game recentring its cursor during play is not mouse input");
-        assert!(!cursor_moved([960.0,540.0],true),"the jump to the screen centre when a menu opens");
-        assert!(!cursor_moved([f32::MAX,0.0],true));
-        assert!(!cursor_moved([0.2,0.1],true));
+    fn prompts_follow_the_chosen_style_instead_of_the_last_device() {
+        set_pad(true);assert!(using_pad());
+        set_pad(false);assert!(!using_pad());
     }
 }

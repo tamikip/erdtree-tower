@@ -936,36 +936,6 @@ pub fn map_command()->Option<(Option<[f32;2]>,bool)> {
     MAP_CONFIRM.with(|state|{let state=state.borrow();state.active.then(||(MAP_POINTER.with(|p|p.borrow().position),state.pressed))})
 }
 thread_local! {static PAD_RETRY:std::cell::Cell<[Option<std::time::Instant>;4]>=const {std::cell::Cell::new([None;4])};}
-// 游戏自己的输入设备：XInput 手柄以外（PS 手柄等，游戏用 libScePad 读）也能识别成手柄；鼠标移动看 DirectInput 读数，
-// 游戏自己挪光标不算。手柄按“有输入且和上一帧不同”判断，静止时一直不为零的轴不会把提示锁在手柄上
-thread_local! {static DEVICE_STATE:std::cell::RefCell<Vec<(usize,u64)>>=const {std::cell::RefCell::new(Vec::new())};}
-pub fn poll_game_devices(trust_cursor:bool) {
-    use eldenring::dluid::{DLUserInputManagerImpl,KeyboardDevice,MouseDevice,VirtualMultiDevice,DummyDevice};
-    use fromsoftware_shared::{FromStatic,Superclass};
-    use std::hash::{Hash,Hasher};
-    let Ok(manager)=(unsafe {DLUserInputManagerImpl::instance()}) else{crate::pad::note_mouse(false,trust_cursor);return;};
-    let (mut pad,mut mouse)=(false,false);
-    DEVICE_STATE.with(|previous|{
-        let mut previous=previous.borrow_mut();let mut seen=Vec::new();
-        for ptr in manager.user_input_devices.iter() {
-            let device=unsafe {ptr.as_ref()};
-            if let Some(m)=device.as_subclass::<MouseDevice>() {mouse|=m.di_mouse_state.lx.abs()+m.di_mouse_state.ly.abs()>=3;continue;}
-            if device.as_subclass::<KeyboardDevice>().is_some()||device.as_subclass::<VirtualMultiDevice>().is_some()||device.as_subclass::<DummyDevice>().is_some() {continue;}
-            let data=&device.virtual_input_data;
-            let digital:Vec<u32>=data.dynamic_bitset.as_slice().to_vec();
-            let analog:Vec<i8>=data.analog_key_info.vector.iter().map(|v|if v.is_finite()&&v.abs()>0.5 {(v*4.0).round().clamp(-100.0,100.0) as i8}else{0}).collect();
-            let busy=digital.iter().any(|w|*w!=0)||analog.iter().any(|v|*v!=0);
-            let mut hasher=std::collections::hash_map::DefaultHasher::new();(&digital,&analog).hash(&mut hasher);let state=hasher.finish();
-            let address=std::ptr::from_ref(device) as usize;
-            let changed=previous.iter().find(|(a,_)|*a==address).is_some_and(|(_,s)|*s!=state);
-            pad|=busy&&changed;seen.push((address,state));
-        }
-        *previous=seen;
-    });
-    static LOGGED:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
-    if pad {crate::pad::note_pad(true,true);if !LOGGED.swap(true,std::sync::atomic::Ordering::Relaxed) {crate::log("TOWER_PAD game pad device input seen");}}
-    crate::pad::note_mouse(mouse,trust_cursor);
-}
 pub fn poll_pad(io:&mut Io,active:bool,map:bool) {
     let mut state=PadState::default();let mut found=false;
     if active {PAD_RETRY.with(|retry| {
@@ -979,7 +949,6 @@ pub fn poll_pad(io:&mut Io,active:bool,map:bool) {
     feed_pad(io,&state.pad,found,map);
 }
 fn feed_pad(io:&mut Io,pad:&Gamepad,found:bool,map:bool) {
-    crate::pad::note_pad(found,pad.buttons!=0||[pad.lx,pad.ly,pad.rx,pad.ry].iter().any(|v|stick(*v)!=0.0));
     MAP_CONFIRM.with(|state|state.borrow_mut().update(found&&map,found&&pad.buttons&0x1000!=0));
     io.backend_flags.set(hudhook::imgui::BackendFlags::HAS_GAMEPAD,found);
     for (key,mask) in [(Key::GamepadDpadUp,1),(Key::GamepadDpadDown,2),(Key::GamepadDpadLeft,4),(Key::GamepadDpadRight,8),(Key::GamepadFaceDown,0x1000),(Key::GamepadFaceRight,0x2000),(Key::GamepadFaceLeft,0x4000),(Key::GamepadFaceUp,0x8000),(Key::GamepadBack,0x20),(Key::GamepadL1,0x100),(Key::GamepadR1,0x200)] {

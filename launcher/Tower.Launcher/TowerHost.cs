@@ -166,7 +166,7 @@ namespace Tower.Launcher
                 ChangeSeamless(key.Substring(5), value);
                 return;
             }
-            if (key == "debug" || key == "dlc" || key.StartsWith("key.", StringComparison.Ordinal))
+            if (key == "debug" || key == "dlc" || key == "prompts" || key.StartsWith("key.", StringComparison.Ordinal))
             {
                 ChangeOption(key, value);
                 return;
@@ -304,10 +304,11 @@ namespace Tower.Launcher
         void ChangeOption(string key, JsonElement value)
         {
             var hotkey = TowerOptions.Hotkeys.FirstOrDefault(h => "key." + h.Id == key);
-            if (key != "debug" && key != "dlc" && hotkey.Id == null) return;
+            if (key != "debug" && key != "dlc" && key != "prompts" && hotkey.Id == null) return;
             var label = value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
             var text = key == "debug" ? (value.ValueKind == JsonValueKind.True ? "1" : "0")
                 : key == "dlc" ? TowerOptions.DlcModes.FirstOrDefault(m => m.Label == label).Id ?? ""
+                : key == "prompts" ? TowerOptions.PromptModes.FirstOrDefault(m => m.Label == label).Id ?? ""
                 : label;
             if (text.Length == 0) return;
             try
@@ -404,6 +405,7 @@ namespace Tower.Launcher
             {
                 ["debug"] = TowerOptions.Debug(options) || File.Exists(Path.Combine(paths.InstallDir, "tower-debug.enable")),
                 ["dlc"] = TowerOptions.DlcLabel(options),
+                ["prompts"] = TowerOptions.PromptLabel(options),
                 ["plugins"] = plugins.List().Select(p => new Dictionary<string, object?> { ["path"] = p.Path, ["name"] = p.Name, ["enabled"] = p.Enabled, ["exists"] = p.Exists }).ToList(),
                 ["mode"] = settings.Mode == HostSettings.Seamless ? "无缝联机" : "单人",
                 ["loader"] = settings.Loader,

@@ -15,6 +15,29 @@ function Assert-TowerLobbyPassword([string]$RoomText, [string]$Settings) {
         throw 'Lobby password does not match this launch configuration. Close the game and recreate the room in the launcher.'
     }
 }
+# 1.6.2 起只有统一入口：原单人入口的角色存档（%APPDATA%\EldenRing\<SteamID>\ER_TOWER_PREVIEW.sl2）与包根目录里的爬塔进度（tower-*）
+# 都不在统一入口读取的位置，玩家看到的是“存档不见了”。第一次启动时各复制一份过来：只在目标不存在时复制，不覆盖、不删除旧文件。
+function Copy-TowerSoloData([string]$PackageRoot, [string]$Runtime, [string]$Extension) {
+    $saves = if ($env:APPDATA) {Join-Path $env:APPDATA 'EldenRing'} else {$null}
+    if ($saves -and (Test-Path -LiteralPath $saves -PathType Container)) {
+        foreach ($profile in Get-ChildItem -LiteralPath $saves -Directory) {
+            $solo = Join-Path $profile.FullName 'ER_TOWER_PREVIEW.sl2'
+            if (!(Test-Path -LiteralPath $solo -PathType Leaf)) {continue}
+            $target = Join-Path $profile.FullName ('ER0000.'+$Extension)
+            if (Test-Path -LiteralPath $target) {Write-Host "Solo save kept as is: $solo ($target already exists and was not overwritten)."; continue}
+            Copy-Item -LiteralPath $solo -Destination $target
+            Write-Host "Solo save copied to $target; the original is kept."
+        }
+    }
+    $skip = @('tower-session.json','tower-debug.enable','tower-lobby.json')
+    foreach ($file in Get-ChildItem -LiteralPath $PackageRoot -File -Filter 'tower-*') {
+        if ($file.Extension -in @('.log','.party-award') -or $skip -contains $file.Name) {continue}
+        $target = Join-Path $Runtime $file.Name
+        if (Test-Path -LiteralPath $target) {continue}
+        Copy-Item -LiteralPath $file.FullName -Destination $target
+        Write-Host "Solo tower progress copied: $($file.Name)."
+    }
+}
 function Set-TowerSpectatorMode([string]$Settings) {
     $section = [regex]'(?m)^\[GAMEPLAY\][ \t]*(\r?\n|$)'
     $newline = if ($Settings.Contains("`r`n")) {"`r`n"} else {"`n"}
@@ -160,6 +183,7 @@ $native = $base.DllPath
 $assets = Join-Path $root 'scene-assets'
 $runtime = Join-Path $entry $(if ($PartyConfig) {'party-runtime'} else {'runtime'})
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+if (!$PartyConfig) {Copy-TowerSoloData $root $runtime $saveExtension}
 $assetLink = Join-Path $runtime 'scene-assets'
 # The tower DLL checks arena files through this link (its log directory is the runtime folder). A link left behind by
 # a moved or copied installation, or a plain copied folder, keeps serving old files while the game loads the new ones,

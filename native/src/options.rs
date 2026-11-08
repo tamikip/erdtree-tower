@@ -13,7 +13,7 @@ pub fn init(dll:Option<PathBuf>) {
     let seamless=std::env::var("ERDTREE_TOWER_SEAMLESS_ENTRY").as_deref()==Ok("1");
     let dlc=if seamless {erdtree_tower::dlc::Mode::Full} else {options.dlc};
     erdtree_tower::dlc::set(dlc);
-    crate::log(format!("OPTIONS file={:?} debug={} dlc={}{} keys={}",path(),options.debug,dlc.id(),if seamless&&options.dlc!=dlc {"（无缝联机，忽略设置）"} else {""},
+    crate::log(format!("OPTIONS file={:?} debug={} dlc={}{} prompts={} keys={}",path(),options.debug,dlc.id(),if seamless&&options.dlc!=dlc {"（无缝联机，忽略设置）"} else {""},options.prompts.id(),
         Hotkey::ALL.map(|h|format!("{}={}",h.id(),options.key(h))).join(",")));
 }
 

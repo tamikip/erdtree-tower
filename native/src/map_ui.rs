@@ -48,6 +48,20 @@ static TEST_FUTURE:std::sync::Mutex<([f32;2],bool)>=std::sync::Mutex::new(([0.0,
 #[cfg(test)]
 static TEST_ENTER:std::sync::atomic::AtomicUsize=std::sync::atomic::AtomicUsize::new(usize::MAX);
 
+thread_local! {
+    /// 诊断「联机有人选不了路」：同一层的路线图开着 20 秒还没选，记一次当时能不能点的各项条件
+    static STALL:std::cell::Cell<(usize,f64,bool)>=const {std::cell::Cell::new((usize::MAX,0.0,false))};
+}
+fn stall_diagnostic(now:f64,run:&Run,ready:bool,selecting:bool,available:&[usize],ballots:usize) {
+    STALL.with(|stall|{
+        let (layer,since,logged)=stall.get();
+        if layer!=run.visited.len()||now<since {stall.set((run.visited.len(),now,false));return;}
+        if logged||now-since<20.0 {return;}
+        stall.set((layer,since,true));
+        crate::log(format!("MAP_STALL 20s on layer: ready={ready} selecting={selecting} available={available:?} last={:?} contract_pending={} pad={:?} ballots={ballots}",
+            run.visited.last(),run.contract_pending(),crate::reward_ui::map_command().map(|(point,_)|point.is_some())));
+    });
+}
 fn enter_node(id:usize) {
     #[cfg(test)]
     TEST_ENTER.store(id,Ordering::Relaxed);
@@ -418,8 +432,10 @@ fn party_legend(ui:&Ui,ballots:&[erdtree_tower::party_vote::Ballot],latencies:&[
     }
 }
 fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ballot]) {
+    crate::map_ink::new_layer(run.visited.len());
     let selecting=crate::map_ink::selecting();
     let available = run.available();
+    stall_diagnostic(ui.time(),run,ready,selecting,&available,ballots.len());
     let origin = ui.cursor_screen_pos();
     let content = ui.content_region_avail();
     let viewport = ui.window_size()[1] - 16.0;

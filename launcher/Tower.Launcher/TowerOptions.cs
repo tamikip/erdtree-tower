@@ -33,6 +33,16 @@ namespace Tower.Launcher
             ("weapons", "没有 DLC，保留 DLC 武器（实验）"),
         };
 
+        /// <summary>界面按键提示：设置页显示的文字 ↔ 文件里的 prompts= 值（src/options.rs 的 Prompts）</summary>
+        public static readonly (string Id, string Label)[] PromptModes =
+        {
+            ("keyboard", "键鼠"),
+            ("pad", "手柄"),
+        };
+
+        public static string PromptLabel(Dictionary<string, string> values) =>
+            PromptModes.FirstOrDefault(m => values.TryGetValue("prompts", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? PromptModes[0].Label;
+
         public static string DlcLabel(Dictionary<string, string> values) =>
             DlcModes.FirstOrDefault(m => values.TryGetValue("dlc", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? DlcModes[0].Label;
 
