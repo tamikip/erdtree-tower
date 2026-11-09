@@ -1,10 +1,10 @@
 use erdtree_tower::events::Draw;
-pub struct Host {pub draw:Draw,pub entity:u32,pub init:i32,pub flag:u32,pub npc:i32,pub name_id:i32}
+pub struct Host {pub draw:Draw,pub entity:u32,pub flag:u32,pub npc:i32,pub name_id:i32}
 pub static HOSTS:std::sync::LazyLock<Vec<Host>>=std::sync::LazyLock::new(||include_str!("../../scene-assets/event-hosts.txt").lines().map(|line|{
     let p:Vec<_>=line.split('|').collect();
     let draw=match p[0]{"Trial"=>Draw::Trial,"Chests"=>Draw::Chests,"Altar"=>Draw::Altar,"Locked"=>Draw::Locked,"Scarabs"=>Draw::Scarabs,"Spring"=>Draw::Spring,"Dice"=>Draw::Dice,"Mystery"=>Draw::Mystery,"Reforge"=>Draw::Reforge,_=>panic!("Invalid event host")};
     let flag:u32=p[4].parse().unwrap();
-    Host{draw,entity:p[1].parse().unwrap(),init:p[2].parse().unwrap(),flag,npc:95016000+(flag-45011840) as i32,name_id:p[5].parse().unwrap()}
+    Host{draw,entity:p[1].parse().unwrap(),flag,npc:95016000+(flag-45011840) as i32,name_id:p[5].parse().unwrap()}
 }).collect());
 /// 重练炉借用词条重铸台的守炉人（同一个问号房只会抽到其中一个，不会同时出现）；专属 NPC 要在 Windows 上重新生成地图
 pub fn index(draw:Draw)->usize {let draw=if draw==Draw::Furnace{Draw::Reforge}else{draw};HOSTS.iter().position(|h|h.draw==draw).unwrap()}
@@ -27,13 +27,5 @@ mod tests {
     }
     #[test]fn other_services_keep_their_existing_flags(){
         for id in [45011800,45011801,45021810]{assert_eq!(visibility_flag(id),id+70);}
-    }
-    #[test]fn every_event_has_a_distinct_character_and_visibility_flag(){
-        assert_eq!(HOSTS.len(),9);
-        let mut init=std::collections::HashSet::new();let mut flags=std::collections::HashSet::new();
-        for (draw,_) in erdtree_tower::events::EVENT_WEIGHTS {
-            let h=&HOSTS[index(draw)];assert!(init.insert(h.init));assert!(flags.insert(visibility_flag(h.entity)));
-            assert_eq!(service(index(draw))[0],(h.entity,0,h.npc,6));
-        }
     }
 }

@@ -71,6 +71,8 @@ pub struct Room {
     pub hunter:Option<super::map_guards::Guards>,
     hub: bool,
     event_host:usize,
+    /// 三重宝匣不放引导 NPC：直接开箱，房间里只有三个箱子
+    event_hostless:bool,
     pub node: usize,
     pub kind: NodeKind,
     pub block: i32,
@@ -125,6 +127,8 @@ impl Room {
         }
         self.event_host=super::event_hosts::index(if run.regional_event.mausoleum.is_some(){erdtree_tower::events::Draw::Altar}else{run.event_draw(self.node)});
         let progress=&run.regional_event;
+        self.event_hostless=progress.mausoleum.is_none()&&!progress.trial&&progress.stormveil.is_none()&&!progress.descent&&!progress.recovery
+            &&!progress.scarabs&&!progress.locked&&run.gamble(self.node).filter(|_|solo).is_none()&&!run.altar(self.node);
         // 死亡重试回到已结束的事件：引导者不再提供任何选项
         if progress.settled {
             let menu=super::native_talk::EventMenu{trial:true,used:true,..Default::default()};
@@ -205,7 +209,7 @@ impl Room {
             merchant_down:false,shop_refresh_pending:false,shop_counters:None,hunter:None,merchant_hit_logged:false,
             scarabs:Default::default(),
             chest_attempt:None,
-            hub,event_host:0,
+            hub,event_host:0,event_hostless:false,
             node,
             kind,
             block,
@@ -280,7 +284,7 @@ impl Room {
             self.view.loading=false;
             self.talks[0].poll()?;return Ok(());
         }
-        let specs = if self.hub {vec![(0,[-329.5,-21.9,-309.0]),(0,[-329.5,-21.9,-302.0])]} else {npcs(self.kind)};
+        let specs = if self.hub {vec![(0,[-329.5,-21.9,-309.0]),(0,[-329.5,-21.9,-302.0])]} else if self.kind==NodeKind::Event&&self.event_hostless {vec![]} else {npcs(self.kind)};
         if let Some(index)=first_stale(&self.handles,|handle|world.chr_ins_by_handle(handle)
             .filter(|c|(self.kind==NodeKind::Shop&&self.handles.first().is_some_and(|(h,_)|h==handle))||(!c.debug_flags.character_disabled()&&c.modules.data.hp>0&&!c.chr_flags1c5.death_flag()))
             .map(|c|std::ptr::from_ref(c) as usize)) {
@@ -301,10 +305,10 @@ impl Room {
             }
         }
         if self.handles.len()<specs.len() && !grounded {return Ok(());}
-        let conditional=if self.kind==NodeKind::Event {super::event_hosts::service(self.event_host)}else{conditional_services(self.block,self.kind)};
+        let conditional=if self.kind==NodeKind::Event&&self.event_hostless {Vec::new()} else if self.kind==NodeKind::Event {super::event_hosts::service(self.event_host)}else{conditional_services(self.block,self.kind)};
         if self.kind==NodeKind::Event {
             super::native_talk::set_flag(45011871,false)?;
-            for host in super::event_hosts::HOSTS.iter().filter(|h|h.entity!=conditional[0].0) {super::native_talk::set_flag(host.flag,false)?;}
+            for host in super::event_hosts::HOSTS.iter().filter(|h|conditional.first().is_none_or(|c|h.entity!=c.0)) {super::native_talk::set_flag(host.flag,false)?;}
         }
         for &(id,_,_,_) in &conditional {
             let flag=super::event_hosts::visibility_flag(id);
