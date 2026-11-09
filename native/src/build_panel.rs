@@ -156,7 +156,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
                 if ember.stacking() {
                     let level=run.ember_stacks.level(*ember);
                     name=format!("{name} · {level} 层");
-                    lines.push((format!("当前加成：{}", ember.stack_bonus(level).unwrap_or_default()), WHITE));
+                    lines.push((format!("当前加成：{}", run.ember_stacks.bonus(*ember).unwrap_or_default()), WHITE));
                     if *ember==erdtree_tower::embers::Ember::SoulEater {
                         let step=erdtree_tower::embers::SOUL_POINTS;
                         let points=run.ember_stacks.souls%step;

@@ -2675,7 +2675,7 @@ fn record_ember_gains(state:&mut Runtime,gains:Vec<erdtree_tower::embers::Gain>,
     }
     for (ember,level) in raised {
         super::log(format!("TOWER_EMBER stack {} {level}",ember.name()));
-        state.view.status=format!("余烬「{}」第 {level} 层：{}",ember.name(),ember.stack_bonus(level).unwrap_or_default());state.view.prompt=state.view.prompt.wrapping_add(1);
+        state.view.status=format!("余烬「{}」第 {level} 层：{}",ember.name(),state.view.run.as_ref().and_then(|r|r.ember_stacks.bonus(ember)).unwrap_or_default());state.view.prompt=state.view.prompt.wrapping_add(1);
     }
 }
 /// 噬神之蛇的饱食：补回 1 次红圣杯瓶

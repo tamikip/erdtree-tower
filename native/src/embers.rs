@@ -51,7 +51,7 @@ struct Break {key:u64,bursts:Vec<i32>,effects:Vec<i32>,hp:i32}
 const FLASH:i32=FIRST+40;
 /// 灵唤铃的号令：挂在召唤物身上
 const SPIRIT_COMMAND:i32=FIRST+50;
-fn frenzy_effect(stack:u8)->i32 {FIRST+30+i32::from(stack)}
+fn frenzy_effect(stack:u8)->i32 {if stack<=8 {FIRST+30+i32::from(stack)}else{FIRST+100+i32::from(stack)-9}}
 /// 旧版本常驻效果只用于清理；原生处决由攻击表的 350501 事件识别。
 const CHAIN_RESIDENT:i32=FIRST+5;
 #[cfg(test)]
@@ -135,7 +135,11 @@ fn write(row:&mut SP_EFFECT_PARAM_ST,ember:Ember,rates:embers::Rates) {
 }
 /// 这一层数该挂的那一行；present：目标角色身上已有的效果。None 表示不挂（没有层数、参数缺失，或两行都还挂着、等下一帧）
 fn scaled_slot(ember:Ember,level:u32,present:&[i32])->Option<i32> {
-    let (slots,rates)=(slots(ember)?,embers::stack_rates(ember,level)?);
+    let rates=embers::stack_rates(ember,level)?;
+    scaled_slot_rates(ember,level,present,rates)
+}
+fn scaled_slot_rates(ember:Ember,level:u32,present:&[i32],rates:embers::Rates)->Option<i32> {
+    let slots=slots(ember)?;
     if level==0 {return None;}
     let params=unsafe {SoloParamRepository::instance_mut()}.ok()?;
     let fits=|id:i32,params:&SoloParamRepository|params.get::<SpEffectParam>(id as u32).is_some_and(|row|holds(row,ember,rates));
@@ -268,7 +272,8 @@ pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight,spirit_alive:bool) {
     let stacks=run.map(|r|r.ember_stacks).unwrap_or_default();
     for ember in PLAYER_STACKING {
         let level=if embers.contains(&ember) {stacks.level(ember)}else{0};
-        swap(chr,&present,ember,scaled_slot(ember,level,&present));
+        let want=stacks.rates(ember).and_then(|rates|scaled_slot_rates(ember,level,&present,rates));
+        swap(chr,&present,ember,want);
     }
     // 战斗法师的减伤：按智力、信仰较高者，能力值变了就换一行
     let mind=if battlemage {unsafe {eldenring::cs::PlayerIns::local_player()}.ok().map_or(0,|p|{let d=unsafe {p.player_game_data.as_ref()};d.intelligence.max(d.faith)})}else{0};
@@ -694,11 +699,11 @@ mod tests {
         assert_eq!(ids.len(),13+usize::from(embers::FRENZY_STACKS));
         assert!([SPIRIT_RESONANCE,ARTS_ATTACK,ARTS_COST,BULWARK].into_iter().all(|id|ids.contains(&id)));
         assert!(!ids.contains(&EXECUTION_RELIEF),"the relief expires on its own, sync never strips it");
-        assert_eq!(frenzy_effect(embers::FRENZY_STACKS),FIRST+38);
+        assert_eq!(frenzy_effect(embers::FRENZY_STACKS),FIRST+131);
         let mut all=ids.clone();all.extend([BLOOD,FROST,FLASH,SPIRIT_COMMAND,CHAIN_MARK,CHAIN_RESIDENT+1,EXECUTION+1,EXECUTION_RELIEF]);
         all.extend(Ember::ALL.into_iter().filter_map(slots).flatten());
         let count=all.len();all.sort();all.dedup();assert_eq!(all.len(),count,"effect ids overlap");
-        assert!(all.iter().all(|id|(FIRST..FIRST+100).contains(id)),"inside the ember range");
+        assert!(all.iter().all(|id|(FIRST..FIRST+200).contains(id)),"inside the ember range");
         assert!(Ember::ALL.into_iter().all(|e|(e.stacking()||e==Ember::Battlemage)==slots(e).is_some()));
         assert!(PLAYER_STACKING.iter().all(|e|e.stacking()&&*e!=Ember::SpiritKeeper));
         assert_eq!([0,1,2,3].map(kill_rank),[2,1,1,0]);

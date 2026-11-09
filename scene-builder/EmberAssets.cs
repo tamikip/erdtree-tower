@@ -4,21 +4,21 @@ using SoulsFormats;
 // 叠层余烬不设上限：每种两行轮换（屠神者 +60、噬魂者 +70、处刑之链 +80 复制短剑护符的“只对致命一击生效”、灵魂收容 +90 挂在召唤物身上），
 // 这里写一层的数值，运行时（native/src/embers.rs）按当前层数改写没挂着的那一行再换上。
 static class EmberAssets {
-    public const int First=9670000,Span=100;
+    public const int First=9670000,Span=200;
     // 圣杯余响：喝圣杯瓶后造成的伤害 ×1.15、受到的伤害 ×0.85（与 src/embers.rs 的 ECHO_* 一致；持续时间由运行时控制）
     const float EchoAttack=1.15f,EchoCut=0.85f;
-    // 法师余烬（与 src/embers.rs 的 BARRIER_* / GLINTSTONE_* / MOON_* 一致）：施法时受到的伤害 ×0.65、施法时韧性伤害 ×0（霸体）、
-    // 法术与祷告的专注消耗 ×0.75（常驻）、专注不低于 70% 时造成的伤害 ×1.18；何时挂上由运行时控制
-    const float BarrierCut=0.65f,MeditationToughness=0f,GlintstoneCost=0.75f,MoonAttack=1.18f;
+    // 法师余烬（与 src/embers.rs 的 BARRIER_* / GLINTSTONE_* / MOON_* 一致）：施法时受到的伤害 ×0.5、施法时韧性伤害 ×0（霸体）、
+    // 法术与祷告的专注消耗 ×0.75（常驻）、专注不低于 70% 时造成的伤害 ×1.5；何时挂上由运行时控制
+    const float BarrierCut=0.5f,MeditationToughness=0f,GlintstoneCost=0.75f,MoonAttack=1.5f;
     // 灵唤师的共鸣：召唤物在场时玩家造成的伤害 ×1.4（与 src/embers.rs 的 SPIRIT_RESONANCE_PERCENT 一致；何时挂上由运行时控制）
     const float ResonanceAttack=1.4f;
     // 战技的精粹（与 src/embers.rs 的 ARTS_* 一致）：战技造成的伤害 ×1.25（复制原版只对战技生效的增伤 312310，与战技伤害词条同一模板）、战技专注消耗 ×0.5；持有即常驻
     const float ArtsAttack=1.25f,ArtsCost=0.5f;
     const float ExecutionSeconds=5f,ExecutionStamina=0.5f,RevengeRate=1.3f,FrenzyStep=0.02f,CommandAttack=1.2f,CommandCut=0.8f;
-    const int Buildup=12,FrenzyStacks=8,FlashVfx=1605000;
+    const int Buildup=40,FrenzyStacks=40,FlashVfx=1605000;
     // 叠层余烬（与 src/embers.rs 的常量一致）
     const float HarvestStep=0.01f;
-    const float SlayerHp=0.04f,SlayerAttack=0.02f,SoulStep=0.02f,ChainStep=0.06f,KeeperAttack=0.03f,KeeperCut=0.02f;
+    const float SlayerHp=0.06f,SlayerAttack=0.05f,SoulStep=0.03f,ChainStep=0.06f,KeeperAttack=0.03f,KeeperCut=0.02f;
     const int CriticalState=288,CriticalOnly=367;
     static readonly string[] Kept=["spCategory","categoryPriority","effectTargetOpposeTarget","effectTargetFriendlyTarget","effectTargetSelfTarget","effectTargetSelf","effectTargetFriend","effectTargetEnemy","effectTargetPlayer","effectTargetAI","effectTargetLive","effectTargetGhost"];
     static void Set(PARAM.Row r,string key,object value)=>r[key].Value=Convert.ChangeType(value,r[key].Value.GetType());
@@ -78,7 +78,8 @@ static class EmberAssets {
         var bulwark=Player(p,First+24,"Tower ember bulwark",1f,-1f);
         Set(bulwark,"stateInfo",p.Rows.Single(r=>r.ID==341000)["stateInfo"].Value);
         Set(bulwark,"guardStaminaMult",0f);Set(bulwark,"equipWeightChangeRate",0.01f);rows.Add(bulwark);
-        for(int stack=1;stack<=FrenzyStacks;stack++)rows.Add(Player(p,First+30+stack,$"Tower ember frenzy {stack}",1f+FrenzyStep*stack,-1f));
+        // 前 8 层编号保留；新增层使用 +100 至 +131，避开其他余烬效果。
+        for(int stack=1;stack<=FrenzyStacks;stack++)rows.Add(Player(p,(stack<=8?First+30+stack:First+100+stack-9),$"Tower ember frenzy {stack}",1f+FrenzyStep*stack,-1f));
         var flash=Enemy(p,First+40,"Tower ember flash",1f);Set(flash,"vfxId",FlashVfx);rows.Add(flash);
         // 灵唤铃的号令：挂在召唤物身上，伤害 +20%、受到的伤害 -20%（沿用敌人侧的中性模板）
         var command=Enemy(p,First+50,"Tower ember spirit command",-1f);

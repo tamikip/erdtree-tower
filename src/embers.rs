@@ -7,7 +7,7 @@ pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,R
 // 运行时数值（参数类的数值见 scene-builder/EmberAssets.cs，说明文字同步引用这些常量）
 pub const EXECUTION_SECONDS:u32=5;
 pub const EXECUTION_STAMINA_CUT:u32=50;
-pub const BUILDUP:u32=12;
+pub const BUILDUP:u32=40;
 pub const DEATHFLAME_RADIUS:f32=4.0;
 pub const DEATHFLAME_PERCENT:u32=8;
 pub const LIFESTEAL_PERCENT:u32=8;
@@ -18,7 +18,7 @@ pub const DRAGON_COOLDOWN_SECONDS:u64=30;
 pub const REVENGE_SECONDS:u64=3;
 pub const REVENGE_PERCENT:u32=30;
 pub const FRENZY_STEP_PERCENT:u32=2;
-pub const FRENZY_STACKS:u8=8;
+pub const FRENZY_STACKS:u8=40;
 /// 圣杯余响：喝圣杯瓶后的增益（秒数、造成的伤害提高、受到的伤害降低，百分比）
 pub const ECHO_SECONDS:u64=20;
 pub const ECHO_ATTACK_PERCENT:u32=15;
@@ -28,41 +28,41 @@ pub const THORNS_PERCENT:u32=40;
 // 召唤流余烬（只在身上带着骨灰时出现）
 pub const SPIRIT_SHARE_PERCENT:u32=30;
 pub const SPIRIT_BURST_RADIUS:f32=6.0;
-pub const SPIRIT_BURST_PERCENT:u32=8;
-pub const SPIRIT_FEAST_HEAL_PERCENT:u32=15;
-pub const SPIRIT_FEAST_FP_PERCENT:u32=5;
+pub const SPIRIT_BURST_PERCENT:u32=20;
+pub const SPIRIT_FEAST_HEAL_PERCENT:u32=20;
+pub const SPIRIT_FEAST_FP_PERCENT:u32=20;
 pub const SPIRIT_COMMAND_PERCENT:u32=20;
 /// 灵唤师的共鸣：召唤物在场时，玩家自己造成的伤害提高（召唤物的伤害不变）
 pub const SPIRIT_RESONANCE_PERCENT:u32=40;
 // 叠层余烬：层数由战斗中的事件累积，整局保留（Run::ember_stacks），不设上限
 /// 噬魂者：击倒普通敌人、精英、Boss 分别得魂点，每满 SOUL_POINTS 点一层
-pub const SOUL_POINTS:u32=10;
+pub const SOUL_POINTS:u32=5;
 pub const SOUL_KILL:[u32;3]=[1,3,10];
-pub const SOUL_STEP_PERCENT:u32=2;
+pub const SOUL_STEP_PERCENT:u32=3;
 pub const CHAIN_STEP_PERCENT:u32=6;
 pub const CHAIN_ROOM_LIMIT:u8=5;
-pub const SLAYER_HP_PERCENT:u32=4;
-pub const SLAYER_ATTACK_PERCENT:u32=2;
+pub const SLAYER_HP_PERCENT:u32=6;
+pub const SLAYER_ATTACK_PERCENT:u32=5;
 pub const KEEPER_ATTACK_PERCENT:u32=3;
 /// 灵魂收容的减伤逐层乘算（每层受到的伤害 ×0.98），层数再多也不会到 100%
 pub const KEEPER_CUT_PERCENT:u32=2;
 // 法师余烬（只在身上带着法杖或圣印记时出现）。“施法时”：按住施法键期间，以及松开后 CAST_LINGER_MS 毫秒内（出招动作还没放完）
 pub const CAST_LINGER_MS:u64=1200;
-pub const BARRIER_CUT_PERCENT:u32=35;
+pub const BARRIER_CUT_PERCENT:u32=50;
 pub const GLINTSTONE_FP_PERCENT:u32=25;
 pub const MOON_FP_PERCENT:u32=70;
-pub const MOON_ATTACK_PERCENT:u32=18;
+pub const MOON_ATTACK_PERCENT:u32=50;
 /// 战技的精粹：战技造成的伤害提高、战技消耗的专注降低（百分比）
 pub const ARTS_ATTACK_PERCENT:u32=25;
 pub const ARTS_FP_CUT_PERCENT:u32=50;
 /// 直接扣敌人生命的余烬对 Boss 每次最多扣最大生命的 1%
 pub const BOSS_CAP_PERCENT:u32=1;
-/// 处刑者的血宴：致命一击击杀小怪、精英、Boss 分别记 1、3、5 点，每点在当前最大生命上再乘 1+HARVEST_STEP_PERCENT%（复利）
-pub const HARVEST_POINTS:[u32;3]=[1,3,5];
+/// 处刑者的血宴：按敌人类型分别乘 1.02、1.05、1.10；点数仅用于显示，旧存档点数按原规则保留。
+pub const HARVEST_POINTS:[u32;3]=[2,5,10];
 /// 红狮子的不退：生命低于这个比例时，强韧度提高（受到的削韧 ×100/(100+LAST_STAND_POISE_PERCENT)，原版牛羊护符 +33% 即 ×0.75）
 pub const LAST_STAND_HP_PERCENT:u32=40;
 /// 殉道者的苦修：失去最大生命的 1% 回复最大专注的 MARTYR_FP_PERCENT/100 %（100 即 1:1，按两边的上限换算）
-pub const MARTYR_FP_PERCENT:u32=100;
+pub const MARTYR_FP_PERCENT:u32=200;
 /// 黄金树的恩泽：治疗类祷告（含给队友的、持续回复的）回复量提高的百分比
 pub const MERCY_HEAL_PERCENT:i32=50;
 /// 战斗法师：受到的伤害按智力、信仰较高者每点降低 0.4%（千分比 4），最低保留 5%；一局最多转换 BATTLEMAGE_WEAPONS 把武器
@@ -140,7 +140,7 @@ impl Ember {
         Self::Mercy=>format!("治疗类祷告的回复量\n提高 {MERCY_HEAL_PERCENT}%"),
         Self::Martyr=>format!("受到伤害时回复专注\n失去最大生命的 1%\n回复最大专注的 {}%",MARTYR_FP_PERCENT as f32/100.0),
         Self::LastStand=>format!("生命低于 {LAST_STAND_HP_PERCENT}% 时\n韧性（强韧度）提高 {LAST_STAND_POISE_PERCENT}%"),
-        Self::Harvest=>format!("致命一击击杀敌人时\n最大生命提高：小怪 {HARVEST_STEP_PERCENT}%\n精英约 {}%、Boss 约 {}%\n在当前最大生命上逐次乘算\n不设上限，整局保留",HARVEST_POINTS[1]*HARVEST_STEP_PERCENT,HARVEST_POINTS[2]*HARVEST_STEP_PERCENT),
+        Self::Harvest=>format!("致命一击击杀敌人时\n最大生命提高：小怪 {}%\n精英 {}%、Boss {}%\n在当前最大生命上逐次乘算\n不设上限，整局保留",HARVEST_POINTS[0],HARVEST_POINTS[1],HARVEST_POINTS[2]),
         Self::Breaker=>"敌人出血、冻伤、睡眠、发狂发作时\n压低架势，5 秒内下一次削韧命中触发失衡\nBoss 与普通敌人均无触发冷却".into(),
         Self::FullMoon=>format!("专注不低于 {MOON_FP_PERCENT}% 时\n造成的伤害提高 {MOON_ATTACK_PERCENT}%"),
         Self::SpiritResonance=>format!("召唤物在场时\n你造成的伤害 +{SPIRIT_RESONANCE_PERCENT}%"),
@@ -252,6 +252,7 @@ pub fn stack_rates(ember:Ember,stacks:u32)->Option<Rates> {
     })
 }
 fn is_zero(value:&u32)->bool {*value==0}
+fn no_harvest_kills(value:&[u32;3])->bool {*value==[0;3]}
 /// 叠层余烬的进度，整局保留；只记拿到余烬之后的事件
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq,Serialize,Deserialize)]
 pub struct Stacks {
@@ -262,9 +263,26 @@ pub struct Stacks {
     #[serde(default)] pub keeper:u32,
     /// 处刑者的血宴的点数（层数 = 点数）
     #[serde(default,skip_serializing_if="is_zero")] pub harvest:u32,
+    /// 新规则按敌人类型分别记击杀数；旧存档的 harvest 点数保留原倍率。
+    #[serde(default,skip_serializing_if="no_harvest_kills")] pub harvest_kills:[u32;3],
     #[serde(default,skip_serializing_if="Option::is_none")] chain_room:Option<(u64,u8,usize,u8)>,
 }
 impl Stacks {
+    pub fn rates(&self,ember:Ember)->Option<Rates> {
+        let mut rates=stack_rates(ember,self.level(ember))?;
+        if ember==Ember::Harvest {
+            let new_points=self.harvest_kills.iter().zip(HARVEST_POINTS).map(|(&n,p)|u64::from(n)*u64::from(p)).sum::<u64>();
+            let legacy=u64::from(self.harvest).saturating_sub(new_points).min(u64::from(HARVEST_POINT_CAP));
+            let mut hp=1.01f64.powi(legacy as i32);
+            for (n,p) in self.harvest_kills.into_iter().zip(HARVEST_POINTS) {hp*=(1.0+f64::from(p)/100.0).powi(n.min(HARVEST_POINT_CAP) as i32);}
+            rates.hp=hp.min(1.01f64.powi(HARVEST_POINT_CAP as i32)) as f32;
+        }
+        Some(rates)
+    }
+    pub fn bonus(&self,ember:Ember)->Option<String> {
+        if ember==Ember::Harvest {Some(format!("最大生命 +{}%",((self.rates(ember)?.hp-1.0)*100.0).round() as i64))}
+        else {ember.stack_bonus(self.level(ember))}
+    }
     pub fn gain_in_room(&mut self,held:&[Ember],event:Gain,key:(u64,u8,usize))->Vec<Ember> {
         if !matches!(event,Gain::Critical)||!held.contains(&Ember::Chain) {return self.gain(held,event);}
         let (seed,act,id)=key;
@@ -289,7 +307,7 @@ impl Stacks {
             },
             Gain::Critical=>if has(Ember::Chain) {self.chain=self.chain.saturating_add(1);},
             Gain::Slain=>if has(Ember::Godslayer) {self.slayer=self.slayer.saturating_add(1);},
-            Gain::CriticalKill{rank}=>if has(Ember::Harvest) {self.harvest=self.harvest.saturating_add(HARVEST_POINTS[usize::from(rank.min(2))]);},
+            Gain::CriticalKill{rank}=>if has(Ember::Harvest) {let i=usize::from(rank.min(2));self.harvest=self.harvest.saturating_add(HARVEST_POINTS[i]);self.harvest_kills[i]=self.harvest_kills[i].saturating_add(1);},
         }
         held.iter().copied().filter(|e|self.level(*e)>before.level(*e)).collect()
     }
@@ -446,8 +464,8 @@ mod tests {
     }
     #[test]
     fn martyr_restores_fp_in_proportion_to_the_health_lost() {
-        assert_eq!(Ember::Martyr.effect(),"受到伤害时回复专注\n失去最大生命的 1%\n回复最大专注的 1%");
-        assert_eq!(martyr_fp(200,1000,150),30,"20% of health lost restores 20% of focus");
+        assert_eq!(Ember::Martyr.effect(),"受到伤害时回复专注\n失去最大生命的 1%\n回复最大专注的 2%");
+        assert_eq!(martyr_fp(200,1000,150),60,"20% of health lost restores 40% of focus");
         assert_eq!(martyr_fp(5000,1000,150),150,"never more than the whole pool");
         assert_eq!((martyr_fp(0,1000,150),martyr_fp(100,0,150),martyr_fp(100,1000,0)),(0,0,0));
         assert!(Ember::Martyr.quality()==2&&Ember::Martyr.classes()==Some(&[crate::Class::Astrologer,crate::Class::Prophet][..]));
@@ -462,12 +480,19 @@ mod tests {
         let held=[Ember::Harvest];let mut stacks=Stacks::default();
         assert!(stacks.gain(&held,Gain::Kill{rank:2,spirit:false}).is_empty(),"ordinary kills do not count");
         assert!(stacks.gain(&held,Gain::Critical).is_empty());
-        assert_eq!(stacks.gain(&held,Gain::CriticalKill{rank:0}),vec![Ember::Harvest]);assert_eq!(stacks.harvest,1);
-        stacks.gain(&held,Gain::CriticalKill{rank:1});stacks.gain(&held,Gain::CriticalKill{rank:2});assert_eq!(stacks.harvest,9);
-        let hp=stack_rates(Ember::Harvest,stacks.harvest).unwrap().hp;assert!((hp-1.01f32.powi(9)).abs()<1e-4,"compounds: {hp}");
+        assert_eq!(stacks.gain(&held,Gain::CriticalKill{rank:0}),vec![Ember::Harvest]);assert_eq!(stacks.harvest,2);
+        stacks.gain(&held,Gain::CriticalKill{rank:1});stacks.gain(&held,Gain::CriticalKill{rank:2});assert_eq!(stacks.harvest,17);
+        let hp=stacks.rates(Ember::Harvest).unwrap().hp;assert!((hp-1.02*1.05*1.10).abs()<1e-4,"compounds: {hp}");
         assert!(stack_rates(Ember::Harvest,100).unwrap().hp>2.7,"1.01^100 is about 2.7x, not 2x");
         assert!(stack_rates(Ember::Harvest,u32::MAX).unwrap().hp.is_finite());
         assert_eq!(Ember::Harvest.stack_bonus(9).unwrap(),"最大生命 +9%");
+        let restored:Stacks=serde_json::from_str(&serde_json::to_string(&stacks).unwrap()).unwrap();
+        assert_eq!(restored,stacks);assert_eq!(restored.rates(Ember::Harvest),stacks.rates(Ember::Harvest));
+        let mut legacy:Stacks=serde_json::from_str(r#"{"harvest":9}"#).unwrap();
+        let old_hp=legacy.rates(Ember::Harvest).unwrap().hp;
+        assert!((old_hp-1.01f32.powi(9)).abs()<1e-4);
+        legacy.gain(&held,Gain::CriticalKill{rank:2});
+        assert!((legacy.rates(Ember::Harvest).unwrap().hp-old_hp*1.10).abs()<1e-4);
         let mut other=Stacks::default();assert!(other.gain(&[Ember::Chain],Gain::CriticalKill{rank:2}).is_empty(),"needs the ember");
         assert!(Ember::Harvest.stacking()&&Ember::Harvest.quality()==3&&Ember::Harvest.classes().is_none());
         assert_eq!(serde_json::to_string(&Stacks::default()).unwrap().contains("harvest"),false,"old saves stay unchanged");
@@ -666,18 +691,18 @@ mod tests {
         let mut stacks=Stacks::default();
         assert!(stacks.gain(&[Ember::Frenzy],Gain::Critical).is_empty());assert!(stacks.is_empty(),"no stacking ember held");
         let held=[Ember::SoulEater,Ember::Chain,Ember::Godslayer,Ember::SpiritKeeper];
-        for _ in 0..9 {assert!(stacks.gain(&held,Gain::Kill{rank:0,spirit:false}).is_empty());}
+        for _ in 0..4 {assert!(stacks.gain(&held,Gain::Kill{rank:0,spirit:false}).is_empty());}
         assert_eq!(stacks.gain(&held,Gain::Kill{rank:0,spirit:false}),vec![Ember::SoulEater]);
         assert_eq!(stacks.gain(&held,Gain::Kill{rank:2,spirit:true}),vec![Ember::SoulEater,Ember::SpiritKeeper]);
-        assert_eq!((stacks.level(Ember::SoulEater),stacks.level(Ember::SpiritKeeper)),(2,1));
-        assert_eq!(stacks.gain(&held,Gain::Kill{rank:1,spirit:false}),vec![],"3 souls: 23 in total");
+        assert_eq!((stacks.level(Ember::SoulEater),stacks.level(Ember::SpiritKeeper)),(3,1));
+        assert_eq!(stacks.gain(&held,Gain::Kill{rank:1,spirit:false}),vec![],"3 souls: 18 in total");
         assert_eq!(stacks.gain(&held,Gain::Critical),vec![Ember::Chain]);
         assert_eq!(stacks.gain(&held,Gain::Slain),vec![Ember::Godslayer]);
         for _ in 0..100 {for event in [Gain::Kill{rank:2,spirit:true},Gain::Critical,Gain::Slain] {stacks.gain(&held,event);}}
-        assert_eq!(held.map(|e|stacks.level(e)),[102,101,101,101],"no cap");
+        assert_eq!(held.map(|e|stacks.level(e)),[203,101,101,101],"no cap");
         assert_eq!(stacks.gain(&held,Gain::Critical),vec![Ember::Chain]);
         assert!(Ember::ALL.iter().all(|e|e.stacking()==e.stack_bonus(1).is_some()));
-        assert_eq!(Ember::Godslayer.stack_bonus(8).unwrap(),"最大生命 +32%、攻击 +16%");
+        assert_eq!(Ember::Godslayer.stack_bonus(8).unwrap(),"最大生命 +48%、攻击 +40%");
         assert_eq!(Ember::Chain.stack_bonus(50).unwrap(),"致命一击伤害 +300%");
         assert_eq!(Ember::SpiritKeeper.stack_bonus(10).unwrap(),"召唤物伤害 +30%、受到的伤害 -18%");
         let deep=stack_rates(Ember::SpiritKeeper,500).unwrap();assert!(deep.cut>0.0&&deep.cut<0.001,"damage cut never reaches zero");
@@ -685,10 +710,30 @@ mod tests {
         let mut full=Stacks{chain:u32::MAX,..Default::default()};assert!(full.gain(&held,Gain::Critical).is_empty(),"saturates instead of overflowing");
     }
     #[test]
+    fn buffed_ember_values_and_growth_match_the_requested_balance() {
+        assert_eq!((SOUL_POINTS,SOUL_STEP_PERCENT),(5,3));
+        assert_eq!((SLAYER_HP_PERCENT,SLAYER_ATTACK_PERCENT),(6,5));
+        assert_eq!(HARVEST_POINTS,[2,5,10]);
+        assert_eq!(u32::from(FRENZY_STACKS)*FRENZY_STEP_PERCENT,80);
+        assert_eq!(BUILDUP,40);
+        assert_eq!((BARRIER_CUT_PERCENT,MOON_ATTACK_PERCENT),(50,50));
+        assert_eq!((SPIRIT_BURST_PERCENT,SPIRIT_FEAST_HEAL_PERCENT,SPIRIT_FEAST_FP_PERCENT),(20,20,20));
+        assert_eq!(wound_percent(Ember::SpiritBurst),Some(20));
+        assert_eq!(BOSS_CAP_PERCENT,1,"the existing boss cap is unchanged");
+        let mut stacks=Stacks::default();
+        for _ in 0..5 {stacks.gain(&[Ember::SoulEater],Gain::Kill{rank:0,spirit:false});}
+        assert_eq!(stacks.level(Ember::SoulEater),1);
+        assert!((stacks.rates(Ember::SoulEater).unwrap().attack-1.03).abs()<1e-6);
+        for (rank,expected) in [(0,1.02),(1,1.05),(2,1.10)] {
+            let mut stacks=Stacks::default();stacks.gain(&[Ember::Harvest],Gain::CriticalKill{rank});
+            assert!((stacks.rates(Ember::Harvest).unwrap().hp-expected).abs()<1e-6);
+        }
+    }
+    #[test]
     fn card_text_uses_the_tuned_numbers() {
         assert_eq!(Ember::Execution.effect(),"致命一击后 5 秒内\n精力消耗 -50%");
-        assert_eq!(Ember::Barrier.effect(),"施放法术或祷告时\n受到的伤害降低 35%");
-        assert_eq!(Ember::FullMoon.effect(),"专注不低于 70% 时\n造成的伤害提高 18%");
+        assert_eq!(Ember::Barrier.effect(),"施放法术或祷告时\n受到的伤害降低 50%");
+        assert_eq!(Ember::FullMoon.effect(),"专注不低于 70% 时\n造成的伤害提高 50%");
         assert_eq!(Ember::SpiritResonance.effect(),"召唤物在场时\n你造成的伤害 +40%");
         assert_eq!(Ember::Arts.effect(),"战技伤害 +25%\n战技消耗的专注 -50%");
         assert!(Ember::Arts.quality()==2&&!Ember::Arts.needs_spirit()&&!Ember::Arts.needs_casting());
@@ -698,7 +743,7 @@ mod tests {
         assert_eq!(Ember::Breaker.effect(),"敌人出血、冻伤、睡眠、发狂发作时\n压低架势，5 秒内下一次削韧命中触发失衡\nBoss 与普通敌人均无触发冷却");
         assert!(Ember::Breaker.quality()==3&&!Ember::Breaker.needs_spirit()&&!Ember::Breaker.needs_casting());
         assert!(Ember::SpiritResonance.needs_spirit()&&Ember::SpiritResonance.quality()==3&&!Ember::SpiritResonance.affects_enemies());
-        assert_eq!(Ember::Frenzy.effect(),"每次命中攻击 +2%，最多 +16%\n受伤时清零");
+        assert_eq!(Ember::Frenzy.effect(),"每次命中攻击 +2%，最多 +80%\n受伤时清零");
         assert!(Ember::ALL.iter().all(|e|e.effect().lines().all(|l|l.chars().count()<=20)),"card lines must fit");
     }
 }
