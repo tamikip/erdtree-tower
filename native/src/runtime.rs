@@ -436,7 +436,6 @@ struct Runtime {
     descent: Option<(Instant,i32,i32,bool)>,
     stormveil: Option<(Instant,i32,i32,bool)>,
     stormveil_barrier:super::parkour_barrier::Barrier,
-    hub_boundary:super::hub_boundary::Boundary,
     chariot_clock:Option<ChariotClock>,
     chariot_chase:super::chariot::Chase,
 }
@@ -510,7 +509,6 @@ fn fresh_runtime()->Runtime {
         descent: None,
         stormveil: None,
         stormveil_barrier:Default::default(),
-        hub_boundary:Default::default(),
         chariot_clock:None,
         chariot_chase:Default::default(),
     }
@@ -1408,7 +1406,6 @@ fn tick_locked() {
             Err(error)=>{state.skip_target=None;report(&mut state,format!("跳过未完成：{error}"));},
         }
     }
-    state.hub_boundary.tick(world,game.warp_requested||game.save_slot<0);
     let chase_enabled=!game.warp_requested&&matches!(state.chariot_clock,Some(ChariotClock::Surviving(_)))
         &&state.view.run.as_ref().is_some_and(|r|r.regional_event.chariot&&r.regional_event.stormveil==Some(erdtree_tower::stormveil::Progress::Running));
     let Runtime{chariot_chase,party,..}=&mut *state;

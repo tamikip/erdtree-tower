@@ -81,7 +81,6 @@ mod ember_notice;
 mod smith;
 mod whetblades;
 mod parkour_barrier;
-mod hub_boundary;
 mod event_hosts;
 mod spirits;
 mod bloodstain;
