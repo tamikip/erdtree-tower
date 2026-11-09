@@ -8,6 +8,8 @@ EMBEDDED = frozenset({
 })
 
 BUILD_ONLY = frozenset({
+    'heretical-rise-start.json', 'vanilla-talisman-quality.tsv',
+    'custom-spirit-definitions.tsv',
     'affix-effect-remap.tsv', 'random-ashes.tsv', 'talisman-catalog.txt',
     'retired-spell-strip.json', 'reward-art/extra-icons.txt',
     'reward-art/rare-blue-generation.txt', 'reward-art/rarity-generation.txt',

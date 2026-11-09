@@ -44,7 +44,7 @@ pub const STORIES: [Story; 4] = [
     },
 ];
 /// 问号房抽到的事件。event_rules 2 起每个事件按权重表单独抽取（3 起用 EVENT_WEIGHTS）；更早的旅程沿用 8 格分配，没有赌运事件
-#[derive(Clone,Copy,Debug,PartialEq,Eq,Hash)]
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Hash,serde::Serialize,serde::Deserialize)]
 pub enum Draw {Trial,Chests,Altar,Locked,Scarabs,Spring,Dice,Mystery,Reforge,Mausoleum,Furnace}
 /// 问号房事件权重（event_rules 3 起）：九个事件相同，各 1/9
 pub const EVENT_WEIGHTS:[(Draw,u32);9]=[
@@ -59,6 +59,7 @@ pub const EVENT_WEIGHTS_V2:[(Draw,u32);9]=[
 impl Run {
     /// 本旅程第 id 个节点（问号房）的事件，由种子与节点决定，读档不变
     pub fn event_draw(&self,id:usize)->Draw {
+        if let Some((act,node,draw))=self.event_test {if self.debug&&act==self.act&&node==id{return draw;}}
         if self.debug&&self.mausoleum_test==Some((self.act,id)){return Draw::Mausoleum;}
         if self.event_rules<2 {
             return match crate::mix(self.seed^id as u64^0x10cced)%8 {

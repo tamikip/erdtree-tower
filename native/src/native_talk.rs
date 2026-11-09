@@ -69,6 +69,7 @@ impl EventMenu {
             EventRequest::Trial(Trial::Mausoleum)=>Some(9500165),
             EventRequest::Trial(Trial::Stormveil)=>Some(9500119),
             EventRequest::Trial(Trial::Chariot)=>Some(9500120),
+            EventRequest::Trial(Trial::HereticalRise)=>Some(9500214),
             EventRequest::Trial(Trial::Skip) if self.mausoleum_offer=>Some(9500167),
             EventRequest::Trial(Trial::Skip)|EventRequest::Stormveil(false)=>Some(9500121),
             EventRequest::Stormveil(true)=>Some(if self.chariot{9500120}else{9500119}),
@@ -87,6 +88,7 @@ impl EventMenu {
         if self.gamble==Some(erdtree_tower::events::FURNACE as u8) {return (!self.used&&!self.busy&&choice==1).then_some(EventRequest::Gamble(0));}
         if self.gamble.is_some() {return (!self.used&&!self.busy&&(1..=2).contains(&choice)).then(||EventRequest::Gamble((choice-1) as usize));}
         if self.trial {
+            if !self.used&&!self.busy&&choice==5 {return Some(EventRequest::Trial(erdtree_tower::regional_events::Trial::HereticalRise));}
             return (!self.used&&!self.busy).then(||[erdtree_tower::regional_events::Trial::Descent,erdtree_tower::regional_events::Trial::Stormveil,erdtree_tower::regional_events::Trial::Chariot,erdtree_tower::regional_events::Trial::Skip].get(choice.wrapping_sub(1) as usize).copied()).flatten().map(EventRequest::Trial);
         }
         if self.stormveil {return (!self.used&&!self.busy&&(1..=2).contains(&choice)).then_some(EventRequest::Stormveil(choice==1));}
@@ -107,6 +109,14 @@ impl CampInteraction {
 // Owned and invoked only by the serialized game-task callback.
 unsafe impl Send for NativeTalk {}
 impl NativeTalk {
+    fn log_shop_tear(&mut self,stage:&str) {
+        if !super::debug_menu::enabled(){return;}
+        let owns=self.query(47,&[3,erdtree_tower::elite::TEAR as i32,2,0,0]);
+        super::log(format!("SHOP_TEAR {stage} native_item_query={owns:?} (raw result; not purchase eligibility)"));
+        if let Ok(player)=unsafe {eldenring::cs::PlayerIns::local_player()} {
+            super::native_shop::log_sacred_tear_shop(stage,unsafe {player.player_game_data.as_ref()});
+        } else {super::log(format!("SHOP_TEAR {stage} player unavailable"));}
+    }
     pub fn new(block: i32, handle: FieldInsHandle, service: u32) -> Self {
         Self { script: TalkScript::new(BlockId::from(block), 950000000 + service as i32, handle), service, state: 0, menu_kind: 0, choice: None, flask_upgrade: None, camp: CampInteraction::default(),event_menu:Default::default(),event_request:None,event_confirmation:None,enemies:Vec::new(),talismans:Vec::new(),talisman:None,spirit_session:None }
     }
@@ -169,6 +179,7 @@ impl NativeTalk {
                     if self.event_menu.busy||self.event_menu.used {return Ok(());}
                     self.event(110,&[])?;self.event(20,&[])?;
                     for (i,text) in [9500094,9500115,9500117,9500116].into_iter().enumerate(){self.event(19,&[i as i32+1,text,-1])?;}
+                    self.event(19,&[5,9500210,-1])?;
                     self.event(19,&[99,9500003,-1])?;self.event(10,&[1])?;self.state=1;return Ok(());
                 }
                 if self.service==6 && self.event_menu.stormveil {
@@ -357,6 +368,7 @@ impl NativeTalk {
                 } else if self.service == 2 {
                     let player=unsafe {eldenring::cs::PlayerIns::local_player()}.map_err(|_|"角色未加载")?;
                     super::native_shop::refresh_weapon_levels(unsafe {player.player_game_data.as_ref()})?;
+                    self.log_shop_tear("open");
                     self.event(22, &[super::native_shop::GOODS as i32, (super::native_shop::GOODS+super::native_shop::MAX_STOCK-1) as i32])?;
                     self.state = 3;
                 } else if self.service == 0 {
@@ -376,7 +388,7 @@ impl NativeTalk {
                 self.event_request=self.event_menu.confirmed(choice,answer);self.state=0;
             },
             2 => {},
-            3 => if self.query(59, &[5, 0])? == 0 { self.state = 0; },
+            3 => if self.query(59, &[5, 0])? == 0 { if self.service==2 {self.log_shop_tear("close");} self.state = 0; },
             4 => if self.query(58, &[0])? == 0 { self.state = 0; },
             15 => if self.query(59,&[1,0])?==0 {self.state=0;},
             16 => if self.query(58,&[0])?==0 {
@@ -501,6 +513,14 @@ mod tests {
     }
     #[test]
     fn event_dialog_requests_are_local_and_respect_current_progress() {
+        let roads=EventMenu{trial:true,..Default::default()};
+        for (id,route,text) in [(5,erdtree_tower::regional_events::Trial::HereticalRise,9500214)] {
+            assert_eq!(roads.request(id),Some(EventRequest::Trial(route)));
+            assert_eq!(roads.confirmation(id),Some(text));
+            assert_eq!(roads.confirmed(Some(id),0),None);
+            assert_eq!(EventMenu{busy:true,..roads}.request(id),None);
+            assert_eq!(EventMenu{used:true,..roads}.request(id),None);
+        }
         use super::{EventMenu,EventRequest};
         let trial=EventMenu{trial:true,..Default::default()};
         use erdtree_tower::regional_events::Trial;
@@ -508,7 +528,7 @@ mod tests {
             assert_eq!(trial.request(i as i32+1),Some(EventRequest::Trial(choice)));
             assert_eq!(EventMenu{busy:true,..trial}.request(i as i32+1),None);
         }
-        for i in [-1,0,5,99] {assert_eq!(trial.request(i),None);}
+        for i in [-1,0,6,51,52,99] {assert_eq!(trial.request(i),None);}
         let altar=EventMenu{altar:true,..Default::default()};
         let storm=EventMenu{stormveil:true,..Default::default()};
         assert_eq!(storm.request(1),Some(EventRequest::Stormveil(true)));

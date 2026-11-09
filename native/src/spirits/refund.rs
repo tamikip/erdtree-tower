@@ -17,7 +17,7 @@ impl Refund {
 impl Ledger {
     fn accept(&mut self,usage:Use) {
         let used=self.uses.iter().filter(|u|u.goods==usage.goods).count() as u32;
-        if !self.closed&&self.uses.len()<2&&count(&self.inventory,usage.goods)>used{self.uses.push(usage);}
+        if !self.closed&&count(&self.inventory,usage.goods)>used{self.uses.push(usage);}
     }
     fn observe(&mut self,members:&[Member],cleanup:bool,now:Instant) {
         if self.closed{return;}
@@ -115,6 +115,30 @@ pub(crate) fn pump(data:&mut eldenring::cs::PlayerGameData,plan:&mut [Refund])->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn summoner_resummons_after_two_dead_groups_still_refund_the_survivor() {
+        let mut ledger=Ledger{inventory:vec![(270039,3)],..Default::default()};
+        for index in 0..3 {
+            let before:Vec<_>=(1..=index).collect();
+            ledger.accept(usage(270039,&before,1600039000));
+            ledger.observe(&[member(index+1,1600039000,index==2)],false,Instant::now());
+        }
+        assert_eq!(ledger.uses.len(),3);
+        ledger.accept(usage(270039,&[1,2,3],1600039000));
+        assert_eq!(ledger.uses.len(),3,"cannot refund more uses than the held inventory");
+        let plan=ledger.settle();
+        assert_eq!(plan.iter().map(|r|(r.goods,r.quantity)).collect::<Vec<_>>(),[(270039,1)]);
+        assert!(ledger.settle().is_empty());
+    }
+    #[test]
+    fn custom_spirits_refund_each_surviving_group_at_its_original_level() {
+        let mut ledger=Ledger{inventory:vec![(270039,1),(272011,1)],..Default::default()};
+        ledger.accept(usage(270039,&[],1600039000));
+        ledger.accept(usage(272011,&[1],1600091000));
+        ledger.observe(&[member(1,1600039000,true),member(2,1600091000,false)],false,Instant::now());
+        let refunds=ledger.settle();
+        assert_eq!(refunds.iter().map(|r|(r.goods,r.quantity)).collect::<Vec<_>>(),[(270039,1)]);
+    }
     fn usage(goods:u32,before:&[u64],param:i32)->Use {Use{goods,before:before.to_vec(),params:vec![param],members:HashMap::new()}}
     fn member(key:u64,param:i32,alive:bool)->Member {Member{key,param,alive}}
     fn two()->Ledger {let mut l=Ledger{inventory:vec![(100,1),(200,1)],..Default::default()};l.accept(usage(100,&[],10));l.accept(usage(200,&[1,2],20));l}

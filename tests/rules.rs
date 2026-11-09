@@ -42,11 +42,11 @@ fn blue_supply_consumes_the_same_camp_choice() {
 }
 
 #[test]
-fn pure_color_supply_restores_physick_and_spends_one_camp_service() {
+fn pure_color_supply_preserves_empty_physick_and_spends_one_camp_service() {
     for choice in [CampChoice::RefillRedOnly,CampChoice::RefillBlueOnly] {
         let mut run=camp(1);run.physick_empty=true;
         run.camp(choice.clone()).unwrap();
-        assert_eq!(run.flasks,4);assert!(!run.physick_empty);
+        assert_eq!(run.flasks,4);assert!(run.physick_empty);
         assert!(run.camp(choice).is_err());
     }
 }
@@ -60,10 +60,10 @@ fn full_flask_refill_does_not_consume_camp() {
 }
 
 #[test]
-fn empty_physick_can_use_camp_with_full_red_blue_flasks() {
+fn empty_physick_cannot_use_camp_with_full_red_blue_flasks() {
     let mut run=camp(10);run.physick_empty=true;
-    run.camp(CampChoice::Refill).unwrap();
-    assert_eq!(run.flasks,10);assert!(!run.physick_empty);
+    assert!(run.camp(CampChoice::Refill).is_err());
+    assert_eq!(run.flasks,10);assert!(run.physick_empty);
     assert!(run.camp(CampChoice::Refill).is_err());
 }
 
@@ -422,9 +422,9 @@ fn weapon_levels_keep_converting_past_the_vanilla_cap() {
     assert_eq!((reinforcement_level(120,25),reinforcement_level(120,10)),(60,24));
     assert_eq!((reinforcement_level(MAX_PEAK,25),reinforcement_level(MAX_PEAK,10)),(NORMAL_MAX,SOMBER_MAX));
     assert_eq!(reinforcement_level(255,25),NORMAL_MAX,"clamped at the top peak");
-    // 骨灰等级仍然最多 +10
+    // 骨灰与失色武器保持等效上限。
     let mut run=erdtree_tower::Run::new(1,erdtree_tower::Class::Confessor);
     run.weapon_peak=Some(MAX_PEAK);
-    assert_eq!(erdtree_tower::rewards::spirit_level_now(&run),10);
+    assert_eq!(erdtree_tower::rewards::spirit_level_now(&run),39);
     assert!(erdtree_tower::Run::decode(&run.encode().unwrap()).is_ok(),"a peak above 50 is a valid save");
 }

@@ -148,6 +148,7 @@ static class NativeAssets {
         RetryItemAssets.Build(name=>Read(name),Save,messages);
         RequirementsAssets.Build(name=>Read(name,name=="Magic"?"MagicParam":name),Save);
         SpiritAssets.Build(name=>Read(name),Save);
+        var bottles=Read("EquipParamGoods");PhysickAssets.Apply(bottles);Save("EquipParamGoods",bottles);
         ContractAssets.Build(Read("SpEffectParam","SpEffect"),Save);
         PassiveAssets.Build(Read("SpEffectParam","SpEffect"),Save);
         EliteAssets.Build(Read("SpEffectParam","SpEffect"),Read("EquipParamAccessory"),Save);
@@ -176,8 +177,8 @@ static class NativeAssets {
         AddText(menu,33,new[]{(9500070,"暂时无法强化：圣杯瓶已达到 +12 上限，或瓶子尚未就绪。")});
         AddText(menu,33,new[]{(9500071,"调配灵药")});
         var campText=FMG.Read(menu.Files.Single(f=>f.ID==33).Bytes);
-        campText.Entries.Single(e=>e.ID==9500000).Text="补给：2 红 1 蓝＋灵药";
-        campText.Entries.Single(e=>e.ID==9500044).Text="补给：1 红 2 蓝＋灵药";
+        campText.Entries.Single(e=>e.ID==9500000).Text="补给：2 红 1 蓝";
+        campText.Entries.Single(e=>e.ID==9500044).Text="补给：1 红 2 蓝";
         menu.Files.Single(f=>f.ID==33).Bytes=campText.Write();
         AddText(menu,33,new[]{(9500041,"强化护符"),(9500042,"免费更换战灰／质变"),(9500043,"记忆魔法／祷告")});
         var global=BND4.Read(Path.Combine(cache,"m00_00_00_00.talkesdbnd.dcx"));
@@ -234,10 +235,7 @@ static class NativeAssets {
         if(Convert.ToInt32(lockedAction["textId"].Value)!=9500072 || Convert.ToInt32(Read("EquipParamGoods").Rows.Single(r=>r.ID==8000)["maxNum"].Value)<1)throw new Exception("Locked chest key or action missing");
         foreach(var cell in chestAction.Cells.Where(c=>c.Def.InternalName!="textId"))if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(cell.Value,lockedAction[cell.Def.InternalName].Value))throw new Exception("Locked chest interaction geometry differs from normal chest");
         var physick=Read("EquipParamGoods");
-        foreach(var (id,replacement,consumed) in new[]{(250,251,1),(251,250,0)}) {
-            var bottle=physick.Rows.Single(r=>r.ID==id);
-            if(Convert.ToInt32(bottle["replaceItemId"].Value)!=replacement||Convert.ToInt32(bottle["isConsume"].Value)!=consumed||Convert.ToInt32(bottle["maxNum"].Value)!=1)throw new Exception("Native Physick bottle lifecycle mismatch");
-        }
+        PhysickAssets.Verify(physick);
         if(physick.Rows.Count(r=>r.ID>=11000&&r.ID<=11031)!=32)throw new Exception("Base-game crystal tears missing");
         var nativeChestAction=Read("ActionButtonParam").Rows.Single(r=>r.ID==8000);
         foreach(var cell in nativeChestAction.Cells.Where(c=>!new[]{"textId","invalidFlag"}.Contains(c.Def.InternalName)))

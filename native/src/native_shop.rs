@@ -5,15 +5,15 @@ use eldenring::cs::{
 use erdtree_tower::{Blessing, BlessingKind, NodeKind, Run};
 use fromsoftware_shared::FromStatic;
 pub const GOODS: u32 = 9500000;
-pub const STOCK_COUNT: u32 = 37;
+pub const STOCK_COUNT: u32 = 39;
 pub const MAX_STOCK:u32=erdtree_tower::merchant::MAX_STOCK as u32;
 #[test]
 fn merchant_bells_append_five_matching_items_and_keep_base_stock() {
     let base=Run::new(77,erdtree_tower::Class::Samurai);let original=stock(&base);
     for kind in 0..3 {
         let mut run=base.clone();run.bells.counts[kind]=2;run.bells.receipts=vec![(1,1),(1,2)];
-        let items=stock(&run);assert_eq!(items.len(),original.len()+10);assert_eq!(&items[..37],original.as_slice());
-        assert!(items[37..].iter().all(|item|item.kind==kind as u8&&item.quantity==1&&offered(item)));
+        let items=stock(&run);assert_eq!(items.len(),original.len()+10);assert_eq!(&items[..STOCK_COUNT as usize],original.as_slice());
+        assert!(items[STOCK_COUNT as usize..].iter().all(|item|item.kind==kind as u8&&item.quantity==1&&offered(item)));
         assert_eq!(items,stock(&run));
     }
     let mut run=base;run.bells.counts=[22,21,21];
@@ -80,7 +80,8 @@ fn refresh_special_prices(stock:&mut [Stock],run:&Run) {
             let id=0x40000000|item.id as u32;
             if erdtree_tower::rewards::lookup(id).is_some_and(|i|i.kind==ItemKind::Spirit) {assert_eq!(item.price,spirit_price(id));seen+=1;}
         }}
-        assert!(seen>300,"summoners always see a spirit ash: {seen}");
+        let expected=(0..400).filter(|seed|erdtree_tower::rewards::shop_crystal_offer(&Run::new(*seed,erdtree_tower::Class::Confessor),0).is_none()).count();
+        assert_eq!(seen,expected,"the shared slot contains ashes whenever no crystal is offered");
     }
     #[test]
     fn spirit_stock_never_exceeds_the_current_ash_level() {
@@ -252,21 +253,21 @@ fn larval_tear_is_always_available_for_5000_runes() {
     }
 }
 #[test]
-fn crystal_shop_roll_is_rare_stable_and_costs_6000() {
+fn crystal_shop_roll_is_fifty_percent_stable_and_costs_3000() {
     let mut count=0;
     for seed in 0..1000 {
         let run=Run::new(seed,erdtree_tower::Class::Samurai);
         let rows=stock(&run);
         if let Some(item)=rows.iter().find(|s|s.kind==3&&erdtree_tower::rewards::lookup(0x40000000|s.id as u32).is_some_and(|i|i.kind==erdtree_tower::rewards::ItemKind::Crystal)) {
-            count+=1;assert_eq!((item.price,item.quantity),(6000,1));
+            count+=1;assert_eq!((item.price,item.quantity),(3000,1));
             assert_eq!(rows,stock(&run));
         }
     }
-    assert!((25..=75).contains(&count));
+    assert!((450..=550).contains(&count));
 }
 fn stock_flag(index:u32)->u32 {
-    if index<21 {STOCK_FLAGS+index*8}else if index<26 {45020700+(index-21)*8}else if index<STOCK_COUNT {45020600+(index-26)*8}
-    else {let slot=index-STOCK_COUNT;match slot {0..=99=>45005200+slot*8,100..=199=>45015200+(slot-100)*8,200..=299=>45025200+(slot-200)*8,300..=311=>45002904+(slot-300)*8,_=>45003904+(slot-312)*8}}
+    if index<21 {STOCK_FLAGS+index*8}else if index<26 {45020700+(index-21)*8}else if index<37 {45020600+(index-26)*8}
+    else {let slot=index-37;match slot {0..=99=>45005200+slot*8,100..=199=>45015200+(slot-100)*8,200..=299=>45025200+(slot-200)*8,300..=311=>45002904+(slot-300)*8,_=>45003904+(slot-312)*8}}
 }
 #[test]
 fn random_shop_only_sells_base_talismans() {
@@ -351,7 +352,7 @@ fn stock_capped(run:&Run,spirit_cap:u32)->Vec<Stock> {
     for (kind,equip,price) in [(ItemKind::Sorcery,3,1800),(ItemKind::Incantation,3,1800),(ItemKind::Armor,1,1500)] {
         result.extend(select(CATALOG.iter().filter(|s|s.kind==kind&&erdtree_tower::dlc::item_allowed(s.id)).map(|s|Stock{kind:equip,id:(s.id&0x0fffffff) as i32,price,quantity:1}).collect(),3,run.seed,visit));
     }
-    // 原来卖投掷壶的一格改卖第二种飞刀：投掷壶要有龟裂壶才能持有，商店不再发放龟裂壶
+    // 保留原有食品与飞刀栏位；投掷壶使用后面的独立栏位。
     if tear_offer(hash(run.seed ^ visit as u64 ^ 0x74656172)) {
         result.push(Stock{kind:3,id:erdtree_tower::elite::TEAR as i32,price:5000,quantity:1});
     } else {result.extend(select(extras("food"),1,run.seed,visit));}
@@ -363,7 +364,7 @@ fn stock_capped(run:&Run,spirit_cap:u32)->Vec<Stock> {
     result.extend(select(catalog.iter().filter(|s|s.kind==4).cloned().collect(),2,run.seed,visit));
     let pool=CATALOG.iter().filter(|s|s.kind==ItemKind::Talisman&&s.random_eligible()).map(|s|Stock{kind:2,id:(s.id&0x0fffffff) as i32,price:talisman_price(super::reward_ui::item_quality(s.id)),quantity:1}).collect();
     result.extend(select(pool,2,run.seed,visit));
-    // 召唤师的商店常备骨灰
+    // 召唤师优先供骨灰；露滴出现时占用同一商品栏。
     if !run.law.lone_wolf()&&(run.summoner()||hash(run.seed ^ visit as u64 ^ 0xa549)%4==0) {
         result.extend(select(CATALOG.iter().filter(|s|s.kind==ItemKind::Spirit&&erdtree_tower::dlc::item_allowed(s.id)).map(|s|Stock{kind:3,id:(s.id&0x0fffffff) as i32,price:2000,quantity:1}).collect(),1,run.seed,visit));
     } else {
@@ -375,8 +376,8 @@ fn stock_capped(run:&Run,spirit_cap:u32)->Vec<Stock> {
         if item.kind==3&&erdtree_tower::rewards::lookup(0x40000000|item.id as u32).is_some_and(|i|i.kind==ItemKind::Spirit) {item.price=spirit_price(0x40000000|item.id as u32);}
     }
     result.push(Stock{kind:3,id:8185,price:5000,quantity:-1});
-    if let Some(id)=erdtree_tower::rewards::crystal_offer(run,visit as u64,0x5a09) {
-        result[21]=Stock{kind:3,id:(id&0x0fffffff) as i32,price:6000,quantity:1};
+    if let Some(id)=erdtree_tower::rewards::shop_crystal_offer(run,visit as u64) {
+        result[21]=Stock{kind:3,id:(id&0x0fffffff) as i32,price:3000,quantity:1};
     }
     if key_offer(hash(run.seed ^ visit as u64 ^ 0x8000cafe)) {
         result.push(Stock{kind:3,id:8000,price:2500,quantity:1});
@@ -395,6 +396,7 @@ fn stock_capped(run:&Run,spirit_cap:u32)->Vec<Stock> {
     result.push(Stock{kind:0,id:pick(&SPECIAL_BOLTS,0xb017),price:60,quantity:20});
     result.push(Stock{kind:0,id:53000000,price:100,quantity:10});
     result.push(Stock{kind:0,id:pick(&SPECIAL_GREATBOLTS,0x6b17),price:200,quantity:10});
+    result.extend(select(extras("pot"),2,run.reward_seed()^0x706f7473,visit));
     for (kind,count) in run.bells.counts.iter().enumerate() {
         let pool:Vec<Stock>=match kind {
             0=>catalog.iter().filter(|s|s.kind==0).cloned().collect(),
@@ -427,7 +429,7 @@ fn affix_stock(run:&Run,visit:usize,result:&mut [Stock]) {
 }
 pub fn prepare(run: &Run, node: usize, refresh: bool, data:&mut PlayerGameData) -> Result<erdtree_tower::ShopStock, String> {
     let params = unsafe { SoloParamRepository::instance_mut() }.map_err(|_| "商店参数未加载")?;
-    let saved=run.shop_stock.as_ref().filter(|saved|!refresh&&saved.node==node&&(STOCK_COUNT as usize..=MAX_STOCK as usize).contains(&saved.items.len()));
+    let saved=run.shop_stock.as_ref().filter(|saved|!refresh&&saved.node==node&&(37..=MAX_STOCK as usize).contains(&saved.items.len()));
     let mut stock=if let Some(saved)=saved {saved.items.iter().map(|[kind,id,price,quantity]|Stock{kind:*kind as u8,id:*id,price:*price,quantity:*quantity as i16}).collect()}else{
         let tools=super::loot::casting_tools(data);
         let mut live=run.clone();
@@ -524,6 +526,62 @@ pub fn sold_counts(count:usize)->Result<Vec<u8>,String> {
         if flags.virtual_memory_flag.flag_block_descriptors.find(&(stock_flag(i)/1000)).is_none(){return Err("商店库存旗标尚未加载".to_string());}
         Ok((0..8).fold(0u8,|bits,b|bits|(u8::from(flags.virtual_memory_flag.get_flag(stock_flag(i)+b))<<b)))
     }).collect()
+}
+pub fn log_sacred_tear_shop(stage:&str,data:&PlayerGameData) {
+    use fromsoftware_shared::NonEmptyIteratorExt;
+    let result=(||->Result<(),String>{
+        let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"parameters unavailable")?;
+        let flags=unsafe {CSEventFlagMan::instance()}.map_err(|_|"flags unavailable")?;
+        let id=erdtree_tower::elite::TEAR;
+        let goods=params.get::<EquipParamGoods>(id).ok_or("sacred tear parameter missing")?;
+        let sum=|list:&[fromsoftware_shared::MaybeEmpty<eldenring::cs::EquipInventoryDataListEntry>]|list.iter().non_empty()
+            .filter(|e|e.item_id.category()==ItemCategory::Goods&&e.item_id.param_id()==id).map(|e|u64::from(e.quantity)).sum::<u64>();
+        let storage=data.storage.as_ref().map(|s|[sum(s.items_data.normal_entries()),sum(s.items_data.key_entries()),sum(s.items_data.multiplay_key_entries())]);
+        let active=data.equipment.equip_inventory_data.items_data.items().filter(|e|e.item_id.category()==ItemCategory::Goods&&e.item_id.param_id()==id).map(|e|u64::from(e.quantity)).sum::<u64>();
+        super::log(format!("SHOP_TEAR {stage} world_type={} runes={} bag={:?} storage={storage:?} active={active} goods_type={} max_bag={} max_storage={} unique={} disable_nt={}",
+            flags.world_type,data.rune_count,super::loot::goods_lists(data,id),goods.goods_type(),goods.max_num(),goods.max_repository_num(),goods.is_only_one(),goods.disable_param_nt()));
+        let read=|flag:u32|flags.virtual_memory_flag.flag_block_descriptors.find(&(flag/1000))
+            .filter(|d|matches!(d.location_mode,1|2)).map(|_|flags.virtual_memory_flag.get_flag(flag));
+        let mut found=0;
+        for slot in 0..MAX_STOCK {
+            let Some(row)=params.get::<ShopLineupParam>(GOODS+slot).filter(|r|r.equip_type()==3&&r.equip_id()==id as i32) else{continue};
+            found+=1;
+            let actual=row.event_flag_for_stock();let expected=stock_flag(slot);
+            let bits=(0..8).map(|b|actual.checked_add(b).and_then(&read)).collect::<Vec<_>>();
+            let expected_bits=(0..8).map(|b|read(expected+b)).collect::<Vec<_>>();
+            let release=row.event_flag_for_release();
+            let native=native_tear_limits(GOODS+slot,row as *const _ as *const std::ffi::c_void,data.storage.is_some());
+            super::log(format!("SHOP_TEAR {stage} native_limits={native:?} (stock,bag_capacity,bag_plus_storage_capacity)"));
+            super::log(format!("SHOP_TEAR {stage} row={} quantity={} set_num={} price={} cost_type={} material={} stock_flag={actual} expected_flag={expected} bits={bits:?} expected_bits={expected_bits:?} release_flag={release} release_value={:?}",
+                GOODS+slot,row.sell_quantity(),row.set_num(),row.value(),row.cost_type(),row.mtrl_id(),if release==0{None}else{read(release)}));
+        }
+        if found==0 {super::log(format!("SHOP_TEAR {stage} no sacred tear offer in active shop rows"));}
+        Ok(())
+    })();
+    if let Err(error)=result {super::log(format!("SHOP_TEAR {stage} snapshot unavailable: {error}"));}
+}
+#[repr(C)]
+struct ShopParamRef {kind:u8,pad:[u8;3],id:i32,row:*const std::ffi::c_void}
+fn native_tear_limits(id:u32,row:*const std::ffi::c_void,storage:bool)->Result<(i32,i32,Option<i32>),String> {
+    // Verified read-only stock and inventory-capacity routines in game 2.7.2.0.
+    let stock=super::items::checked_function(0x786c80,&[0x48,0x89,0x5c,0x24,0x20,0x55,0x48,0x83,0xec,0x30,0x48,0x8b,0xd9,0x48,0x8b,0x4a])?;
+    let bag=super::items::checked_function(0x7864b0,&[0x40,0x53,0x48,0x83,0xec,0x20,0x48,0x83,0x3d,0x82,0xc3,0x5e,0x03,0x00,0x48,0x8b])?;
+    let all=super::items::checked_function(0x7863a0,&[0x40,0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe,0xff,0xff,0xff,0x48])?;
+    let reference=ShopParamRef{kind:0,pad:[0;3],id:id as i32,row};
+    let item=0x40000000|erdtree_tower::elite::TEAR;
+    let mut remaining=-2;
+    unsafe {
+        let stock:unsafe extern "C" fn(*mut i32,*const ShopParamRef)->*mut i32=std::mem::transmute(stock);
+        let bag:unsafe extern "C" fn(*const u32)->i32=std::mem::transmute(bag);
+        let all:unsafe extern "C" fn(*const u32)->i32=std::mem::transmute(all);
+        if stock(&mut remaining,&reference)!=&mut remaining as *mut i32 {return Err("unexpected stock result pointer".into());}
+        Ok((remaining,bag(&item),storage.then(||all(&item))))
+    }
+}
+#[test]
+fn native_shop_probe_reference_matches_verified_stock_abi() {
+    assert_eq!(std::mem::offset_of!(ShopParamRef,row),8);
+    assert_eq!(std::mem::size_of::<ShopParamRef>(),16);
 }
 pub fn refresh_weapon_levels(data:&PlayerGameData)->Result<(),String> {
     let params=unsafe {SoloParamRepository::instance_mut()}.map_err(|_|"商店参数未加载")?;
@@ -690,7 +748,10 @@ mod tests {
                     assert_eq!(selected.len(),if group=="knife"{2-usize::from(rows.iter().any(|s|s.kind==3&&(8970..=8974).contains(&s.id)))}else{usize::from(!rows.iter().any(|s|s.kind==3&&s.id==erdtree_tower::elite::TEAR as i32))+usize::from(spirit==0&&!crystal)+usize::from(!rows.iter().any(|s|s.kind==3&&s.id==8000))});
                     assert!(selected.iter().all(|s|s.quantity==quantity));
                 }
-                assert!(rows.iter().all(|s|!extras("pot").iter().any(|p|p.kind==s.kind&&p.id==s.id)),"the shop no longer sells throwing pots");
+                let pots:Vec<_>=rows.iter().filter(|s|extras("pot").iter().any(|p|p.kind==s.kind&&p.id==s.id)).collect();
+                assert_eq!(pots.len(),2);
+                assert_ne!(pots[0].id,pots[1].id);
+                assert!(pots.iter().all(|s|s.quantity==3&&s.price==350));
                 let catalyst=match class {Class::Astrologer=>Some("staff"),Class::Prophet|Class::Confessor=>Some("seal"),_=>None};
                 if let Some(group)=catalyst {
                     assert_eq!(rows.iter().filter(|s|extras(group).iter().any(|p|p.kind==s.kind&&p.id as u32==erdtree_tower::affixes::base(s.id as u32))).count(),2);
@@ -706,18 +767,18 @@ mod tests {
         use erdtree_tower::rewards::{lookup,ItemKind};
         for act in 1..=3 {
             let mut levels=std::collections::BTreeSet::new();
-            for seed in 0..300 {
+            for seed in 0..2000 {
                 let mut run=Run::new(seed,erdtree_tower::Class::Samurai);run.act=act;
-                let first=stock_capped(&run,10);let second=stock_capped(&run,10);
+                let first=stock_capped(&run,39);let second=stock_capped(&run,39);
                 assert!(first.iter().zip(second.iter()).all(|(a,b)|a.id==b.id&&a.kind==b.kind));
                 for item in first.iter().filter(|s|s.kind==3&&lookup(0x40000000|s.id as u32).is_some_and(|i|i.kind==ItemKind::Spirit)) {
                     let id=0x40000000|item.id as u32;
                     let base=match super::super::reward_ui::item_quality(id) {0|1=>2000,2=>3500,_=>6000};
                     let level=item.id%1000;
-                    assert_eq!(item.price,base+base*level/10);assert!((0..=10).contains(&level));levels.insert(level);
+                    assert_eq!(item.price,base+base*level/10);assert!((0..=39).contains(&level));levels.insert(level);
                 }
             }
-            assert_eq!(levels,(0..=10).collect());
+            assert_eq!(levels,(0..=39).collect());
         }
     }
     #[test]

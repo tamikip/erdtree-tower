@@ -28,6 +28,17 @@ fn affixed_equipment_details_and_icons_cover_every_variant() {
         assert_eq!(detail.icon,DETAILS[&base].icon);
     }
 }
+#[test]
+fn custom_spirit_cards_have_details_icons_and_quality_through_39() {
+    for item in erdtree_tower::rewards::CATALOG.iter().filter(|i|erdtree_tower::rewards::custom_spirit(i.id)) {
+        for level in 0..=39 {
+            let id=item.id+level;
+            assert_eq!(DETAILS[&id].name,erdtree_tower::rewards::lookup(id).unwrap().name);
+            assert_eq!(DETAILS[&id].icon,DETAILS[&item.id].icon);
+            assert_eq!(item_quality(id),item_quality(item.id));
+        }
+    }
+}
 fn quality(run:&Run,reward:&Reward)->usize {
     if matches!(reward,Reward::MemorySlot){return 1;}
     if let Reward::Ember(ember)=reward {return usize::from(ember.quality());}
@@ -135,7 +146,7 @@ static DETAILS:LazyLock<HashMap<u32,Detail>>=LazyLock::new(|| {
     }
     for item in erdtree_tower::rewards::CATALOG.iter().filter(|i|i.kind==erdtree_tower::rewards::ItemKind::Spirit) {
         if let Some(base)=result.get(&item.id).cloned() {
-            for level in 1..=10 {
+            for level in 1..=u32::from(erdtree_tower::rewards::SPIRIT_MAX) {
                 let mut detail=base.clone();detail.name=erdtree_tower::rewards::lookup(item.id+level).unwrap().name.into();
                 result.insert(item.id+level,detail);
             }

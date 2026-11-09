@@ -11,6 +11,14 @@ static class RewardAssets {
             foreach(var r in p.Rows.Where(r=>ids.Contains(tag|(uint)r.ID)))rows.Add(tag|(uint)r.ID,Convert.ToInt32(r["rarity"].Value));
         }
         if(rows.Count!=ids.Count)throw new Exception("Reward rarity coverage mismatch");
+        using var qualityStream=typeof(RewardAssets).Assembly.GetManifestResourceStream("vanilla-talisman-quality.tsv")!;
+        using var qualityReader=new StreamReader(qualityStream);
+        var qualities=qualityReader.ReadToEnd().Split('\n',StringSplitOptions.RemoveEmptyEntries)
+            .Select(l=>l.TrimEnd('\r').Split('\t')).ToDictionary(p=>0x20000000u|uint.Parse(p[0]),p=>int.Parse(p[1]));
+        var accessories=rows.Keys.Where(id=>id>>28==2).ToHashSet();
+        if(!accessories.SetEquals(qualities.Keys)||qualities.Values.Any(t=>t<0||t>3))
+            throw new Exception("Vanilla talisman quality coverage mismatch");
+        foreach(var (id,tier) in qualities)rows[id]=tier;
         File.WriteAllLines(Path.Combine(output,"reward-rarities.tsv"),rows.Select(r=>$"{r.Key}\t{r.Value}"));
         Console.WriteLine($"Exported native rarity for {rows.Count} reward items");
     }

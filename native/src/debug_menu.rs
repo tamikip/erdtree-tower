@@ -4,7 +4,7 @@ use hudhook::imgui::{Condition,Ui};
 use erdtree_tower::{NodeKind,Run,contracts::Kind,embers::Ember,law::{Law,NODES}};
 use crate::enemies::Enemy;
 
-pub enum Command {MausoleumTest,BossTest(u16),RadahnTest,EndBossTest,ChainTest(u32),Jump(usize),Act(u8),Oath(Kind,u8),Ember(Ember,bool),Law(Law),Item(u32),Heal,Runes(u32),Cheats(bool,bool),InstantBreak(bool)}
+pub enum Command {EventTest(erdtree_tower::events::Draw),MausoleumTest,BossTest(u16),RadahnTest,EndBossTest,ChainTest(u32),Jump(usize),Act(u8),Oath(Kind,u8),Ember(Ember,bool),Law(Law),Item(u32),SpiritItem(u32),Heal,Runes(u32),Cheats(bool,bool),InstantBreak(bool)}
 
 // tower-debug.enable 文件，或启动参数 debug=1（启动器的「调试模式」）
 static ENABLED:LazyLock<bool>=LazyLock::new(||crate::LOG_PATH.with_file_name("tower-debug.enable").exists()||crate::options::get().debug);
@@ -20,12 +20,34 @@ static INSTANT_BREAK:AtomicBool=AtomicBool::new(false);
 static CHEATS_BLOCKED:AtomicBool=AtomicBool::new(false);
 /// 离玩家最近的敌人的韧性：调试菜单打开时游戏任务线程每帧写，菜单里显示
 static NEAREST:Mutex<Option<String>>=Mutex::new(None);
+static SUMMONS:Mutex<Vec<String>>=Mutex::new(Vec::new());
+fn new_spirits(level:u32)->Vec<(u32,&'static str)> {
+    if ![0,10,39].contains(&level){return Vec::new();}
+    erdtree_tower::rewards::CATALOG.iter().filter(|i|erdtree_tower::rewards::custom_spirit(i.id)).map(|i|(i.id+level,i.name)).collect()
+}
+pub fn valid_spirit_test_item(id:u32)->bool {
+    erdtree_tower::rewards::custom_spirit(id)&&erdtree_tower::rewards::lookup(id).is_some()
+}
+fn custom_buddy_item(param:i32)->Option<u32> {
+    let offset=param.checked_sub(1600000000)?;
+    if !(0..480000).contains(&offset)||offset%1000!=0{return None;}
+    let id=0x40000000|(270000+(offset/40000) as u32*1000+(offset%40000/1000) as u32);
+    valid_spirit_test_item(id).then_some(id)
+}
 /// 每帧（游戏任务线程）：攻击立刻爆条开着时压低全部敌人的韧性；菜单打开时记下最近那个敌人的韧性。只看敌人，不动玩家、队友与召唤物
 pub fn tick_enemies(world:&mut eldenring::cs::WorldChrMan) {
     let (open,instant)=(OPEN.load(Ordering::Relaxed),INSTANT_BREAK.load(Ordering::Relaxed));
     if !enabled()||!open&&!instant {return;}
     let Some(player)=world.main_player.as_ref() else{return};
     let origin={let p=&player.chr_ins.modules.physics.position;[p.0,p.1,p.2]};
+    if open&&let Ok(mut rows)=SUMMONS.lock() {
+        *rows=world.summon_buddy_manager.groups.iter().flat_map(|pair|pair.second.iter()).filter(|g|!g.is_remote).map(|group| {
+            let chr=unsafe {group.chr_ins.as_ref()};let p=&chr.modules.physics.position;
+            let distance=((p.0-origin[0]).powi(2)+(p.1-origin[1]).powi(2)+(p.2-origin[2]).powi(2)).sqrt();
+            let name=custom_buddy_item(group.buddy_param_id).and_then(erdtree_tower::rewards::lookup).map_or("原版召唤物",|i|i.name);
+            format!("{name} · 生命 {}/{} · 距离 {distance:.1} 米{}",chr.modules.data.hp,chr.modules.data.max_hp,if group.disappear_requested{" · 正在离场"}else{""})
+        }).collect();
+    }
     let friends:Vec<eldenring::cs::FieldInsHandle>=world.player_chr_set.characters().map(|p|p.chr_ins.field_ins_handle)
         .chain(world.summon_buddy_chr_set.characters().map(|c|c.field_ins_handle)).chain(std::iter::once(player.chr_ins.field_ins_handle)).collect();
     let mut nearest:Option<(f32,String)>=None;
@@ -94,10 +116,10 @@ fn ime_here(ui:&Ui) {
     if ui.is_item_active() {let min=ui.item_rect_min();let max=ui.item_rect_max();hudhook::set_ime_position(min[0],max[1]);}
 }
 fn send(command:Command) {if let Ok(mut queue)=QUEUE.lock(){queue.push_back(command);}}
-pub fn take()->Option<Command> {let mut queue=QUEUE.lock().ok()?;let index=queue.iter().position(|c|!matches!(c,Command::MausoleumTest|Command::BossTest(_)|Command::RadahnTest|Command::EndBossTest|Command::ChainTest(_)))?;queue.remove(index)}
+pub fn take()->Option<Command> {let mut queue=QUEUE.lock().ok()?;let index=queue.iter().position(|c|!matches!(c,Command::EventTest(_)|Command::MausoleumTest|Command::BossTest(_)|Command::RadahnTest|Command::EndBossTest|Command::ChainTest(_)))?;queue.remove(index)}
 pub fn take_test()->Option<Command> {
     let mut queue=QUEUE.lock().ok()?;
-    let index=queue.iter().position(|c|matches!(c,Command::MausoleumTest|Command::BossTest(_)|Command::RadahnTest|Command::EndBossTest|Command::ChainTest(_)))?;
+    let index=queue.iter().position(|c|matches!(c,Command::EventTest(_)|Command::MausoleumTest|Command::BossTest(_)|Command::RadahnTest|Command::EndBossTest|Command::ChainTest(_)))?;
     queue.remove(index)
 }
 static PARTY_ROLE:std::sync::atomic::AtomicU8=std::sync::atomic::AtomicU8::new(0);
@@ -170,6 +192,7 @@ impl Menu {
             if let Some(_bar)=ui.tab_bar("##debug-tabs") {
                 if let Some(_tab)=ui.tab_item("处刑之链实测") {chain_test(ui,run);}
                 if let Some(_tab)=ui.tab_item("Boss 测试") {self.boss_tests(ui,view,run);}
+                if let Some(_tab)=ui.tab_item("新骨灰测试") {self.spirit_tests(ui,view,run);}
                 if let Some(_tab)=ui.tab_item("战斗") {self.combat(ui,run);}
                 if let Some(_tab)=ui.tab_item("构筑") {self.build(ui,run);}
                 if let Some(_tab)=ui.tab_item("物品") {self.items(ui);}
@@ -180,10 +203,59 @@ impl Menu {
                     let _disabled=ui.begin_disabled(PARTY_ROLE.load(Ordering::Relaxed)!=0||run.phase!=erdtree_tower::Phase::Map||view.busy||view.travelling);
                     if ui.button("进入灵庙事件测试（单人）"){send(Command::MausoleumTest);}
                 }
+                if let Some(_tab)=ui.tab_item("事件测试") {
+                    use erdtree_tower::events::Draw;
+                    ui.text_wrapped("先开始旅程并停在路线图。点击后直接进入指定问号事件；隐形道路在试炼 NPC 的菜单里选择。测试旅程不计正式解锁。仅限独自游玩。");
+                    let _disabled=ui.begin_disabled(PARTY_ROLE.load(Ordering::Relaxed)!=0||run.phase!=erdtree_tower::Phase::Map||view.busy||view.travelling);
+                    for (label,draw) in [("试炼岔路（含异端塔隐形桥）",Draw::Trial),("恢复泉水",Draw::Spring),("骰子赌徒",Draw::Dice),("盲盒商人",Draw::Mystery),("词条重铸",Draw::Reforge),("重练炉",Draw::Furnace),("粪金龟",Draw::Scarabs),("灵庙引路人",Draw::Mausoleum),("多宝箱",Draw::Chests),("祭坛",Draw::Altar),("上锁宝箱",Draw::Locked)] {
+                        if ui.button(label){send(Command::EventTest(draw));}
+                    }
+                }
                 if let Some(_tab)=ui.tab_item("场地") {arenas(ui,run);}
             }
         });
         if !keep {OPEN.store(false,Ordering::Relaxed);}
+    }
+    fn spirit_tests(&mut self,ui:&Ui,view:&crate::runtime::View,run:&Run) {
+        let blocked=PARTY_ROLE.load(Ordering::Relaxed)!=0||view.travelling||!view.ready||matches!(run.phase,erdtree_tower::Phase::Reward{..});
+        ui.text_wrapped("12 种新骨灰，每次领取 1 份，可重复补充。装备到快捷栏后，在战斗场地手动召唤；检验胜利返还请使用召唤师。");
+        if PARTY_ROLE.load(Ordering::Relaxed)!=0 {ui.text_disabled("实际组队时禁止发放调试物品；无缝入口独自游玩可用。");}
+        {
+            let _disabled=ui.begin_disabled(blocked||view.busy||run.phase!=erdtree_tower::Phase::Map);
+            if ui.button("获得双生的灵唤铃") {send(Command::Ember(Ember::SpiritTwin,true));}
+            if let Some(index)=crate::enemies::debug_encounters().iter().position(|group|group.len()==1&&group[0].model==3251) {
+                ui.same_line();
+                if ui.button("进入大树守卫测试战斗") {send(Command::BossTest(index as u16));}
+            }
+        }
+        ui.text_disabled("测试战斗会切换到第一幕 Boss 节点，并标记为调试旅程。");
+        if run.boss_test.is_some() {
+            let _disabled=ui.begin_disabled(blocked);
+            if ui.button("结束测试，返回大赐福##spirit") {send(Command::EndBossTest);}
+        }
+        ui.separator();
+        {
+            let _disabled=ui.begin_disabled(blocked);
+            for (index,level) in [0,10,39].into_iter().enumerate() {
+                if index>0 {ui.same_line();}
+                if ui.button(format!("全部领取 +{level}")) {for (id,_) in new_spirits(level) {send(Command::SpiritItem(id));}}
+            }
+        }
+        if let Ok(rows)=SUMMONS.lock() {
+            ui.text(format!("当前本机召唤物：{}",rows.len()));
+            for row in rows.iter(){ui.text_wrapped(row);}
+        }
+        ui.separator();
+        ui.child_window("##new-spirit-list").size([0.0,0.0]).build(|| {
+            let _disabled=ui.begin_disabled(blocked);
+            for (base,name) in new_spirits(0) {
+                ui.text(name);
+                for level in [0,10,39] {
+                    ui.same_line();
+                    if ui.small_button(format!("+{level}##spirit-{base}-{level}")) {send(Command::SpiritItem(base+level));}
+                }
+            }
+        });
     }
     fn boss_tests(&mut self,ui:&Ui,view:&crate::runtime::View,run:&Run) {
         let role=PARTY_ROLE.load(Ordering::Relaxed);let party=role!=0;
@@ -421,6 +493,19 @@ fn set_roster(roster:Vec<Enemy>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn custom_spirit_test_lists_all_presets_and_matches_live_buddy_ids() {
+        for level in [0,10,39] {
+            let items=super::new_spirits(level);assert_eq!(items.len(),12);
+            for (index,(id,_)) in items.iter().enumerate() {
+                assert!(super::valid_spirit_test_item(*id));
+                assert_eq!(super::custom_buddy_item(1600000000+index as i32*40000+level as i32*1000),Some(*id));
+            }
+        }
+        assert!(super::new_spirits(40).is_empty());
+        for id in [0,0x40000000|200000,0x40000000|270040,0x40000000|282000] {assert!(!super::valid_spirit_test_item(id));}
+        for param in [0,1599999999,1600000001,1600480000] {assert_eq!(super::custom_buddy_item(param),None);}
+    }
     #[test]
     fn god_mode_leaves_global_hit_and_enemy_protection_off() {
         let mut flags:eldenring::cs::WorldChrManDbgFlags=unsafe {std::mem::zeroed()};

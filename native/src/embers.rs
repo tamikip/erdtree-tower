@@ -24,7 +24,7 @@ const SPIRIT_RESONANCE:i32=FIRST+21;
 /// 战技的精粹：持有即常驻，战技增伤（只对战技生效）与战技专注消耗降低各一行
 const ARTS_ATTACK:i32=FIRST+22;
 const ARTS_COST:i32=FIRST+23;
-/// 坩埚骑士的铁壁：整局常驻（格挡不耗精力；最大负重压到极低，始终超重）
+/// 坩埚骑士的铁壁：实际使用大盾防御时，格挡不耗精力。
 const BULWARK:i32=FIRST+24;
 /// 红狮子的不退：生命低于 LAST_STAND_HP_PERCENT% 时挂上（受到的削韧 ×1/3），回到以上就摘掉
 const LAST_STAND:i32=FIRST+25;
@@ -246,7 +246,16 @@ pub fn held(run:Option<&Run>)->Vec<Ember> {
     run.filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)).map(|r|r.embers.clone()).unwrap_or_default()
 }
 /// 玩家身上的余烬效果：以血还血、癫火狂热等只在战斗中按状态挂上；无声处刑在致命一击时由 Fight::tick 挂上
-pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight,spirit_alive:bool) {
+fn bulwark_guard_weapon(equipment:&eldenring::cs::ChrAsmEquipment,ids:&[i32],hand:eldenring::cs::ChrAsmHand)->bool {
+    if equipment.arm_style==eldenring::cs::ChrAsmArmStyle::EmptyHanded {return false;}
+    let slot=equipment.active_weapon_slot(hand) as usize;
+    ids.get(slot).copied().filter(|id|*id>0)
+        .is_some_and(|id|erdtree_tower::affixes::base(id as u32/100*100)/1_000_000==32)
+}
+pub fn bulwark_guard(player:&eldenring::cs::PlayerIns)->bool {
+    bulwark_guard_weapon(&player.chr_asm.equipment,&player.chr_asm.equipment_param_ids,player.guard_reference_hand)
+}
+pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight,spirit_alive:bool,greatshield_guard:bool) {
     let mut want=Vec::new();
     let embers=held(run);
     sync_pouch(embers.contains(&Ember::Pouch));
@@ -258,7 +267,7 @@ pub fn sync(chr:&mut ChrIns,run:Option<&Run>,fight:&Fight,spirit_alive:bool) {
     if fight.revenge_active() {want.push(REVENGE);}
     if fight.echo_active() {want.push(ECHO);}
     if embers.contains(&Ember::Glintstone) {want.push(GLINTSTONE);}
-    if embers.contains(&Ember::Bulwark) {want.push(BULWARK);}
+    if embers.contains(&Ember::Bulwark)&&greatshield_guard {want.push(BULWARK);}
     if embers.contains(&Ember::LastStand)&&last_stand(chr.modules.data.hp,chr.modules.data.max_hp) {want.push(LAST_STAND);}
     if embers.contains(&Ember::Arts) {want.extend([ARTS_ATTACK,ARTS_COST]);}
     if fight.casting() {
@@ -649,6 +658,35 @@ fn critical_listener_rejects_other_players_and_noncritical_effects() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bulwark_requires_the_actual_guard_weapon_to_be_a_greatshield() {
+        use eldenring::cs::{ChrAsmArmStyle as Style,ChrAsmEquipment,ChrAsmEquipmentSlots,ChrAsmHand as Hand};
+        let mut equipment=ChrAsmEquipment{arm_style:Style::OneHanded,selected_slots:ChrAsmEquipmentSlots{
+            left_weapon_slot:0,right_weapon_slot:0,left_arrow_slot:0,right_arrow_slot:0,left_bolt_slot:0,right_bolt_slot:0}};
+        let mut ids=[-1;22];ids[0]=32000039;ids[1]=1000000;ids[2]=31000000;
+        assert!(super::bulwark_guard_weapon(&equipment,&ids,Hand::Left));
+        assert!(!super::bulwark_guard_weapon(&equipment,&ids,Hand::Right));
+        equipment.arm_style=Style::RightBothHands;
+        assert!(!super::bulwark_guard_weapon(&equipment,&ids,Hand::Left),"greatshield on the back is not the guarding weapon");
+        equipment.arm_style=Style::LeftBothHands;
+        assert!(super::bulwark_guard_weapon(&equipment,&ids,Hand::Right),"two-handing the left greatshield");
+        equipment.arm_style=Style::OneHanded;equipment.selected_slots.left_weapon_slot=1;
+        assert!(!super::bulwark_guard_weapon(&equipment,&ids,Hand::Left),"switching to a medium shield removes the effect");
+        equipment.arm_style=Style::RightBothHands;ids[1]=32000099;
+        assert!(super::bulwark_guard_weapon(&equipment,&ids,Hand::Right));
+        ids[1]=-1;
+        assert!(!super::bulwark_guard_weapon(&equipment,&ids,Hand::Right));
+        equipment.arm_style=Style::EmptyHanded;ids[1]=32000000;
+        assert!(!super::bulwark_guard_weapon(&equipment,&ids,Hand::Right));
+        equipment.arm_style=Style::RightBothHands;
+        for id in [30000000,31000000,1000000,33000000] {
+            ids[1]=id;assert!(!super::bulwark_guard_weapon(&equipment,&ids,Hand::Right));
+        }
+        let affixed=erdtree_tower::affixes::CATALOG.iter()
+            .find(|i|erdtree_tower::affixes::base(i.id)/1_000_000==32).expect("affixed greatshield");
+        ids[1]=(affixed.id+39) as i32;
+        assert!(super::bulwark_guard_weapon(&equipment,&ids,Hand::Right));
+    }
     use super::*;
     #[test]
     fn mercy_raises_heals_by_half_and_keeps_the_sign() {

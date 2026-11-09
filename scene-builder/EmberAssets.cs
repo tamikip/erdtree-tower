@@ -70,14 +70,14 @@ static class EmberAssets {
         foreach(var target in new[]{"Player","Enemy"})foreach(var element in new[]{"Physics","Magic","Fire","Thunder","Dark"})Set(arts,$"atk{target}DmgCorrectRate_{element}",1f);
         rows.Add(arts);
         var artsCost=Player(p,First+23,"Tower ember arts cost",1f,-1f);Set(artsCost,"artsConsumptionRate",ArtsCost);rows.Add(artsCost);
-        // 坩埚骑士的铁壁：格挡时的精力消耗 ×0（原版大盾护符 0.8）；最大负重 ×0.01（原版武器库护符 1.15），身上有装备就超重。整局常驻
+        // 坩埚骑士的铁壁：大盾防御条件由运行时检查；不再改变最大负重。
         // 红狮子的不退：受到的削韧 ×1/3（强韧度 +200%；原版牛羊护符 0.75 即 +33%）。生命低于 40% 时由运行时挂上
         // 战斗法师：受到的伤害按智力 / 信仰取高每点 -0.4%，两行轮换，运行时按能力值改写（这里写 1 点的值）
         for(int slot=0;slot<2;slot++){var mind=Player(p,First+26+slot,$"Tower ember battlemage {slot}",1f,-1f);foreach(var cut in new[]{"slash","blow","thrust","neutral","magic","fire","thunder","dark"})Set(mind,cut+"DamageCutRate",0.996f);rows.Add(mind);}
         var lastStand=Player(p,First+25,"Tower ember last stand",1f,-1f);Set(lastStand,"toughnessDamageCutRate",1f/3f);rows.Add(lastStand);
         var bulwark=Player(p,First+24,"Tower ember bulwark",1f,-1f);
         Set(bulwark,"stateInfo",p.Rows.Single(r=>r.ID==341000)["stateInfo"].Value);
-        Set(bulwark,"guardStaminaMult",0f);Set(bulwark,"equipWeightChangeRate",0.01f);rows.Add(bulwark);
+        Set(bulwark,"guardStaminaMult",0f);Set(bulwark,"equipWeightChangeRate",1f);rows.Add(bulwark);
         // 前 8 层编号保留；新增层使用 +100 至 +131，避开其他余烬效果。
         for(int stack=1;stack<=FrenzyStacks;stack++)rows.Add(Player(p,(stack<=8?First+30+stack:First+100+stack-9),$"Tower ember frenzy {stack}",1f+FrenzyStep*stack,-1f));
         var flash=Enemy(p,First+40,"Tower ember flash",1f);Set(flash,"vfxId",FlashVfx);rows.Add(flash);

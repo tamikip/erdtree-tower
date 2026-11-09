@@ -28,7 +28,7 @@ static class EquipmentStyleAssets {
         foreach(var p in variants) {
             int id=int.Parse(p[1]),baseId=int.Parse(p[2]);var m=manifest[id];int gem=int.Parse(m[2]),art=int.Parse(m[3]);
             if(int.Parse(m[1])!=baseId)throw new Exception("Random ash base mismatch");
-            if(gem>=0&&(!sold.Contains(gem)||!Compatible(weapons[baseId],gems[gem])||I(gems[gem],"swordArtsParamId")!=art))throw new Exception("Incompatible random ash");
+            if(gem>=0&&(!sold.Contains(gem)||!Compatible(weapons[baseId],gems[gem])||I(gems[gem],"swordArtsParamId")!=art))throw new Exception($"Incompatible random ash: variant={id} base={baseId} gem={gem} art={art} sold={sold.Contains(gem)} compatible={Compatible(weapons[baseId],gems[gem])}");
             if(gem<0&&I(weapons[baseId],"swordArtsParamId")!=art)throw new Exception("Unmodifiable weapon skill changed");
             foreach(var row in weapons.Values.Where(r=>r.ID>=id&&r.ID<id+10000))if(I(row,"swordArtsParamId")!=art)throw new Exception("Affinity variant skill mismatch");
         }
@@ -114,5 +114,46 @@ static class EquipmentStyleAssets {
         foreach(var file in messages.Files)if(!file.Bytes.SequenceEqual(written.Files.Single(f=>f.ID==file.ID).Bytes))throw new Exception("Text roundtrip mismatch");
         File.WriteAllText(Path.Combine(output,"equipment-style-build.json"),System.Text.Json.JsonSerializer.Serialize(new{randomizedWeapons=randomized,changedWeaponRows=changed,coloredTextEntries=colored,compatibleNativeAshesOnly=true,unrelatedWeaponFieldsPreserved=true,plainTextPreserved=true}));
         Console.WriteLine($"Verified {randomized} compatible randomized weapon variants, {changed} changed weapon rows, {colored} colored text entries; native and DLC ashes included");
+    }
+    public static void RetirePlaceholder(string input,string output) {
+        if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging required");
+        if(File.ReadLines(Path.Combine(input,"shop-catalog.txt")).Any(l=>l.StartsWith("4|30900|")))throw new Exception("Placeholder has not been retired from the shop");
+        var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
+        var original=reg.Files.ToDictionary(f=>f.Name,f=>f.Bytes.ToArray());
+        PARAM Read(string name) {
+            var f=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))==name);
+            var p=PARAM.Read(f.Bytes);p.ApplyParamdef(PARAMDEF.XmlDeserialize(Path.Combine(Environment.GetEnvironmentVariable("TOWER_PARAMDEFS")??"work/SoulsRandomizers/diste/Defs",name+".xml")));return p;
+        }
+        var weapons=Read("EquipParamWeapon");var before=weapons.Rows.ToDictionary(r=>r.ID,r=>new PARAM.Row(r));
+        var arts=Read("SwordArtsParam").Rows.ToDictionary(r=>r.ID);
+        var text=ItemTextTables.Read(BND4.Read(Path.Combine(input,"msg/zhocn/item_dlc02.msgbnd.dcx")));
+        string Text(string key,int id)=>Plain(text[key].Entries.FirstOrDefault(e=>e.ID==id)?.Text??"");
+        var manifest=File.ReadAllLines(Path.Combine(input,"random-ashes.tsv"));var descriptions=new Dictionary<uint,string>();var changed=new HashSet<int>();
+        for(int n=1;n<manifest.Length;n++) {
+            var p=manifest[n].Split('\t');if(p[2]!="30900")continue;
+            if(p[3]!="10")throw new Exception("Unexpected placeholder skill");
+            int id=int.Parse(p[0]),baseId=int.Parse(p[1]),art=I(before[baseId],"swordArtsParamId");
+            int textId=I(arts[art],"textId");var name=Text("ArtsName",textId);var caption=Text("ArtsCaption",textId);
+            p[2]="-1";p[3]=art.ToString();p[4]=name;manifest[n]=string.Join('\t',p);
+            descriptions[(uint)id]=(name+"\n"+caption).Replace("\r","").Replace("\n","\\n").Replace("\t"," ");
+            foreach(var row in weapons.Rows.Where(r=>r.ID>=id&&r.ID<id+10000)) {
+                row["swordArtsParamId"].Value=Convert.ChangeType(art,row["swordArtsParamId"].Value.GetType());changed.Add(row.ID);
+            }
+        }
+        foreach(var row in weapons.Rows)foreach(var cell in row.Cells) {
+            if(changed.Contains(row.ID)&&cell.Def.InternalName=="swordArtsParamId")continue;
+            if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(cell.Value,before[row.ID][cell.Def.InternalName].Value))throw new Exception("Unrelated weapon field changed");
+        }
+        var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="EquipParamWeapon");file.Bytes=weapons.Write();
+        Directory.CreateDirectory(output);var target=Path.Combine(output,"regulation.bin");SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(target,reg);
+        var restored=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(target);
+        foreach(var f in restored.Files)if(!f.Bytes.SequenceEqual(f.Name==file.Name?file.Bytes:original[f.Name]))throw new Exception("Placeholder repair roundtrip mismatch");
+        File.WriteAllLines(Path.Combine(output,"random-ashes.tsv"),manifest);
+        foreach(var name in new[]{"affix-details.tsv","affix-v2-details.tsv"}) {
+            var rows=File.ReadAllLines(Path.Combine(input,name)).Select(l=>l.Split('\t')).ToArray();
+            foreach(var p in rows)if(descriptions.TryGetValue(uint.Parse(p[0]),out var desc))p[6]=desc;
+            File.WriteAllLines(Path.Combine(output,name),rows.Select(p=>string.Join('\t',p)));
+        }
+        Console.WriteLine($"Retired placeholder defaults for {descriptions.Count} variants / {changed.Count} weapon rows; original base skills restored; all other fields and tables preserved");
     }
 }

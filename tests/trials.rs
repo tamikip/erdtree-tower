@@ -14,7 +14,7 @@ fn trial()->Run {
 }
 #[test]
 fn four_choices_persist_and_cannot_repeat() {
-    for choice in [Trial::Descent,Trial::Stormveil,Trial::Chariot,Trial::Skip] {
+    for choice in [Trial::Descent,Trial::Stormveil,Trial::Chariot,Trial::Skip,Trial::HereticalRise] {
         let mut r=trial();let gold=r.gold;
         assert!(r.leave_regional_event().is_err());
         assert!(r.open_regional_event(0).is_err());
@@ -24,7 +24,7 @@ fn four_choices_persist_and_cannot_repeat() {
         assert_eq!(Run::decode(&r.encode().unwrap()).unwrap(),r);
         match choice {
             Trial::Descent=>assert!(r.regional_event.descent_started),
-            Trial::Stormveil|Trial::Chariot=>assert_eq!(r.regional_event.stormveil,Some(erdtree_tower::stormveil::Progress::Running)),
+            Trial::Stormveil|Trial::Chariot|Trial::HereticalRise=>assert_eq!(r.regional_event.stormveil,Some(erdtree_tower::stormveil::Progress::Running)),
             Trial::Skip=>{r.leave_regional_event().unwrap();assert_eq!(r.phase,Phase::Map);}
             Trial::Mausoleum=>unreachable!("mausoleum uses its own two-choice offer"),
         }
@@ -68,7 +68,7 @@ fn missing_or_unready_members_block_and_ties_ignore_report_order() {
 #[test]
 fn selected_chariot_retains_arrival_barrier_and_completion_order() {
     use erdtree_tower::stormveil::Decision;
-    for choice in [Trial::Stormveil,Trial::Chariot] {
+    for choice in [Trial::Stormveil,Trial::Chariot,Trial::HereticalRise] {
         let mut r=trial();let mut g=Gate::new(vec![1,2]);g.stage=Stage::Service;
         let mut report=Report::new(&r,0,true,false,true);report.trial_choice=Some(choice);
         for id in 1..=2 {g.report(id,report.clone()).unwrap();}

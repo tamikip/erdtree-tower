@@ -121,6 +121,8 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
         let _grab = ui.push_style_color(StyleColor::ScrollbarGrab, [0.45, 0.37, 0.22, 0.8]);
         let _grab_hover = ui.push_style_color(StyleColor::ScrollbarGrabHovered, [0.62, 0.5, 0.3, 0.9]);
         ui.child_window("build-content").size([width - 36.0 * s, extent[1] - 104.0 * s]).build(|| {
+            ui.text_colored(BOON,format!("灵药储备：{} 瓶（喝完手中一瓶后自动补充）",run.physick_supply.reserve));
+            if run.physick_supply.issued {ui.text_colored(MUTED,"灵药补充待确认；未确认前不会重复发放。");}
             // 手柄右摇杆与鼠标滚轮：指针不在面板上时也滚动面板
             let wheel = ui.io().mouse_wheel;
             if wheel != 0.0 && !ui.is_window_hovered() {ui.set_scroll_y((ui.scroll_y() - wheel * 48.0 * s).clamp(0.0, ui.scroll_max_y()));}
@@ -199,7 +201,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
                 ui.set_cursor_screen_pos([start[0], y + 8.0 * s]);ui.dummy([0.0, 0.0]);
             }
             heading(ui, s, "装备词条", Some(view.build.len()).filter(|n| *n > 0));
-            if view.build.is_empty() {empty(ui, s, "手中武器与身上防具没有词条");}
+            if view.build.is_empty() {empty(ui, s, "装备栏武器与身上防具没有词条");}
             for gear in &view.build {
                 let lines: Vec<_> = gear.lines.iter().map(|line| (format!("· {line}"), WHITE)).collect();
                 // 名字由下面单独用品质特效画，这里留空标题占位

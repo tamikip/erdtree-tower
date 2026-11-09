@@ -37,13 +37,22 @@ fn parse(text:&'static str)->Vec<Item> {text.lines().map(|line| {
     };
     Item{id:tag|parts.next().unwrap().parse::<u32>().unwrap(),name:parts.next().unwrap(),kind}
 }).collect()}
-static SPIRIT_LEVELS:LazyLock<Vec<Item>>=LazyLock::new(||CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit).flat_map(|i|(1..=10).map(move |level|Item{
+pub const SPIRIT_MAX:u8=39;
+pub fn custom_spirit(id:u32)->bool {
+    id>>28==4&&(270000..282000).contains(&(id&0x0fffffff))&&(id&0x0fffffff)%1000<=u32::from(SPIRIT_MAX)
+}
+pub(crate) fn before_custom_spirits(run:&Run,node:usize)->Vec<Reward> {
+    let mut previous=run.clone();
+    previous.claimed_items.extend(CATALOG.iter().filter(|i|custom_spirit(i.id)).map(|i|i.id));
+    previous.offers(node)
+}
+static SPIRIT_LEVELS:LazyLock<Vec<Item>>=LazyLock::new(||CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit).flat_map(|i|(1..=u32::from(SPIRIT_MAX)).map(move |level|Item{
     id:i.id+level,name:Box::leak(format!("{} +{level}",i.name).into_boxed_str()),kind:ItemKind::Spirit,
 })).collect());
 pub fn lookup(id:u32)->Option<&'static Item> {crate::affixes::lookup(id).or_else(||crate::talismans::lookup(id)).or_else(||CATALOG.iter().find(|item|item.id==id)).or_else(||SPIRIT_LEVELS.iter().find(|item|item.id==id))}
 pub fn spirit_base(id:u32)->u32 {
     let base=id-(id&0x0fffffff)%1000;
-    if id-base<=10&&CATALOG.iter().any(|i|i.id==base&&i.kind==ItemKind::Spirit){base}else{id}
+    if id-base<=u32::from(SPIRIT_MAX)&&CATALOG.iter().any(|i|i.id==base&&i.kind==ItemKind::Spirit){base}else{id}
 }
 /// 刷出的骨灰最高等级：规则 1 为当前骨灰等级（持有过的骨灰最高等级与武器等价强化中较高的）；规则 0 为持有过的骨灰最高等级 +1，最多 +10。
 /// 旧存档没有骨灰记录时沿用旧规则：武器的等价强化等级（换算成 +0～+10）+1，也没有武器记录时不限
@@ -55,26 +64,26 @@ pub fn spirit_cap(run:&Run)->u32 {
         None=>run.weapon_peak.map_or(10,|peak|(u32::from(crate::contracts::reinforcement_level(peak,10))+1).min(10)),
     }
 }
-/// 当前骨灰等级：持有过的骨灰最高等级（只升不降）与武器的等价强化等级（换算成 +0～+10）中较大的
+/// 当前骨灰等级：持有过的骨灰最高等级与武器的失色等效强化等级中较大的，最高 +39。
 pub fn spirit_level_now(run:&Run)->u8 {
     let weapon=run.weapon_peak.map_or(0,|peak|crate::contracts::reinforcement_level(peak,10));
-    run.spirit_peak.unwrap_or(0).max(weapon).min(10)
+    run.spirit_peak.unwrap_or(0).max(weapon).min(SPIRIT_MAX)
 }
-/// 骨灰等级（+0～+10）；不是骨灰时为 None
+/// 骨灰等级（+0～+39）；不是骨灰时为 None
 pub fn spirit_level(id:u32)->Option<u8> {
     let base=spirit_base(id);
     (CATALOG.iter().any(|i|i.id==base&&i.kind==ItemKind::Spirit)).then(||(id-base) as u8)
 }
-/// 调灵：把一个骨灰升到 max(自身, 当前骨灰等级) + 1（最多 +10），低级骨灰一次追上来；已经 +10 时为 None
+/// 调灵：把一个骨灰升到 max(自身, 当前骨灰等级) + 1（最多 +39），低级骨灰一次追上来。
 pub fn spirit_tune_target(id:u32,peak:u8)->Option<u32> {
     let level=spirit_level(id)?;
-    (level<10).then(||spirit_base(id)+u32::from(level.max(peak.min(10))+1).min(10))
+    (level<SPIRIT_MAX).then(||spirit_base(id)+u32::from(level.max(peak.min(SPIRIT_MAX))+1).min(u32::from(SPIRIT_MAX)))
 }
 /// 随机骨灰等级 +0～+cap（cap 为 10 时与原来的 +0～+10 相同）
 pub fn random_spirit_level(id:u32,entropy:u64,cap:u32)->u32 {
     let base=spirit_base(id);
     if !CATALOG.iter().any(|i|i.id==base&&i.kind==ItemKind::Spirit){return id;}
-    base+(crate::mix(entropy^u64::from(base)^0xa541_e7e1)%u64::from(cap.min(10)+1)) as u32
+    base+(crate::mix(entropy^u64::from(base)^0xa541_e7e1)%u64::from(cap.min(u32::from(SPIRIT_MAX))+1)) as u32
 }
 
 pub fn offers(run:&Run,node:usize)->Vec<Reward> {
@@ -173,6 +182,9 @@ pub(crate) fn before_bosses(run:&Run,node:usize)->Vec<Reward> {
 pub fn crystal_offer(run:&Run,visit:u64,salt:u64)->Option<u32> {
     crystal_offer_with_chance(run,visit,salt,5)
 }
+pub fn shop_crystal_offer(run:&Run,visit:u64)->Option<u32> {
+    crystal_offer_with_chance(run,visit,0x5a09,50)
+}
 fn crystal_offer_with_chance(run:&Run,visit:u64,salt:u64,chance:u64)->Option<u32> {
     let roll=crate::mix(run.reward_seed() ^ (u64::from(run.act)<<48) ^ visit.wrapping_mul(7919) ^ salt);
     if roll%100>=chance {return None;}
@@ -251,6 +263,19 @@ fn favored_kind(class:Class)->Option<(ItemKind,bool)> {
 mod tests {
     use super::*;
     #[test]
+    fn pre_custom_spirit_reward_pages_remain_valid_without_rerolling() {
+        for seed in 0..100 {
+            let mut run=Run::new(seed,crate::Class::Confessor);
+            let id=run.available().into_iter().find(|id|run.nodes[*id].kind.combat()).unwrap();
+            run.enter(id).unwrap();run.win_combat().unwrap();
+            let offers=before_custom_spirits(&run,id);
+            assert!(offers.iter().all(|r|!matches!(r,Reward::Item(id) if custom_spirit(*id))));
+            run.phase=crate::Phase::Reward{id,offers:offers.clone()};
+            let restored=Run::decode(&run.encode().unwrap()).unwrap();
+            assert_eq!(restored.phase,crate::Phase::Reward{id,offers});
+        }
+    }
+    #[test]
     fn spirit_rewards_stay_within_the_spirit_peak_plus_one() {
         let run=|spirit:Option<u8>,weapon:Option<u8>,rules:u8|{let mut r=crate::Run::new(1,crate::Class::Confessor);r.spirit_peak=spirit;r.weapon_peak=weapon;r.spirit_rules=rules;r};
         assert_eq!(spirit_cap(&run(None,None,0)),10);
@@ -307,8 +332,8 @@ mod tests {
         assert_eq!(spirit_tune_target(ash,0),Some(ash+1));
         assert_eq!(spirit_tune_target(ash,4),Some(ash+5),"a +0 ash jumps past the best ash held");
         assert_eq!(spirit_tune_target(ash+6,4),Some(ash+7),"a better ash still gains one level");
-        assert_eq!(spirit_tune_target(ash+9,10),Some(ash+10));
-        assert_eq!(spirit_tune_target(ash+10,3),None);
+        assert_eq!(spirit_tune_target(ash+9,10),Some(ash+11));
+        assert_eq!(spirit_tune_target(ash+39,3),None);
         let weapon=CATALOG.iter().find(|i|i.kind==ItemKind::Weapon).unwrap().id;
         assert_eq!(spirit_tune_target(weapon,0),None);assert_eq!(spirit_level(weapon),None);
     }

@@ -19,6 +19,7 @@ pub struct Progress {
     #[serde(default)] pub recovery: bool,
     #[serde(default)] pub stormveil: Option<crate::stormveil::Progress>,
     #[serde(default)] pub chariot: bool,
+    #[serde(default,skip_serializing_if="Option::is_none")] pub hidden_road:Option<Trial>,
     /// 死亡重试回到已经动过的事件（选了挑战、领了奖、开了宝箱、用过服务）：不能重选、不能再领，只能从传送门离开
     #[serde(default,skip_serializing_if="std::ops::Not::not")] pub settled: bool,
     /// 重练炉：这座炉子已经重练过几次（价格每次翻倍）
@@ -37,7 +38,7 @@ pub struct Receipt { pub item:u32, pub key_target:u64, pub reward_target:u64 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome { Explosion, Guards, Item }
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
-pub enum Trial {Descent,Stormveil,Chariot,Skip,Mausoleum}
+pub enum Trial {Descent,Stormveil,Chariot,Skip,Mausoleum,#[serde(alias="HiddenPath")]HereticalRise}
 pub fn chest_roll(roll: u64) -> Outcome {
     match roll % 100 { 0..=19 => Outcome::Explosion, 20..=39 => Outcome::Guards, _ => Outcome::Item }
 }
@@ -60,9 +61,10 @@ impl Run {
         match choice {
             Trial::Mausoleum=>{self.regional_event.mausoleum=Some(crate::mausoleum::CopyState::accepted());},
             Trial::Descent=>{self.regional_event.descent=true;self.regional_event.descent_started=true;},
-            Trial::Stormveil|Trial::Chariot=>{
+            Trial::Stormveil|Trial::Chariot|Trial::HereticalRise=>{
                 self.regional_event.stormveil=Some(crate::stormveil::Progress::Running);
                 self.regional_event.chariot=choice==Trial::Chariot;
+                if matches!(choice,Trial::HereticalRise){self.regional_event.hidden_road=Some(choice);}
             },
             Trial::Skip=>{self.gold=gold;self.regional_event.stormveil=Some(crate::stormveil::Progress::Skipped);}
         }
@@ -149,6 +151,8 @@ impl Run {
         self.finish(node);Ok(())
     }
     pub(crate) fn valid_regional_event(&self) -> bool {
+        if self.regional_event.hidden_road.is_some_and(|t|!matches!(t,Trial::HereticalRise))
+            ||self.regional_event.hidden_road.is_some()&&(self.regional_event.chariot||!matches!(self.regional_event.stormveil,Some(crate::stormveil::Progress::Running|crate::stormveil::Progress::Complete))){return false;}
         if self.regional_event.reforges>crate::events::FURNACE_MAX_USES {return false;}
         if self.regional_event.settled {
             let event=|id:usize|self.nodes.get(id).is_some_and(|n|n.kind==NodeKind::Event);

@@ -2,13 +2,13 @@
 use std::sync::atomic::{AtomicBool,AtomicU8,Ordering};
 use eldenring::cs::{EquipParamGoods,EquipMtrlSetParam,ItemCategory,PlayerGameData,SoloParamRepository};
 use fromsoftware_shared::FromStatic;
-use erdtree_tower::rewards::{spirit_level,spirit_tune_target};
+use erdtree_tower::rewards::{spirit_level,spirit_tune_target,SPIRIT_MAX};
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Offer {pub source:u32,pub target:u32}
 /// 本局记录的骨灰最高等级（运行时每帧同步）
 static PEAK:AtomicU8=AtomicU8::new(0);
-pub fn set_peak(peak:u8) {PEAK.store(peak.min(10),Ordering::Relaxed);}
+pub fn set_peak(peak:u8) {PEAK.store(peak.min(SPIRIT_MAX),Ordering::Relaxed);}
 
 /// 背包里骨灰的最高等级
 pub fn inventory_peak(data:&PlayerGameData)->u8 {
@@ -27,7 +27,7 @@ fn choices(owned:&[u32],peak:u8)->Vec<Offer> {
     offers.sort_by_key(|o|std::cmp::Reverse(o.target-o.source));
     offers
 }
-/// 可调灵的骨灰：背包里没到 +10、且还没有持有目标等级的骨灰；升得多的排前面
+/// 可调灵的骨灰：背包里没到 +39、且还没有持有目标等级的骨灰；升得多的排前面
 pub fn offers(data:&PlayerGameData)->Vec<Offer> {
     let owned:Vec<u32>=data.equipment.equip_inventory_data.items_data.items()
         .filter(|e|e.quantity>0&&e.item_id.category()==ItemCategory::Goods).map(|e|e.item_id.param_id())
@@ -75,7 +75,7 @@ pub fn prepare(data:&PlayerGameData)->Result<Session,String> {
     }
     let ids:std::collections::BTreeSet<u32>=erdtree_tower::rewards::CATALOG.iter()
         .filter(|item|item.kind==erdtree_tower::rewards::ItemKind::Spirit)
-        .flat_map(|item|{let base=erdtree_tower::rewards::spirit_base(item.id)&0x0fffffff;(0..=10).map(move |n|base+n)}).collect();
+        .flat_map(|item|{let base=erdtree_tower::rewards::spirit_base(item.id)&0x0fffffff;(0..=u32::from(SPIRIT_MAX)).map(move |n|base+n)}).collect();
     for offer in &offers {
         if !ids.contains(&offer.source)||!ids.contains(&offer.target)||params.get::<EquipParamGoods>(offer.target).is_none() {
             return Err("调灵目标参数缺失，未打开菜单".into());
@@ -120,7 +120,7 @@ mod tests {
         let other=erdtree_tower::rewards::CATALOG.iter().filter(|i|i.kind==erdtree_tower::rewards::ItemKind::Spirit).nth(1).unwrap().id&0x0fffffff;
         let offers=super::choices(&[ash,other+6],4);
         assert_eq!(offers,vec![super::Offer{source:ash,target:ash+5},super::Offer{source:other+6,target:other+7}]);
-        assert!(super::choices(&[ash+10],3).is_empty());
+        assert!(super::choices(&[ash+39],3).is_empty());
         assert!(super::choices(&[ash,ash+5],4).iter().all(|o|o.source!=ash),"the target level is already held");
         assert!(super::choices(&[110000],0).is_empty(),"not a spirit ash");
     }

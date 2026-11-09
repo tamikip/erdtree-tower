@@ -77,9 +77,8 @@ impl Flasks {
 
     pub fn camp_refill(&mut self, data: &mut PlayerGameData, added: [u8;2]) -> Result<(), String> {
         let target = camp_supply(self.remaining, self.capacity, added);
-        if target == self.remaining && !super::physick::empty(data) { return Err("圣杯瓶与灵药已满".into()); }
-        self.apply_refill(data, target)?;
-        super::physick::refill(data)
+        if target == self.remaining { return Err("圣杯瓶已满".into()); }
+        self.apply_refill(data, target)
     }
 
     /// 战斗中补回指定颜色的圣杯瓶（不超过上限，不补灵药）

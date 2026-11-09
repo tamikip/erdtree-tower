@@ -309,7 +309,7 @@ impl Link {
                 if self.event.trial_decision==Some(*choice){return Ok(false);}
                 if self.event.trial_decision.is_some(){return Err("试炼选择已经锁定".into());}
                 self.event.trial_decision=Some(*choice);
-                if matches!(choice,erdtree_tower::regional_events::Trial::Stormveil|erdtree_tower::regional_events::Trial::Chariot){
+                if matches!(choice,erdtree_tower::regional_events::Trial::Stormveil|erdtree_tower::regional_events::Trial::Chariot|erdtree_tower::regional_events::Trial::HereticalRise){
                     self.event.storm_decision=Some(erdtree_tower::stormveil::Decision::Challenge);
                 }
                 super::log(format!("Party trial committed: epoch={epoch} choice={choice:?}"));

@@ -12,7 +12,7 @@ static CLEAR:AtomicUsize=AtomicUsize::new(0);
 static REGISTER:AtomicUsize=AtomicUsize::new(0);
 static BOUND:AtomicUsize=AtomicUsize::new(0);
 pub fn begin_frame(){ACTIVE.store(false,Ordering::Release);BOUND.store(0,Ordering::Release);TWIN_ARMED.store(false,Ordering::Release);}
-pub fn set_active(active:bool){ACTIVE.store(active,Ordering::Release);if !active {BOUND.store(0,Ordering::Release);reset_twin();}}
+pub fn set_active(active:bool){ACTIVE.store(active,Ordering::Release);if !active {BOUND.store(0,Ordering::Release);RESUMMON_ARMED.store(false,Ordering::Release);reset_twin();}}
 /// 双生的灵唤铃（余烬，单人与联机）：第一只召唤物在场时重新开放召唤点，再召唤一次。房主走 Pending 的召唤点、成员走 party_spirits，都经过 Spirits::poll。
 /// 原版只记一个“当前召唤”，场上有召唤物时不让用骨灰，所以在“使用前检查”的阶段把“有存活召唤物”暂时清掉（ARMED）。
 /// 第二次请求接受后，仅跳过更新函数中新召唤替换旧组的那一次清除。
@@ -59,9 +59,29 @@ unsafe extern "C" fn replacement_clear(manager:*mut u8,owner:i32,caller:usize) {
 /// 第二只的召唤请求被原版拒绝时记下骨灰编号：扣骨灰与发召唤请求在使用动画里同时发生，被拒就会白扣一个，由运行时补回
 /// 召唤师「群灵」：自己的召唤物出场后全部阵亡（或消失），重新开放召唤点，可以再召唤新的（骨灰照常消耗，胜利时还活着照样返还）
 static RESUMMON:AtomicBool=AtomicBool::new(false);
-pub fn set_resummon(on:bool){if RESUMMON.swap(on,Ordering::AcqRel)!=on {super::log(format!("TOWER_RESUMMON enabled={on}"));}}
-/// 召唤点已用过、这一轮召唤的召唤物出场过、现在场上一只都不剩
-fn resummon_allowed(enabled:bool,used:bool,seen:bool,buddies:usize)->bool {enabled&&used&&seen&&buddies==0}
+static RESUMMON_ARMED:AtomicBool=AtomicBool::new(false);
+pub fn set_resummon(on:bool){if !on{RESUMMON_ARMED.store(false,Ordering::Release);}if RESUMMON.swap(on,Ordering::AcqRel)!=on {super::log(format!("TOWER_RESUMMON enabled={on}"));}}
+/// 刷怪前已召唤的骨灰，开战重绑召唤点后 used 可以为 false；以实际存活状态为准。
+fn resummon_allowed(enabled:bool,_used:bool,seen:bool,buddies:usize)->bool {enabled&&seen&&buddies==0}
+fn resummon_use_allowed(enabled:bool,armed:bool,pending:i32,cooldown:f32,registered:bool,buddies:usize)->bool {
+    enabled&&armed&&pending<0&&cooldown<=0.0&&registered&&buddies==0
+}
+fn local_buddies(manager:&eldenring::cs::SummonBuddyManager,owner:i32)->usize {
+    manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter(|group| {
+        let chr=unsafe {group.chr_ins.as_ref()};
+        !group.is_remote&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()
+    }).count()
+}
+fn resummon_ready(manager:&eldenring::cs::SummonBuddyManager)->bool {
+    if !ACTIVE.load(Ordering::Acquire)||BOUND.load(Ordering::Acquire)!=std::ptr::from_ref(manager) as usize{return false;}
+    let Ok(player)=(unsafe {eldenring::cs::PlayerIns::local_player()}) else{return false;};
+    if player.chr_ins.modules.data.hp<=0||player.chr_ins.chr_flags1c5.death_flag(){return false;}
+    let Some(arena)=super::arenas::for_block(i32::from(player.current_block_id)) else{return false;};
+    let owner=unsafe {player.player_game_data.as_ref()}.character_event_id as i32;
+    resummon_use_allowed(RESUMMON.load(Ordering::Acquire),RESUMMON_ARMED.load(Ordering::Acquire),
+        manager.request_summon_speffect_id,manager.item_use_cooldown_timer,manager.buddy_stone_entity_id==arena.stone,local_buddies(manager,owner))
+        &&super::native_talk::flag(SUMMONED_FLAG)==Ok(false)
+}
 static TWIN_REFUND:std::sync::atomic::AtomicI32=std::sync::atomic::AtomicI32::new(0);
 pub fn take_twin_refund()->Option<u32> {let id=TWIN_REFUND.swap(0,Ordering::AcqRel);(id>0).then_some(id as u32&0x0fffffff)}
 pub fn set_twin(on:bool){let on=on&&REPLACE_READY.load(Ordering::Acquire);if TWIN.swap(on,Ordering::AcqRel)!=on {super::log(format!("TOWER_TWIN enabled={on}"));if !on{reset_twin();}}}
@@ -74,6 +94,9 @@ fn second_use_allowed(armed:bool,spent:bool,pending:i32,cooldown:f32,in_range:bo
 unsafe extern "C" fn use_state(manager:*mut u8,goods:i32)->i32 {
     let original:unsafe extern "C" fn(*mut u8,i32)->i32=unsafe {std::mem::transmute(USE_STATE.load(Ordering::Acquire))};
     let state=unsafe {original(manager,goods)};
+    let buddy=unsafe {&*manager.cast::<eldenring::cs::SummonBuddyManager>()};
+    if (goods==-1||goods>=0&&erdtree_tower::rewards::spirit_level(0x40000000|goods as u32).is_some())
+        &&resummon_ready(buddy) {return 0;}
     if ACTIVE.load(Ordering::Acquire)&&TWIN.load(Ordering::Acquire)&&BOUND.load(Ordering::Acquire)==manager as usize {
         let buddy=unsafe {&*manager.cast::<eldenring::cs::SummonBuddyManager>()};
         let range=buddy.is_within_activation_range&&buddy.buddy_stone_entity_id!=0;
@@ -110,9 +133,13 @@ unsafe extern "C" fn request(manager:*mut u8,effect:i32)->bool {
     let field=|offset|unsafe {manager.add(offset).cast::<i32>().read()};
     super::log(format!("Spirit use request: effect={effect} state={state} stone={} active_stone={} goods={} active_goods={} twin_armed={}",field(0x38),field(0x3c),field(0xe0),field(0xe4),TWIN_ARMED.load(Ordering::Acquire)));
     let twin=TWIN_ARMED.load(Ordering::Acquire)&&BOUND.load(Ordering::Acquire)==manager as usize;let goods=field(0xe0);
+    let resummon=resummon_ready(unsafe {&*manager.cast::<eldenring::cs::SummonBuddyManager>()});
+    // A native state-2 rejection requests disappearance; only clear it after all local summons are dead.
+    if resummon {unsafe {(*manager.cast::<eldenring::cs::SummonBuddyManager>()).disappear_requested=false;}}
     let usage=(BOUND.load(Ordering::Acquire)==manager as usize).then(||refund::capture(unsafe {&*manager.cast::<eldenring::cs::SummonBuddyManager>()},goods,effect)).flatten();
     if let Ok(mut gate)=REPLACEMENT.lock(){*gate=None;}
     let accepted=unsafe {original(manager,effect)};
+    if resummon&&accepted {RESUMMON_ARMED.store(false,Ordering::Release);super::log(format!("TOWER_RESUMMON accepted goods={goods} effect={effect}"));}
     if accepted&&let Some(usage)=usage {refund::accepted(usage);}
     TWIN_ARMED.store(false,Ordering::Release);
     if twin&&accepted {
@@ -120,7 +147,7 @@ unsafe extern "C" fn request(manager:*mut u8,effect:i32)->bool {
         if let Ok(mut gate)=REPLACEMENT.lock(){*gate=Some((manager as usize,effect));}
     }
     super::log(format!("Spirit use result: accepted={accepted} pending={} active={} stone={}",field(0x20),field(0x24),field(0x3c)));
-    if twin&&!accepted&&goods>0 {TWIN_REFUND.store(goods,Ordering::Release);super::log(format!("TOWER_TWIN second summon rejected; ash {goods} will be returned"));}
+    if (twin||resummon)&&!accepted&&goods>0 {TWIN_REFUND.store(goods,Ordering::Release);super::log(format!("TOWER_SUMMON request rejected; ash {goods} will be returned"));}
     accepted
 }
 pub unsafe fn install()->Result<(),String> {
@@ -200,19 +227,18 @@ impl Spirits {
         if let Ok(mut gate)=REPLACEMENT.lock() {
             if gate.is_some_and(|(address,effect)|address!=std::ptr::from_ref(&**manager) as usize||effect!=manager.request_summon_speffect_id) {*gate=None;}
         }
-        let buddies=manager.groups.iter().flat_map(|pair|pair.second.iter()).filter(|group| {
-            let chr=unsafe {group.chr_ins.as_ref()};
-            !group.is_remote&&!group.disappear_requested&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()
-        }).count();
+        let owner=world.main_player.as_ref().map(|p|unsafe {p.player_game_data.as_ref()}.character_event_id as i32);
+        let buddies=owner.map_or(0,|owner|local_buddies(manager,owner));
         if self.buddies!=Some(buddies) {
             super::log(format!("TOWER_TWIN alive spirits={buddies} (was {:?}) active_goods={} active_effect={} alive_flag={} reopened={}",self.buddies,manager.active_summon_goods_id,manager.active_summon_speffect_id,manager.player_has_alive_summon,self.twin_reopened));
             self.buddies=Some(buddies);
         }
         if buddies>0 {self.spirit_seen=true;}
-        if resummon_allowed(RESUMMON.load(Ordering::Acquire),used,self.spirit_seen,buddies) {
+        if owner.is_some()&&manager.request_summon_speffect_id<0&&resummon_allowed(RESUMMON.load(Ordering::Acquire),used,self.spirit_seen,buddies) {
             super::native_talk::set_flag(SUMMONED_FLAG,false)?;
             used=false;self.spirit_seen=false;self.twin_reopened=false;reset_twin();
-            super::log("TOWER_RESUMMON all spirits are gone; summon point reopened");
+            RESUMMON_ARMED.store(true,Ordering::Release);
+            super::log(format!("TOWER_RESUMMON all local spirits are gone; native use armed; active_goods={} active_effect={}",manager.active_summon_goods_id,manager.active_summon_speffect_id));
         }
         let twin=TWIN.load(Ordering::Acquire);
         if used&&twin&&!self.twin_reopened&&buddies>0 {
@@ -245,18 +271,34 @@ impl Spirits {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn resummon_permission_keeps_native_lifetime_cooldown_and_arena_guards() {
+        use super::resummon_use_allowed as allowed;
+        assert!(allowed(true,true,-1,0.0,true,0));
+        assert!(allowed(true,true,-1,-0.000045,true,0),"captured failed request after first summon died");
+        assert!(!allowed(false,true,-1,0.0,true,0));
+        assert!(!allowed(true,false,-1,0.0,true,0));
+        assert!(!allowed(true,true,610039000,0.0,true,0));
+        assert!(!allowed(true,true,-1,0.5,true,0));
+        assert!(!allowed(true,true,-1,f32::NAN,true,0));
+        assert!(!allowed(true,true,-1,0.0,false,0));
+        assert!(!allowed(true,true,-1,0.0,true,1));
+    }
+    #[test]
     fn frame_pause_keeps_accepted_second_request_until_encounter_cleanup() {
         super::ACTIVE.store(true,super::Ordering::Release);
         super::BOUND.store(10,super::Ordering::Release);
         super::SECOND_ACCEPTED.store(true,super::Ordering::Release);
+        super::RESUMMON_ARMED.store(true,super::Ordering::Release);
         *super::REPLACEMENT.lock().unwrap()=Some((10,232000));
         super::begin_frame();
         assert!(!super::ACTIVE.load(super::Ordering::Acquire));
         assert!(super::SECOND_ACCEPTED.load(super::Ordering::Acquire));
+        assert!(super::RESUMMON_ARMED.load(super::Ordering::Acquire));
         assert_eq!(*super::REPLACEMENT.lock().unwrap(),Some((10,232000)));
         super::set_active(true);
         assert!(super::SECOND_ACCEPTED.load(super::Ordering::Acquire));
         super::set_active(false);
+        assert!(!super::RESUMMON_ARMED.load(super::Ordering::Acquire));
         assert!(!super::SECOND_ACCEPTED.load(super::Ordering::Acquire));
         assert_eq!(*super::REPLACEMENT.lock().unwrap(),None);
     }
@@ -310,7 +352,7 @@ mod tests {
         assert!(allowed(true,true,true,0),"the spirit came out and died");
         assert!(!allowed(true,true,false,0),"used the bell, spirit not out yet");
         assert!(!allowed(true,true,true,1),"a spirit is still alive");
-        assert!(!allowed(true,false,true,0),"the summon point is already open");
+        assert!(allowed(true,false,true,0),"pre-combat summons can die while the map flag is already clear");
         assert!(!allowed(false,true,true,0),"other classes keep the native rule");
     }
     #[test]

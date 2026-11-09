@@ -5,11 +5,18 @@ use crate::{Phase,Run,RuleResult,contracts::{Kind,Oath,MAX_LEVEL},embers::Ember,
 pub struct BossTest {pub encounter:u16,pub act:u8}
 
 impl Run {
+    pub fn debug_event_test(&mut self,draw:crate::events::Draw)->RuleResult<usize> {
+        let mut next=self.clone();next.debug_begin()?;
+        if let Some(contract)=next.contract.as_mut(){if contract.pending(){contract.skip()?;}}
+        let node=next.nodes.iter().position(|n|n.kind==crate::NodeKind::Event).ok_or("本幕没有问号房")?;
+        next.debug_jump(node)?;next.boss_test=None;next.mausoleum_test=None;
+        next.event_test=Some((next.act,node,draw));next.validate()?;*self=next;Ok(node)
+    }
     pub fn debug_mausoleum_test(&mut self)->RuleResult<usize> {
         let mut next=self.clone();next.debug_begin()?;
         if let Some(contract)=next.contract.as_mut(){if contract.pending(){contract.skip()?;}}
         let node=next.nodes.iter().position(|n|n.kind==crate::NodeKind::Event).ok_or("本幕没有问号房")?;
-        next.debug_jump(node)?;next.boss_test=None;next.mausoleum_test=Some((next.act,node));
+        next.debug_jump(node)?;next.boss_test=None;next.event_test=None;next.mausoleum_test=Some((next.act,node));
         next.validate()?;*self=next;Ok(node)
     }
     pub fn debug_boss_test(&mut self,encounter:u16,act:u8)->RuleResult<usize> {

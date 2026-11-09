@@ -24,7 +24,7 @@ static class DlcPoolAssets {
                     if(!Read("ReinforceParamWeapon").Rows.Any(r=>r.ID==Convert.ToInt32(row["reinforceTypeId"].Value)+level))throw new Exception($"Weapon reinforcement missing: {id}+{level}");
             }
             if(detail.Length!=7||string.IsNullOrWhiteSpace(detail[4])||new FileInfo(Path.Combine(input,"reward-icons",detail[1]+".rgba")).Length!=160*160*4)throw new Exception($"Reward presentation missing: {id}");
-            if(entry[0]=="spirit")for(int level=0;level<=10;level++) {
+            if(entry[0]=="spirit")for(int level=0;level<=SpiritLevelAssets.Max;level++) {
                 var ash=Read(table).Rows.Single(r=>r.ID==id+level);
                 if(Convert.ToInt32(ash["consumeMP"].Value)!=0||Convert.ToInt32(ash["consumeHP"].Value)!=-1)throw new Exception($"Spirit cost changed: {id+level}");
             }

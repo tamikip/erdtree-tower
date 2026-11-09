@@ -146,13 +146,13 @@ impl Gate {
         if self.stage!=Stage::Service||self.trial.is_some()||!self.all(|r|r.trial&&r.arrived&&r.alive&&r.trial_choice.is_some()){return None;}
         let first=self.peers.first()?.1.as_ref()?;
         if !self.all(|r|r.seed==first.seed&&r.act==first.act&&r.visited==first.visited){return None;}
-        let options=[Trial::Descent,Trial::Stormveil,Trial::Chariot,Trial::Skip,Trial::Mausoleum];
+        let options=[Trial::Descent,Trial::Stormveil,Trial::Chariot,Trial::Skip,Trial::Mausoleum,Trial::HereticalRise];
         let counts=options.map(|c|self.peers.iter().filter(|(_,r)|r.as_ref().is_some_and(|r|r.trial_choice==Some(c))).count());
         let best=*counts.iter().max()?;
         let tied:Vec<_>=options.into_iter().zip(counts).filter_map(|(c,n)|(n==best).then_some(c)).collect();
         let choice=tied[crate::mix(first.seed^self.epoch^0x747269616c) as usize%tied.len()];
         self.trial=Some(choice);
-        if matches!(choice,Trial::Stormveil|Trial::Chariot){self.stormveil=Some(crate::stormveil::Decision::Challenge);}
+        if matches!(choice,Trial::Stormveil|Trial::Chariot|Trial::HereticalRise){self.stormveil=Some(crate::stormveil::Decision::Challenge);}
         Some(Order::Trial{epoch:self.epoch,choice})
     }
     pub fn stormveil_order(&mut self)->Option<Order> {

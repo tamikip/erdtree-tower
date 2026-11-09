@@ -1,5 +1,17 @@
 using SoulsFormats;
 using System.Numerics;
+if(args.Length==4&&args[3]=="spirit-tuning-bridge-patch") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    SpiritLevelAssets.PatchTuningBridge(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="retired-ash-patch") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    EquipmentStyleAssets.RetirePlaceholder(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="hidden-road-patch") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    HiddenRoadAssets.Build(Environment.GetEnvironmentVariable("TOWER_HIDDEN_ROAD_SOURCE")??throw new Exception("Set TOWER_HIDDEN_ROAD_SOURCE"),args[2],args[1]);return;
+}
 if(args.Length==4&&args[3] is "affinity-text-patch" or "affinity-effect-verify") {
     Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
     if(args[3]=="affinity-text-patch")AffinityNameAssets.Patch(args[2],args[1]);
@@ -37,6 +49,11 @@ modes=modes.Append("aura-patch").ToArray();
 modes=modes.Append("countdown-patch").ToArray();
 modes=modes.Append("arena-build").ToArray();
 modes=modes.Append("affix-stack-patch").ToArray();
+modes=modes.Append("physick-patch").ToArray();
+modes=modes.Append("shop-pot-patch").ToArray();
+modes=modes.Append("spirit-level-inspect").ToArray();
+modes=modes.Append("spirit-level-patch").ToArray();
+modes=modes.Append("custom-spirit-patch").ToArray();
 modes=modes.Append("smith-stone-patch").ToArray();
 modes=modes.Append("smith-stone-text").ToArray();
 modes=modes.Append("retry-item-patch").ToArray();
@@ -118,6 +135,11 @@ if(args.Contains("arena-candidates")){ArenaAssets.Candidates(game,cache);return;
 if(args.Contains("equipment-style-patch")){EquipmentStyleAssets.Patch(cache,output);return;}
 if(args.Contains("talisman-affix-patch")){TalismanAssets.Build(cache,output);return;}
 if(args.Contains("affix-stack-patch")){AffixStackAssets.Patch(cache,output);return;}
+if(args.Contains("physick-patch")){PhysickAssets.Patch(cache,output);return;}
+if(args.Contains("shop-pot-patch")){MerchantAssets.ExpandPots(cache,output);return;}
+if(args.Contains("spirit-level-inspect")){SpiritLevelAssets.Inspect(cache);return;}
+if(args.Contains("spirit-level-patch")){SpiritLevelAssets.Patch(cache,output);return;}
+if(args.Contains("custom-spirit-patch")){CustomSpiritAssets.Patch(cache,output);return;}
 if(args.Contains("smith-stone-patch")){SmithAssets.PatchStone(cache,output);return;}
 if(args.Contains("smith-stone-text")){SmithAssets.PatchStoneText(cache,output);return;}
 if(args.Contains("weapon-level-patch")){WeaponLevelAssets.Patch(cache,output);return;}

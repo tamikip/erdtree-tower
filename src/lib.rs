@@ -21,6 +21,7 @@ pub mod regional_events;
 pub mod mausoleum;
 pub mod stormveil;
 pub mod rewards;
+pub mod physick_supply;
 pub mod affixes;
 pub mod talismans;
 pub mod boss_affixes;
@@ -265,6 +266,8 @@ pub struct Run {
     pub boss_test: Option<debug::BossTest>,
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub mausoleum_test: Option<(u8,usize)>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub event_test: Option<(u8,usize,events::Draw)>,
     /// 2：问号房的每个事件按权重单独抽取，加入骰子赌徒、盲盒商人与词条重铸台三个房间事件（0、1 为旧分配）
     /// 3：九个问号房事件权重相同（2 为试炼 4、其余 2）
     #[serde(default)]
@@ -287,7 +290,7 @@ pub struct Run {
     /// 上一场战斗胜利时背包里武器的最高强化（0–50，与铁匠同一换算）：决定奖励里骨灰的最高等级
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub weapon_peak: Option<u8>,
-    /// 持有过的骨灰最高等级（0–10，只升不降）：战斗胜利时按背包更新，营地调灵后立即更新。
+    /// 持有过的骨灰最高等级（0–39，只升不降）：战斗胜利时按背包更新，营地调灵后立即更新。
     /// 决定奖励与商店里骨灰的最高等级（+1）；旧存档没有这一项时沿用武器换算
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub spirit_peak: Option<u8>,
@@ -303,6 +306,8 @@ pub struct Run {
     pub flasks: u8,
     #[serde(default)]
     pub physick_empty: bool,
+    #[serde(default)]
+    pub physick_supply: physick_supply::Supply,
     pub flask_limit: u8,
     #[serde(default)]
     pub flask_bonus: u8,
@@ -693,6 +698,7 @@ impl Run {
             debug: false,
             boss_test: None,
             mausoleum_test: None,
+            event_test: None,
             event_rules: 5,
             act:1,
             seed,
@@ -722,6 +728,7 @@ impl Run {
             delivered_talismans: vec![],
             claimed_items: vec![],
             physick_empty: false,
+            physick_supply: Default::default(),
             regional_event: Default::default(),
             contract: None,
             larval_gift: Default::default(),
@@ -892,11 +899,10 @@ impl Run {
         let id = self.active_node(NodeKind::Camp)?;
         match choice {
             CampChoice::Refill | CampChoice::RefillBlue | CampChoice::RefillRedOnly | CampChoice::RefillBlueOnly => {
-                if self.flasks >= self.flask_limit && !self.physick_empty {
+                if self.flasks >= self.flask_limit {
                     return Err("圣杯瓶已满".into());
                 }
                 self.flasks = self.flasks.saturating_add(3).min(self.flask_limit);
-                self.physick_empty=false;
             }
             CampChoice::UpgradeWeapon => {
                 if self.weapon_level >= contracts::NORMAL_MAX {
@@ -1214,8 +1220,10 @@ impl Run {
 
     pub fn validate(&self) -> RuleResult<()> {
         let fail = || Err("存档状态不合法或版本不受支持".into());
+        if !self.physick_supply.valid(){return fail();}
         if self.boss_test.is_some_and(|t|!self.debug||!(1..=3).contains(&t.act)||t.encounter>=4096){return fail();}
         if self.mausoleum_test.is_some_and(|(act,id)|!self.debug||!(1..=3).contains(&act)||act==self.act&&self.nodes.get(id).is_none_or(|n|n.kind!=NodeKind::Event)){return fail();}
+        if self.event_test.is_some_and(|(act,id,_)|!self.debug||!(1..=3).contains(&act)||act==self.act&&self.nodes.get(id).is_none_or(|n|n.kind!=NodeKind::Event)){return fail();}
         if ![1,2,3,4,5,6,7].contains(&self.schema)||self.affix_rules>5||self.boss_reward_rules>2||self.class_rules!=1||self.boss_affix_rules>1||self.ember_rules>3||self.battlemage.len()>embers::BATTLEMAGE_WEAPONS||self.battlemage.iter().any(|(_,stat)|*stat>1)||self.scaling_rules>1
             || self.contract.as_ref().is_some_and(|c|!c.valid(self.act)&&!(self.debug&&c.act==self.act))
             || !self.larval_gift.valid(self.act)
@@ -1239,7 +1247,7 @@ impl Run {
             || self.flasks > self.flask_limit
             || self.weapon_level > contracts::NORMAL_MAX
             || self.weapon_peak.is_some_and(|peak|peak>contracts::MAX_PEAK)
-            || self.spirit_peak.is_some_and(|peak|peak>10)
+            || self.spirit_peak.is_some_and(|peak|peak>rewards::SPIRIT_MAX)
             || self.spirit_rules>1
             || self.shop_purchased > 7
             || self.blessings.len() > 8
@@ -1293,7 +1301,7 @@ impl Run {
                     .nodes
                     .get(*id)
                     .is_some_and(|n| n.kind.combat() || n.kind == NodeKind::Chest)
-                    || (*offers != self.offers(*id) && *offers != rewards::before_tool_rate(self,*id) && *offers != rewards::before_whetblades(self,*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
+                    || (*offers != self.offers(*id) && *offers != rewards::before_custom_spirits(self,*id) && *offers != rewards::before_tool_rate(self,*id) && *offers != rewards::before_whetblades(self,*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
                 {
                     return fail();
                 }

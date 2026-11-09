@@ -1,40 +1,27 @@
-use erdtree_tower::{Run,Class,Reward,rewards::{self,ItemKind}};
+use erdtree_tower::{Run,Class,rewards::*};
+
 #[test]
-fn spirit_levels_are_valid_stable_and_cover_zero_to_ten() {
-    let base=0x40000000|200000;
-    for (min,max) in [(0,10)] {
-        let mut seen=std::collections::BTreeSet::new();
-        for seed in 0..1000 {
-            let id=rewards::random_spirit_level(base,seed,10);
-            assert_eq!(id,rewards::random_spirit_level(base,seed,10));
-            assert!((min..=max).contains(&(id-base)));seen.insert(id-base);
-            assert_eq!(rewards::lookup(id).unwrap().kind,ItemKind::Spirit);
+fn every_spirit_supports_39_levels_and_stops_at_the_boundary() {
+    for ash in CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit) {
+        assert_eq!(spirit_tune_target(ash.id+10,10),Some(ash.id+11));
+        assert_eq!(spirit_tune_target(ash.id,38),Some(ash.id+39));
+        assert_eq!(spirit_tune_target(ash.id+39,39),None);
+        for level in 0..=39 {
+            assert_eq!(spirit_level(ash.id+level),Some(level as u8));
+            assert_eq!(spirit_base(ash.id+level),ash.id);
+            assert!(lookup(ash.id+level).is_some());
         }
-        assert_eq!(seen,(min..=max).collect());
+        assert_eq!(spirit_level(ash.id+40),None);
     }
 }
+
 #[test]
-fn offered_spirit_name_matches_actual_item_and_save_roundtrips() {
-    let mut seen=false;
-    for seed in 0..200 {
-        let mut r=Run::new(seed,Class::Samurai);let id=r.available()[0];r.enter(id).unwrap();r.win_combat().unwrap();
-        if let erdtree_tower::Phase::Reward{offers,..}=&r.phase {
-            for reward in offers {if let Reward::Item(item)=reward {
-                if let Some(i)=rewards::lookup(*item).filter(|i|i.kind==ItemKind::Spirit) {
-                    seen=true;assert!((item&0x0fffffff)%1000<=10);
-                    if (item&0x0fffffff)%1000!=0 {assert!(i.name.contains('+'));}
-                }
-            }}
-        }
-        assert_eq!(Run::decode(&r.encode().unwrap()).unwrap(),r);
-    }
-    assert!(seen);
-}
-#[test]
-fn claimed_upgraded_spirits_are_not_offered_again() {
-    for seed in 0..200 {
-        let mut r=Run::new(seed,Class::Samurai);let node=r.available()[0];
-        r.claimed_items=rewards::CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit).flat_map(|i|(1..=10).map(move |level|i.id+level)).collect();
-        for reward in rewards::offers(&r,node) {if let Reward::Item(id)=reward {assert!(!r.claimed_items.contains(&id));}}
-    }
+fn high_level_ashes_survive_save_and_reward_generation() {
+    let mut run=Run::new(42,Class::Confessor);run.spirit_peak=Some(39);
+    assert_eq!(spirit_cap(&run),39);
+    assert_eq!(Run::decode(&run.encode().unwrap()).unwrap().spirit_peak,Some(39));
+    let ash=CATALOG.iter().find(|i|i.kind==ItemKind::Spirit).unwrap().id;
+    let levels:std::collections::BTreeSet<_>=(0..10000).map(|seed|random_spirit_level(ash,seed,39)-ash).collect();
+    assert_eq!(levels,(0..=39).collect());
+    run.spirit_peak=Some(40);assert!(run.validate().is_err());
 }

@@ -1,9 +1,13 @@
 use eldenring::cs::{EquipDataItem,GaitemCategory,ItemCategory,ItemId,PlayerGameData};
 
 fn bottle(id:ItemId)->bool {id.category()==ItemCategory::Goods&&matches!(id.param_id(),250|251)}
+pub fn held(data:&PlayerGameData)->u64 {
+    data.equipment.equip_inventory_data.items_data.items()
+        .filter(|entry|entry.item_id.category()==ItemCategory::Goods&&entry.item_id.param_id()==250)
+        .map(|entry|u64::from(entry.quantity)).sum()
+}
 pub fn empty(data:&PlayerGameData)->bool {
-    data.equipment.equip_inventory_data.items_data.items().any(|e|bottle(e.item_id)&&e.item_id.param_id()==251&&e.quantity>0)
-        &&!data.equipment.equip_inventory_data.items_data.items().any(|e|bottle(e.item_id)&&e.item_id.param_id()==250&&e.quantity>0)
+    held(data)==0
 }
 pub fn ensure(data:&mut PlayerGameData)->Result<(),String> {
     if !data.equipment.equip_inventory_data.items_data.items().any(|e|bottle(e.item_id)&&e.quantity>0) {
@@ -20,10 +24,23 @@ fn replace_slots(slots:&mut [EquipDataItem],target:&EquipDataItem) {
         }
     }
 }
-pub fn refill(data:&mut PlayerGameData)->Result<(),String> {
-    if !empty(data) {return Ok(());}
+pub fn deliver(data:&mut PlayerGameData,target:u64)->Result<(),String> {
+    if target!=1{return Err("原生灵药只补一瓶，多余次数保存在储备中".into());}
+    use fromsoftware_shared::FromStatic;
+    use eldenring::cs::{SoloParamRepository,EquipParamGoods};
+    let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"灵药参数尚未加载")?;
+    let p=params.get::<EquipParamGoods>(250).ok_or("缺少灵药参数")?;
+    if p.max_num()!=999||p.replace_item_id()!=-1{return Err("灵药参数版本不匹配，请更新配套资源".into());}
+    let count=held(data);
+    if count<target {
+        super::items::give(&[(0x40000000|250,(target-count) as i32,-1)])?;
+        if held(data)<target{return Err("灵药补充未确认，已停止自动重试；储备保留".into());}
+    }
+    if let Err(error)=repair_slots(data){super::log(error);}
+    Ok(())
+}
+fn repair_slots(data:&mut PlayerGameData)->Result<(),String> {
     let remove_fn=super::items::checked_function(0x24d1e0,&[0x48,0x89,0x5c,0x24,0x20,0x89,0x54,0x24,0x10,0x55,0x56,0x57,0x41,0x56,0x41,0x57])?;
-    super::items::give(&[(0x40000000|250,1,-1)])?;
     let full=ItemId::new(ItemCategory::Goods,250).unwrap();
     if !data.equipment.equip_inventory_data.items_data.items().any(|e|e.item_id==full&&e.quantity>0) {return Err("灵药尚未补充，请清理背包后重试".into());}
     let inventory=&mut data.equipment.equip_inventory_data;

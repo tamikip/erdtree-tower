@@ -218,6 +218,10 @@ pub fn reset(data: &mut PlayerGameData, archetype: u8) -> Result<(), String> {
     }
     super::items::give_flasks(true,true)?;
     super::physick::ensure(data)?;
+    let tear=erdtree_tower::physick_supply::STARTING_TEAR;
+    super::items::give(&[(tear as i32,1,-1)])?;
+    super::items::give(&[(0x40000000|9500,5,-1)])?;
+    data.equipment.physick_tears[0]=ItemId::new(ItemCategory::Goods,tear&0x0fffffff).map_err(|e|e.to_string())?.into();
     super::items::give(&[(0x40000000|8590,1,-1)])?;
     // 开局护符（每个职业有自己的默认护符，职业传承可以更换）在大赐福开局时发放
     super::items::give(&[(0x40000000|8158,1,-1)])?;

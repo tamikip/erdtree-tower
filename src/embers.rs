@@ -134,7 +134,7 @@ impl Ember {
         Self::Footwork=>"翻滚、后撤步与致命一击\n不消耗精力".into(),
         Self::Pouch=>"飞刀、投掷壶等投掷道具\n使用后不再消耗".into(),
         Self::Arts=>format!("战技伤害 +{ARTS_ATTACK_PERCENT}%\n战技消耗的专注 -{ARTS_FP_CUT_PERCENT}%"),
-        Self::Bulwark=>"举盾格挡不消耗精力\n代价：始终超重\n（不能翻滚，移动变慢）".into(),
+        Self::Bulwark=>"使用大盾格挡时不消耗精力\n不影响负重、翻滚与移动速度".into(),
         Self::Stride=>"已移除，不再提供效果".into(),
         Self::Battlemage=>format!("可在铁匠处免费让近战武器\n获得智力或信仰 S 补正\n受到的伤害降低\n智力、信仰取高 ×{}%",BATTLEMAGE_CUT_PERMILLE as f32/10.0),
         Self::Mercy=>format!("治疗类祷告的回复量\n提高 {MERCY_HEAL_PERCENT}%"),
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(Ember::Arts.effect(),"战技伤害 +25%\n战技消耗的专注 -50%");
         assert!(Ember::Arts.quality()==2&&!Ember::Arts.needs_spirit()&&!Ember::Arts.needs_casting());
         assert!(Ember::Pouch.quality()==2&&!Ember::Pouch.needs_spirit()&&!Ember::Pouch.needs_casting()&&!Ember::Pouch.affects_enemies());
-        assert_eq!(Ember::Bulwark.effect(),"举盾格挡不消耗精力\n代价：始终超重\n（不能翻滚，移动变慢）");
+        assert_eq!(Ember::Bulwark.effect(),"使用大盾格挡时不消耗精力\n不影响负重、翻滚与移动速度");
         assert!(Ember::Bulwark.quality()==2&&!Ember::Bulwark.needs_spirit()&&!Ember::Bulwark.needs_casting());
         assert_eq!(Ember::Breaker.effect(),"敌人出血、冻伤、睡眠、发狂发作时\n压低架势，5 秒内下一次削韧命中触发失衡\nBoss 与普通敌人均无触发冷却");
         assert!(Ember::Breaker.quality()==3&&!Ember::Breaker.needs_spirit()&&!Ember::Breaker.needs_casting());
