@@ -22,6 +22,13 @@ type ConnectionInfo=unsafe extern "C" fn(*mut c_void,*const Identity,*mut c_void
 struct RealtimeStatus {
     state:i32,ping:i32,quality:[f32;2],rates:[f32;4],counters:[i32;4],queue_time:i64,reserved:[u32;16],
 }
+// Steamworks SteamNetConnectionInfo_t：断线时读 end_reason / end_debug，弄清 Steam 连接为何中断。
+#[repr(C)]
+struct ConnInfo {
+    identity:[u8;136],user_data:i64,listen:u32,addr:[u8;18],pad:u16,pop_remote:u32,pop_relay:u32,
+    state:i32,end_reason:i32,end_debug:[u8;128],description:[u8;128],flags:i32,reserved:[u32;63],
+}
+const NET_LOG_INTERVAL:std::time::Duration=std::time::Duration::from_secs(30);
 const MESSAGES_ENTRY:&CStr=c"SteamAPI_SteamNetworkingMessages_SteamAPI_v002";
 fn messages_module(mut lookup:impl FnMut(&str,&CStr)->Option<(*mut c_void,*mut c_void)>)->Result<(*mut c_void,*mut c_void,&'static str),String> {
     for name in ["steam_api64_o.dll","steam_api64.dll"] {
@@ -41,6 +48,7 @@ pub struct Transport {
     interface:NonNull<c_void>,set:SetIdentity,get:GetIdentity,
     send:Send,receive:Receive,release:Release,close:Close,accept:Accept,roster:Roster,
     connection_info:Option<ConnectionInfo>,
+    net_logged:std::cell::Cell<Option<std::time::Instant>>,
 }
 // Access remains serialized by the runtime lock; no interface call overlaps another.
 unsafe impl std::marker::Send for Transport {}
@@ -119,6 +127,7 @@ impl Transport {
                 close:std::mem::transmute(address(c"SteamAPI_ISteamNetworkingMessages_CloseChannelWithUser")?),roster,
                 accept:std::mem::transmute(address(c"SteamAPI_ISteamNetworkingMessages_AcceptSessionWithUser")?),
                 connection_info:address(c"SteamAPI_ISteamNetworkingMessages_GetSessionConnectionInfo").ok().map(|p|std::mem::transmute::<*mut c_void,ConnectionInfo>(p)),
+                net_logged:std::cell::Cell::new(None),
             })
         }
     }
@@ -131,7 +140,29 @@ impl Transport {
             (self.set)(&mut identity,peer);
             (self.send)(self.interface.as_ptr(),&identity,data.as_ptr(),data.len() as u32,8|1,CHANNEL)
         };
-        if result==1 {Ok(())}else{Err(format!("Steam 消息发送失败：{result}"))}
+        if result==1 {return Ok(());}
+        super::log_repeating(format!("PARTY_NET send failed result={result} {}",self.diagnose(peer)));
+        Err(format!("Steam 消息发送失败：{result}"))
+    }
+    /// 读 Steam 到该队员的连接状态：状态、断开原因与调试文本、延迟和连接质量。只用于写日志排查掉线。
+    pub fn diagnose(&self,peer:u64)->String {
+        let Some(query)=self.connection_info else{return format!("peer={peer} connection_info=unsupported");};
+        if peer==self.roster.local {return format!("peer={peer} local");}
+        let mut identity=Identity{bytes:[0;136]};
+        let mut info:ConnInfo=unsafe {std::mem::zeroed()};
+        let mut status=RealtimeStatus{ping:-1,..Default::default()};
+        let state=unsafe {
+            (self.set)(&mut identity,peer);
+            query(self.interface.as_ptr(),&identity,(&mut info as *mut ConnInfo).cast(),&mut status)
+        };
+        let text=|bytes:&[u8]|{let end=bytes.iter().position(|&b|b==0).unwrap_or(bytes.len());String::from_utf8_lossy(&bytes[..end]).into_owned()};
+        format!("peer={peer} state={state} info_state={} end_reason={} end_debug=\"{}\" relay={} ping={} quality={:.2}/{:.2} pending={}/{}",
+            info.state,info.end_reason,text(&info.end_debug),info.pop_relay!=0,status.ping,status.quality[0],status.quality[1],status.counters[0],status.counters[1])
+    }
+    fn periodic_log(&self) {
+        if self.net_logged.get().is_some_and(|at|at.elapsed()<NET_LOG_INTERVAL){return;}
+        self.net_logged.set(Some(std::time::Instant::now()));
+        for &peer in &self.roster.members {if peer!=self.roster.local {super::log(format!("PARTY_NET {}",self.diagnose(peer)));}}
     }
     pub fn latency_supported(&self)->bool {self.connection_info.is_some()}
     pub fn ping(&self,peer:u64)->Option<u32> {
@@ -146,6 +177,7 @@ impl Transport {
         (state==3&&status.state==3&&status.ping>=0&&status.ping<=erdtree_tower::party_latency::MAX_MS as i32).then_some(status.ping as u32)
     }
     pub fn receive(&self)->Result<Vec<(u64,Vec<u8>)>,String> {
+        self.periodic_log();
         for &peer in &self.roster.members {
             if peer==self.roster.local {continue;}
             let mut identity=Identity{bytes:[0;136]};
@@ -185,6 +217,16 @@ impl Drop for Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn connection_info_matches_steamworks_abi() {
+        assert_eq!(std::mem::size_of::<ConnInfo>(),696);
+        assert_eq!(std::mem::offset_of!(ConnInfo,user_data),136);
+        assert_eq!(std::mem::offset_of!(ConnInfo,pop_remote),168);
+        assert_eq!(std::mem::offset_of!(ConnInfo,state),176);
+        assert_eq!(std::mem::offset_of!(ConnInfo,end_reason),180);
+        assert_eq!(std::mem::offset_of!(ConnInfo,end_debug),184);
+        assert_eq!(std::mem::offset_of!(ConnInfo,flags),440);
+    }
     #[test]
     fn realtime_status_matches_steamworks_abi() {
         assert_eq!(std::mem::size_of::<RealtimeStatus>(),120);
