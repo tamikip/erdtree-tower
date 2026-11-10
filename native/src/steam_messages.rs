@@ -54,8 +54,8 @@ pub struct Pending {
 }
 impl Pending {
     pub fn waiting_reason(&self)->String {self.handshake.waiting_reason()}
-    pub fn new(roster:Roster,nonce:u64,seed:u64)->Result<Self,String> {
-        let handshake=erdtree_tower::party_handshake::Handshake::new(roster.clone(),nonce,seed)?;
+    pub fn new(roster:Roster,nonce:u64,seed:u64,dlc:bool)->Result<Self,String> {
+        let handshake=erdtree_tower::party_handshake::Handshake::new(roster.clone(),nonce,seed)?.with_dlc(dlc);
         Ok(Self{transport:Transport::load(roster.clone())?,roster,handshake,hello:std::time::Instant::now()-std::time::Duration::from_secs(1),started:std::time::Instant::now(),packets:vec![]})
     }
     pub fn poll(&mut self)->Result<Option<(u64,u64)>,String> {

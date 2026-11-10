@@ -9,11 +9,10 @@ static DIR:OnceLock<PathBuf>=OnceLock::new();
 pub fn init(dll:Option<PathBuf>) {
     if let Some(dir)=dll.and_then(|p|p.parent().map(PathBuf::from)) {let _=DIR.set(dir);}
     let options=&*OPTIONS;
-    // DLC 开关只对单人生效：无缝联机时双方必须抽到同样的敌人和奖励，一律按有 DLC 处理
-    let seamless=std::env::var("ERDTREE_TOWER_SEAMLESS_ENTRY").as_deref()==Ok("1");
-    let dlc=if seamless {erdtree_tower::dlc::Mode::Full} else {options.dlc};
+    // 单人按本机设置；联机时由房主在握手里定下整队模式（都有 DLC 才按有 DLC，见 sync_dlc）
+    let dlc=options.dlc;
     erdtree_tower::dlc::set(dlc);
-    crate::log(format!("OPTIONS file={:?} debug={} dlc={}{} prompts={} keys={}",path(),options.debug,dlc.id(),if seamless&&options.dlc!=dlc {"（无缝联机，忽略设置）"} else {""},options.prompts.id(),
+    crate::log(format!("OPTIONS file={:?} debug={} dlc={} prompts={} keys={}",path(),options.debug,dlc.id(),options.prompts.id(),
         Hotkey::ALL.map(|h|format!("{}={}",h.id(),options.key(h))).join(",")));
 }
 
@@ -24,6 +23,17 @@ fn path()->PathBuf {dir().join(FILE)}
 static OPTIONS:LazyLock<Options>=LazyLock::new(||std::fs::read_to_string(path()).map(|text|parse(&text)).unwrap_or_default());
 
 pub fn get()->&'static Options {&OPTIONS}
+/// 本机是否按「有 DLC」运行（启动器里 DLC 设为「有 DLC」）：联机握手时报给房主
+pub fn local_dlc()->bool {OPTIONS.dlc==erdtree_tower::dlc::Mode::Full}
+/// 每帧调用：不在队伍里用本机设置；在队伍里用整队模式（None 表示还没定下，按有 DLC，如手动联机）
+pub fn sync_dlc(party:Option<Option<bool>>) {
+    use erdtree_tower::dlc::Mode;
+    let want=match party {None=>OPTIONS.dlc,Some(Some(false))=>Mode::None,Some(_)=>Mode::Full};
+    if erdtree_tower::dlc::mode()!=want {
+        erdtree_tower::dlc::set(want);
+        crate::log(format!("DLC mode -> {}（{}）",want.id(),if party.is_none(){"单人，按本机设置"}else if want==Mode::None{"队伍里有人没有 DLC，整队不出 DLC 内容"}else{"全队都有 DLC"}));
+    }
+}
 /// 绑定到某个功能的键在界面上的写法（如 Home、F10、J）
 pub fn label(hotkey:Hotkey)->&'static str {crate::native_settings::live_key(hotkey).unwrap_or_else(||OPTIONS.key(hotkey))}
 pub fn key(hotkey:Hotkey)->Key {to_key(label(hotkey)).unwrap_or_else(||to_key(hotkey.default_key()).unwrap_or(Key::Home))}

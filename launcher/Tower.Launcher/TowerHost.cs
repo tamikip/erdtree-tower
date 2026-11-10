@@ -330,7 +330,7 @@ namespace Tower.Launcher
                 var clash = TowerOptions.Hotkeys.Where(h => h.Id != hotkey.Id && TowerOptions.Key(values, h.Id, h.Default).Equals(text, StringComparison.OrdinalIgnoreCase)).Select(h => h.Label).ToList();
                 if (clash.Count > 0) Toast($"「{hotkey.Label}」和「{string.Join("」「", clash)}」都是 {text}，按一下会同时触发", "warn", 6000);
             }
-            if (key == "dlc" && text != "full") Toast("当前内置无缝组件按完整 DLC 内容运行，启动前会检查并提示", "info", 6000);
+            if (key == "dlc" && text != "full") Toast("已改为没有 DLC：单人不出 DLC 内容；联机时队伍里有人没有 DLC，整队都按没有 DLC 运行", "info", 6000);
             else if (GameRunning()) Toast("已保存，下次启动游戏生效", "info");
         }
 

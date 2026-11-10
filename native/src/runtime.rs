@@ -53,7 +53,7 @@ fn victory_healing_allowed(player:&eldenring::cs::PlayerIns)->bool {
     player.chr_ins.modules.data.hp>0&&!player.chr_ins.chr_flags1c5.death_flag()
         &&!super::seamless_revival::finished(player as *const _ as usize)
 }
-/// 战斗胜利的回复（狂战士 8% 生命、祷誓者 25% 专注、苦修之誓）：写日志，返回给玩家看的提示（没有回复时为空）
+/// 战斗胜利的回复（祷誓者 10% 生命、苦修之誓）：写日志，返回给玩家看的提示（没有回复时为空）
 /// 地图、奖励、誓约界面打开时玩家没法吃药解毒（界面关不掉），战斗里带出来的中毒、腐败会一路掉血到死：
 /// 界面锁住操作期间（不在战斗、不在房间、不在传送）每秒清一次异常
 fn clear_ailments_under_overlay(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan) {
@@ -854,7 +854,7 @@ fn tick_auto_party(state:&mut Runtime)->Result<bool,String> {
         }
         let nonce=super::party::random_entropy()?.max(1);
         let seed=state.view.run.as_ref().map(|r|r.seed).unwrap_or(super::party::random_entropy()?);
-        state.party_pending=Some(super::steam_messages::Pending::new(roster,nonce,seed)?);
+        state.party_pending=Some(super::steam_messages::Pending::new(roster,nonce,seed,super::options::local_dlc())?);
         let pending=state.party_pending.as_ref().unwrap();
         super::log(format!("Steam party handshake started: host={} members={}",pending.roster.local==pending.roster.host,pending.roster.members.len()));
     }
@@ -1364,6 +1364,7 @@ fn tick_locked() {
     let mut music=super::bgm::Frame::default();
     state.pad_capture.update(super::input::active());
     SOLO.store(state.party.is_none(),std::sync::atomic::Ordering::Relaxed);
+    super::options::sync_dlc(state.party.as_ref().map(|link|link.party_dlc()));
     let Ok(game) = (unsafe { GameMan::instance_mut() }) else {
         super::boss_bars::sync(Vec::new());
         PLAYER_READY.store(false,std::sync::atomic::Ordering::Relaxed);

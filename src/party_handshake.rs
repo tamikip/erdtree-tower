@@ -1,6 +1,6 @@
 use serde::{Deserialize,Serialize};
 use crate::{party_roster::Roster,RuleResult};
-pub const VERSION:u32=81;
+pub const VERSION:u32=82;
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub enum Payload {
     Handshake(Message),
@@ -27,16 +27,21 @@ impl Payload {
         Ok(envelope.payload)
     }
 }
+fn yes()->bool {true}
+/// Hello 的 dlc：本机是否按「有 DLC」运行（启动器里 DLC 设为「有 DLC」）；Commit 的 dlc：房主定下的整队模式，
+/// 所有人都有 DLC 才按有 DLC 运行，有一个人没有就整队按「没有 DLC」运行（DLC 敌人、物品都不出）
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub enum Message {
-    Hello{version:u32,nonce:u64,members:Vec<u64>},
+    Hello{version:u32,nonce:u64,members:Vec<u64>,#[serde(default="yes")]dlc:bool},
     Offer{nonce:u64,session:u64,seed:u64,members:Vec<u64>},
     Ack{nonce:u64,session:u64},
-    Commit{nonce:u64,session:u64},
+    Commit{nonce:u64,session:u64,#[serde(default="yes")]dlc:bool},
 }
 pub struct Handshake {
     roster:Roster,nonce:u64,session:Option<(u64,u64)>,
     peers:Vec<(u64,Option<u64>,bool)>,committed:bool,
+    /// 本机是否有 DLC；房主另记每个队员 Hello 里报的；party_dlc 是提交后整队用的模式
+    dlc:bool,peer_dlc:Vec<(u64,bool)>,party_dlc:Option<bool>,
 }
 impl Handshake {
     pub fn new(roster:Roster,nonce:u64,seed:u64)->RuleResult<Self> {
@@ -45,12 +50,16 @@ impl Handshake {
             ||roster.members.contains(&0)||roster.members.windows(2).any(|p|p[0]>=p[1]) {return Err("队伍握手身份无效".into());}
         let peers=roster.members.iter().filter(|&&id|id!=roster.local).map(|&id|(id,None,false)).collect();
         let session=(roster.local==roster.host).then_some((nonce,seed));
-        Ok(Self{roster,nonce,session,peers,committed:false})
+        Ok(Self{roster,nonce,session,peers,committed:false,dlc:true,peer_dlc:vec![],party_dlc:None})
     }
+    /// 本机是否按「有 DLC」运行，默认有
+    pub fn with_dlc(mut self,dlc:bool)->Self {self.dlc=dlc;self}
     pub fn hello(&self)->Option<(u64,Message)> {
-        (self.roster.local!=self.roster.host&&!self.committed).then(||(self.roster.host,Message::Hello{version:VERSION,nonce:self.nonce,members:self.roster.members.clone()}))
+        (self.roster.local!=self.roster.host&&!self.committed).then(||(self.roster.host,Message::Hello{version:VERSION,nonce:self.nonce,members:self.roster.members.clone(),dlc:self.dlc}))
     }
     pub fn ready(&self)->Option<(u64,u64)> {self.committed.then_some(self.session).flatten()}
+    /// 提交后整队是否按「有 DLC」运行
+    pub fn party_dlc(&self)->Option<bool> {self.committed.then_some(self.party_dlc).flatten()}
     pub fn waiting_reason(&self)->String {
         if self.roster.local!=self.roster.host {
             return format!("等待房主 {} 的{}。尚不能确定是网络延迟还是对方未加载爬塔模块。",self.roster.host,if self.session.is_some(){"握手提交"}else{"握手回应"});
@@ -60,7 +69,7 @@ impl Handshake {
     }
     pub fn receive_lobby(&mut self,sender:u64,message:Message)->RuleResult<Vec<(u64,Message)>> {
         if matches!(&message,Message::Hello{version,..} if *version!=VERSION){return Err("队伍协议不匹配".into());}
-        if let Message::Hello{version,nonce,members}=&message {
+        if let Message::Hello{version,nonce,members,..}=&message {
             if self.roster.local==self.roster.host&&*version==VERSION&&*nonce!=0&&members==&self.roster.members {
                 if let Some(peer)=self.peers.iter_mut().find(|p|p.0==sender) {
                     if peer.1.is_some_and(|old|old!=*nonce) {
@@ -77,11 +86,12 @@ impl Handshake {
         if sender==self.roster.local||!self.roster.members.contains(&sender){return Err("消息不属于当前队伍".into());}
         let host=self.roster.local==self.roster.host;
         match message {
-            Message::Hello{version,nonce,members} if host=>{
+            Message::Hello{version,nonce,members,dlc} if host=>{
                 if version!=VERSION||nonce==0||members!=self.roster.members{return Err("队伍版本或成员不一致".into());}
                 let peer=self.peers.iter_mut().find(|p|p.0==sender).unwrap();
                 if peer.1.is_some_and(|old|old!=nonce){return Err("队员已重新连接，需要重新建立会话".into());}
                 peer.1=Some(nonce);
+                self.peer_dlc.retain(|p|p.0!=sender);self.peer_dlc.push((sender,dlc));
                 let (session,seed)=self.session.unwrap();
                 Ok(vec![(sender,Message::Offer{nonce,session,seed,members:self.roster.members.clone()})])
             },
@@ -97,11 +107,13 @@ impl Handshake {
                 peer.2=true;
                 if !self.peers.iter().all(|p|p.2){return Ok(vec![]);}
                 self.committed=true;
-                Ok(self.peers.iter().map(|p|(p.0,Message::Commit{nonce:p.1.unwrap(),session})).collect())
+                let dlc=self.dlc&&self.peers.iter().all(|p|self.peer_dlc.iter().find(|d|d.0==p.0).is_none_or(|d|d.1));
+                self.party_dlc=Some(dlc);
+                Ok(self.peers.iter().map(|p|(p.0,Message::Commit{nonce:p.1.unwrap(),session,dlc})).collect())
             },
-            Message::Commit{nonce,session} if !host&&sender==self.roster.host=>{
+            Message::Commit{nonce,session,dlc} if !host&&sender==self.roster.host=>{
                 if nonce!=self.nonce||self.session.is_none_or(|s|s.0!=session){return Err("会话提交不匹配".into());}
-                self.committed=true;Ok(vec![])
+                self.committed=true;self.party_dlc=Some(dlc);Ok(vec![])
             },
             _=>Err("消息发送者没有对应会话权限".into()),
         }
@@ -139,14 +151,14 @@ mod tests {
         let offer=host.receive_lobby(2,guest.hello().unwrap().1).unwrap().remove(0).1;
         let ack=guest.receive_lobby(1,offer).unwrap().remove(0).1;
         host.receive_lobby(2,ack).unwrap();
-        let error=host.receive_lobby(2,Message::Hello{version:VERSION,nonce:202,members:vec![1,2]}).unwrap_err();
+        let error=host.receive_lobby(2,Message::Hello{version:VERSION,nonce:202,members:vec![1,2],dlc:true}).unwrap_err();
         assert!(error.contains("重新连接"));assert_eq!(host.ready(),Some((101,42)));
     }
     #[test]
     fn diagnostics_separate_missing_response_from_version_conflict() {
         let mut host=state(1);
         assert!(host.waiting_reason().contains("队员 2：尚未收到握手消息"));
-        host.receive(2,super::Message::Hello{version:super::VERSION,nonce:102,members:vec![1,2,3]}).unwrap();
+        host.receive(2,super::Message::Hello{version:super::VERSION,nonce:102,members:vec![1,2,3],dlc:true}).unwrap();
         assert!(host.waiting_reason().contains("队员 2：尚未确认房主握手"));
         assert!(host.waiting_reason().contains("队员 3：尚未收到握手消息"));
         let bytes=br#"{"magic":"ERDTREE-PARTY","version":1,"payload":{"UnknownFutureMessage":{}}}"#;
@@ -161,11 +173,11 @@ mod tests {
         for count in (2..=crate::party_roster::MAX_PLAYERS as u64).chain((2..8).rev()) {
             let members=(1..=count).collect::<Vec<_>>();
             let mut states=members.iter().map(|&local|Handshake::new(Roster{local,host:1,members:members.clone()},count*100+local,42).unwrap()).collect::<Vec<_>>();
-            assert!(states[0].receive_lobby(2,Message::Hello{version:VERSION,nonce:102,members:vec![1,2,99]}).unwrap().is_empty());
+            assert!(states[0].receive_lobby(2,Message::Hello{version:VERSION,nonce:102,members:vec![1,2,99],dlc:true}).unwrap().is_empty());
             assert!(states[0].ready().is_none());
             for id in 2..=count {
                 let guest=id as usize-1;
-                assert!(states[guest].receive_lobby(1,Message::Commit{nonce:102,session:101}).unwrap().is_empty());
+                assert!(states[guest].receive_lobby(1,Message::Commit{nonce:102,session:101,dlc:true}).unwrap().is_empty());
                 let hello=states[guest].hello().unwrap().1;
                 let offer=states[0].receive_lobby(id,hello).unwrap().remove(0).1;
                 let ack=states[guest].receive_lobby(1,offer).unwrap().remove(0).1;
@@ -174,7 +186,7 @@ mod tests {
                 for (target,message) in commits {states[target as usize-1].receive_lobby(1,message).unwrap();}
             }
             for state in &states {assert_eq!(state.ready(),Some((count*100+1,42)));}
-            assert!(states[0].receive_lobby(2,Message::Hello{version:VERSION-1,nonce:102,members}).is_err());
+            assert!(states[0].receive_lobby(2,Message::Hello{version:VERSION-1,nonce:102,members,dlc:true}).is_err());
         }
     }
     #[test]
@@ -205,14 +217,32 @@ mod tests {
         assert!(a.hello().is_none());
     }
     #[test]
+    fn party_runs_without_dlc_when_any_member_lacks_it() {
+        for (host_dlc,guest_dlc,expected) in [(true,true,true),(false,false,false),(true,false,false),(false,true,false)] {
+            let mut host=Handshake::new(Roster{local:1,host:1,members:vec![1,2,3]},101,42).unwrap().with_dlc(host_dlc);
+            let mut a=Handshake::new(Roster{local:2,host:1,members:vec![1,2,3]},102,42).unwrap().with_dlc(guest_dlc);
+            let mut b=Handshake::new(Roster{local:3,host:1,members:vec![1,2,3]},103,42).unwrap().with_dlc(true);
+            assert!(host.party_dlc().is_none());
+            let mut commits=vec![];
+            for guest in [&mut a,&mut b] {
+                let id=guest.roster.local;
+                let offer=host.receive(id,guest.hello().unwrap().1).unwrap().remove(0).1;
+                let ack=guest.receive(1,offer).unwrap().remove(0).1;
+                commits.extend(host.receive(id,ack).unwrap());
+            }
+            for (id,message) in commits {if id==2 {a.receive(1,message).unwrap();}else{b.receive(1,message).unwrap();}}
+            for state in [&host,&a,&b] {assert_eq!(state.party_dlc(),Some(expected),"host={host_dlc} guest={guest_dlc}");}
+        }
+    }
+    #[test]
     fn stale_spoofed_or_different_roster_messages_do_not_unlock() {
         let mut guest=state(2);let mut host=state(1);
-        assert!(guest.receive(1,Message::Commit{nonce:102,session:101}).is_err());
+        assert!(guest.receive(1,Message::Commit{nonce:102,session:101,dlc:true}).is_err());
         for (sender,nonce,members) in [(3,102,vec![1,2,3]),(1,99,vec![1,2,3]),(1,102,vec![1,2])] {
             assert!(guest.receive(sender,Message::Offer{nonce,session:101,seed:42,members}).is_err());
         }
         assert!(host.receive(2,Message::Ack{nonce:102,session:101}).is_err());
-        assert!(host.receive(9,Message::Hello{version:VERSION,nonce:109,members:vec![1,2,3]}).is_err());
+        assert!(host.receive(9,Message::Hello{version:VERSION,nonce:109,members:vec![1,2,3],dlc:true}).is_err());
         assert!(host.ready().is_none());assert!(guest.ready().is_none());
     }
 }

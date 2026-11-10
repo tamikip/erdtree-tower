@@ -20,7 +20,8 @@ static class ClassAssets {
         (First+21,"Tower class shadow critical trigger",20382301,0f,false,[("cycleOccurrenceSpEffectId",First+22)]),
         (First+22,"Tower class shadow after critical",20382302,0f,true,[("effectEndurance",10f),..VersusEnemies(1.2f)]),
         (First+23,"Tower class shadow stamina",9600011,0f,false,[("staminaRecoverChangeSpeed",5),("artsConsumptionRate",1f)]),
-        (First+30,"Tower class sorcerer focus",9600011,0f,false,[("magicConsumptionRate",0.85f),("artsConsumptionRate",1f)]),
+        // 星辉术士偏爆发：魔力伤害 +15%（魔法消耗不再降低）；祷誓者偏续航：祷告消耗 -15%，专注回复与胜利回血由 DLL 处理
+        (First+30,"Tower class sorcerer starsurge",9600011,0f,false,[("magicAttackRate",1.15f),("artsConsumptionRate",1f)]),
         (First+40,"Tower class cleric focus",9600011,0f,false,[("miracleConsumptionRate",0.85f),("artsConsumptionRate",1f)]),
     ];
     static void Set(PARAM.Row r,string key,object value)=>r[key].Value=Convert.ChangeType(value,r[key].Value.GetType());

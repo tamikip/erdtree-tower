@@ -310,6 +310,14 @@ fn own_handles(world:&WorldChrMan)->Vec<FieldInsHandle> {
 }
 /// 联机时敌人的 last_hit_by 是空的（成员这边敌人的生命来自房主的同步，同步里只有生命与伤害、没有攻击者）：
 /// 离这只敌人最近的是本机玩家或本机召唤物（不比队友远）就算自己的。近战准，远程法术会算给离得近的队友
+/// 法术、祷告、弓箭等远程攻击：游戏的弹体记着施放者（owner_chr_handle）。最近 BULLET_MEMORY 内落在敌人
+/// BULLET_REACH 米以内的弹体，按施放者是不是本机玩家或本机召唤物归属；没有弹体再按最近距离兜底
+const BULLET_MEMORY:Duration=Duration::from_millis(700);
+const BULLET_REACH:f32=6.0;
+fn bullet_owner_is_mine(foe:[f32;3],bullets:&[(Instant,[f32;3],bool)])->Option<bool> {
+    bullets.iter().map(|&(_,p,mine)|(distance(foe,p),mine)).filter(|&(d,_)|d<=BULLET_REACH)
+        .min_by(|a,b|a.0.total_cmp(&b.0)).map(|(_,mine)|mine)
+}
 fn nearest_is_mine(foe:[f32;3],mine:&[[f32;3]],others:&[[f32;3]])->bool {
     let closest=|set:&[[f32;3]]|set.iter().map(|&p|distance(foe,p)).fold(f32::INFINITY,f32::min);
     !mine.is_empty()&&closest(mine)<=closest(others)
@@ -321,6 +329,8 @@ pub struct Fight {
     lifesteal:i64,rose:bool,dragon_ready:Option<Instant>,revenge_until:Option<Instant>,echo_until:Option<Instant>,pub frenzy:u8,
     /// 施法时：按住施法键期间与松开后 CAST_LINGER_MS 内；cast_seen 只用于每场战斗记一次日志
     cast_until:Option<Instant>,cast_seen:bool,
+    /// 联机时最近的玩家弹体（时间、位置、是否本机发出），给查不到攻击者的命中归属用
+    bullets:Vec<(Instant,[f32;3],bool)>,
     /// 蕾娜拉的满月：专注不低于 MOON_FP_PERCENT%
     full_moon:bool,
     /// 黑刀刺客的身法：退还翻滚与致命一击扣掉的精力
@@ -428,6 +438,20 @@ impl Fight {
         let at=|c:&ChrIns|{let q=c.modules.physics.position;[q.0,q.1,q.2]};
         let mine_at:Vec<_>=std::iter::once(here).chain(world.summon_buddy_chr_set.characters().filter(|c|living(c)).map(|c|at(c))).collect();
         let others_at:Vec<_>=world.player_chr_set.characters().map(|p|&p.chr_ins).filter(|c|!own.contains(&c.field_ins_handle)&&living(c)).map(at).collect();
+        if party {
+            let teammates:Vec<_>=world.player_chr_set.characters().map(|p|p.chr_ins.field_ins_handle).filter(|h|!own.contains(h)).collect();
+            self.bullets.retain(|&(t,_,_)|now.duration_since(t)<=BULLET_MEMORY);
+            if let Ok(manager)=unsafe {eldenring::cs::CSBulletManager::instance()} {
+                for bullet in manager.bullets() {
+                    let owner=bullet.targeting_owner.owner_chr_handle;
+                    let mine=own.contains(&owner);
+                    if !mine&&!teammates.contains(&owner) {continue;}
+                    let q=bullet.physics.position;
+                    self.bullets.push((now,[q.0,q.1,q.2],mine));
+                }
+            }
+            if self.bullets.len()>512 {let excess=self.bullets.len()-512;self.bullets.drain(..excess);}
+        }
         // 自己造成的伤害（米凯拉之刃按它吸血）：自己那几只敌人每一帧掉的生命都算，不受命中判定的门槛与间隔限制
         let (mut hits,mut deaths,mut dealt)=(Vec::new(),Vec::new(),0i64);
         for &(ref handle,rank,slot) in foes {
@@ -436,7 +460,8 @@ impl Fight {
             let q=chr.modules.physics.position;let pos=[q.0,q.1,q.2];
             let alive=foe_hp>0&&!chr.chr_flags1c5.death_flag();
             let attacker=chr.last_hit_by;
-            let mine=!party||if attacker.is_empty() {nearest_is_mine(pos,&mine_at,&others_at)} else {own.contains(&attacker)};
+            let by_bullet=if party&&attacker.is_empty() {bullet_owner_is_mine(pos,&self.bullets)} else {None};
+            let mine=!party||if attacker.is_empty() {by_bullet.unwrap_or_else(||nearest_is_mine(pos,&mine_at,&others_at))} else {own.contains(&attacker)};
             let Some(index)=self.foes.iter().position(|f|f.handle==*handle) else {
                 self.foes.push(Foe{handle:*handle,hp:foe_hp,max:foe_max,pos,alive,boss:rank<=1,rank,slot,hit_at:None});continue;
             };
@@ -449,7 +474,7 @@ impl Fight {
             // 联机：每场战斗记一次“算进自己的”与“不算的”命中或击倒，实测时据此确认 last_hit_by 的归属
             if party&&(hit||died)&&!self.attributed[usize::from(!mine)] {
                 self.attributed[usize::from(!mine)]=true;
-                super::log(format!("TOWER_EMBER party {} by {attacker} counted={mine}{}",if died{"kill"}else{"hit"},if attacker.is_empty(){" (nearest)"}else{""}));
+                super::log(format!("TOWER_EMBER party {} by {attacker} counted={mine}{}",if died{"kill"}else{"hit"},if !attacker.is_empty(){""}else if by_bullet.is_some(){" (bullet)"}else{" (nearest)"}));
             }
             if !mine {continue;}
             dealt+=i64::from(lost);
@@ -692,6 +717,13 @@ mod tests {
     fn mercy_raises_heals_by_half_and_keeps_the_sign() {
         assert_eq!((mercy_heal(-230),mercy_heal(-8),mercy_heal(-115)),(-345,-12,-172));
         assert!(MERCY_HEALS.iter().all(|id|(1642000..1700000).contains(id)||(21640000..21670000).contains(id)));
+    }
+    #[test]
+    fn unattributed_ranged_hits_follow_the_bullet_owner() {
+        let now=Instant::now();let foe=[20.0,0.0,0.0];
+        assert_eq!(bullet_owner_is_mine(foe,&[(now,[19.0,0.0,0.0],true),(now,[30.0,0.0,0.0],false)]),Some(true),"my spell landed on it");
+        assert_eq!(bullet_owner_is_mine(foe,&[(now,[18.0,0.0,0.0],true),(now,[20.5,0.0,0.0],false)]),Some(false),"the teammate's bolt is closer");
+        assert_eq!(bullet_owner_is_mine(foe,&[(now,[0.0,0.0,0.0],true)]),None,"no bullet near it, fall back to distance");
     }
     #[test]
     fn unattributed_hits_go_to_the_nearest_side() {

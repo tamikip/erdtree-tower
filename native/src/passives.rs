@@ -19,20 +19,32 @@ pub fn give_starting(data:&mut PlayerGameData,class:Class)->Result<(),String> {
     }
     Ok(())
 }
-/// 打赢一场战斗：狂战士回复 8% 生命，祷誓者回复 25% 专注
+/// 打赢一场战斗：祷誓者回复 10% 生命（狂战士的胜利回血已移除）
 fn victory_hp(run:&Run,hp:i32,max_hp:i32)->i32 {
-    if run.class!=Class::Hero || hp<=0 || max_hp<=0 {return hp;}
-    (i64::from(hp)+i64::from(max_hp)*8/100).min(i64::from(max_hp)) as i32
-}
-fn victory_fp(run:&Run,fp:i32,max_fp:i32)->i32 {
-    if run.class!=Class::Prophet||max_fp<=0 {return fp;}
-    (i64::from(fp.max(0))+i64::from(max_fp)*25/100).min(i64::from(max_fp)) as i32
+    let percent=match run.class {Class::Prophet=>10,_=>return hp};
+    if hp<=0||max_hp<=0 {return hp;}
+    (i64::from(hp)+i64::from(max_hp)*percent/100).min(i64::from(max_hp)) as i32
 }
 pub fn heal_victory(chr:&mut ChrIns,run:&Run) {
     if chr.chr_flags1c5.death_flag(){return;}
     let data=&mut chr.modules.data;
     data.hp=victory_hp(run,data.hp,data.max_hp);
-    data.fp=victory_fp(run,data.fp,data.max_fp);
+}
+/// 祷誓者「圣誓」：旅程中每秒回复 1% 最大专注（至少 1 点）
+fn prophet_regen(fp:i32,max_fp:i32)->i32 {
+    if max_fp<=0 {return fp;}
+    (i64::from(fp.max(0))+(i64::from(max_fp)/100).max(1)).min(i64::from(max_fp)) as i32
+}
+static REGEN:std::sync::Mutex<Option<std::time::Instant>>=std::sync::Mutex::new(None);
+fn regen(chr:&mut ChrIns,run:Option<&Run>) {
+    let active=run.is_some_and(|r|r.class==Class::Prophet&&!matches!(r.phase,Phase::Dead|Phase::Won))&&!chr.chr_flags1c5.death_flag()&&chr.modules.data.hp>0;
+    let Ok(mut last)=REGEN.lock() else{return};
+    if !active {*last=None;return;}
+    let now=std::time::Instant::now();
+    let Some(at)=*last else{*last=Some(now);return};
+    if now.duration_since(at)<std::time::Duration::from_secs(1) {return;}
+    *last=Some(now);
+    let data=&mut chr.modules.data;data.fp=prophet_regen(data.fp,data.max_fp);
 }
 /// 职业重做后的职业机制（scene-builder class-patch 写入的 9810000 段）
 const CLASS:i32=9810000;
@@ -53,6 +65,7 @@ fn desired(run:Option<&Run>,low:bool)->Vec<i32> {
     }
 }
 pub fn sync(chr:&mut ChrIns,run:Option<&Run>) {
+    regen(chr,run);
     let Ok(params)=(unsafe {SoloParamRepository::instance()}) else{return;};
     let data=&chr.modules.data;
     let low=data.max_hp>0&&i64::from(data.hp)*2<i64::from(data.max_hp);
@@ -77,11 +90,13 @@ mod tests {
     #[test]
     fn victory_heals_follow_the_class() {
         let mut run=Run::new(1,Class::Hero);
-        assert_eq!(victory_hp(&run,300,1000),380);assert_eq!(victory_hp(&run,980,1000),1000);assert_eq!(victory_hp(&run,0,1000),0);
+        assert_eq!(victory_hp(&run,300,1000),300,"berserker no longer heals on victory");
         run.class=Class::Samurai;assert_eq!(victory_hp(&run,300,1000),300);
-        let mut cleric=Run::new(1,Class::Prophet);
-        assert_eq!((victory_fp(&cleric,10,100),victory_fp(&cleric,90,100)),(35,100));
-        cleric.class=Class::Hero;assert_eq!(victory_fp(&cleric,10,100),10);
+        assert_eq!(victory_hp(&Run::new(1,Class::Prophet),0,1000),0);
+        let cleric=Run::new(1,Class::Prophet);
+        assert_eq!((victory_hp(&cleric,300,1000),victory_hp(&cleric,950,1000)),(400,1000));
+        assert_eq!(victory_hp(&Run::new(1,Class::Astrologer),300,1000),300);
+        assert_eq!((prophet_regen(10,300),prophet_regen(10,50),prophet_regen(299,300),prophet_regen(-5,100)),(13,11,300,1));
     }
     #[test]
     fn class_effects_follow_rules_and_end_with_run() {

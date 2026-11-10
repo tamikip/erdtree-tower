@@ -159,6 +159,8 @@ impl Link {
         Ok(link)
     }
     pub fn roster(&self)->Option<&erdtree_tower::party_roster::Roster> {self.steam.as_ref().map(|s|&s.roster)}
+    /// 整队是否按「有 DLC」运行（无缝握手提交后才有；手动联机没有这一步，返回 None 按有 DLC）
+    pub fn party_dlc(&self)->Option<bool> {self.steam.as_ref().and_then(|s|s.handshake.party_dlc())}
     /// 有队员退出了无缝会话：新名单是旧名单去掉几个人、房主和本机都还在时，把这些人从队伍里去掉，旅程照常继续；
     /// 返回去掉的人。房主退出、有新人加入、或名单对不上时返回 None（仍按原来的“名单变化”处理）
     pub fn shrink(&mut self,next:&erdtree_tower::party_roster::Roster)->Option<Vec<u64>> {

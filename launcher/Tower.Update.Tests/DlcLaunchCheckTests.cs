@@ -9,8 +9,9 @@ public class DlcLaunchCheckTests
     [InlineData(false, "full", true)]
     [InlineData(false, null, true)]
     [InlineData(false, "invalid", true)]
-    [InlineData(true, "none", true)]
-    [InlineData(true, "weapons", true)]
+    [InlineData(true, "none", false)]
+    [InlineData(true, "weapons", false)]
+    [InlineData(true, "full", true)]
     public void MissingAssetsWarnOnlyWhenFullContentIsEnabled(bool seamless, string? mode, bool warn)
     {
         Assert.Equal(warn, DlcLaunchCheck.Warning("unused", seamless, mode, _ => false) != null);
@@ -25,10 +26,10 @@ public class DlcLaunchCheckTests
     }
 
     [Fact]
-    public void ExplicitNoDlcStillWarnsInSeamlessWithFilesPresent()
+    public void NoDlcNeverWarnsEvenInSeamless()
     {
-        Assert.NotNull(DlcLaunchCheck.Warning("unused", true, "none", _ => true));
-        Assert.NotNull(DlcLaunchCheck.Warning("unused", true, "weapons", _ => true));
+        Assert.Null(DlcLaunchCheck.Warning("unused", true, "none", _ => true));
+        Assert.Null(DlcLaunchCheck.Warning("unused", true, "weapons", _ => false));
     }
 
     [Fact]

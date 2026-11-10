@@ -1,6 +1,7 @@
 //! 黄金树之影 DLC 内容开关（启动参数 dlc=full|none|weapons，见 options.rs）。
 //! 只影响“从池子里挑”：奖励、宝箱、商店、盲盒、精英与 Boss 奖励、随机战灰、敌人池；
-//! 已经拿到的物品照常显示和使用，存档校验也不看这个开关。联机时 DLL 一律按 Full 处理，保证双方抽到同样的内容。
+//! 已经拿到的物品照常显示和使用，存档校验也不看这个开关。联机时由房主在握手里定下整队模式：
+//! 所有人都有 DLC 才按 Full，有一个人没有就整队按 None，保证双方抽到同样的内容（party_handshake.rs）。
 //!
 //! 哪些物品属于 DLC 按编号判断（用 Paramdex 的物品名逐段核对过）：
 //!   武器  去掉强化/质变位后 ≥ 60000000（DLC 新类别），或在原有类别的后半段（百万位以下 ≥ 500000，如 1500000 Main-gauche）
@@ -50,7 +51,7 @@ pub fn with_mode<T>(mode: Mode, f: impl FnOnce() -> T) -> T {
     result
 }
 
-/// DLL 启动时按启动参数设置一次（联机时传 Full）
+/// DLL 启动时按启动参数设置；联机时按整队模式切换（native options::sync_dlc）
 pub fn set(mode: Mode) {
     MODE.store(mode as u8, Ordering::Relaxed);
 }

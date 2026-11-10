@@ -205,13 +205,15 @@ fn boss_eligible(kind:NodeKind,enemy:&Enemy)->bool {
     if elite_only(enemy) {return kind==NodeKind::Elite;}
     if enemy.appended&&!enemy.solo&&kind!=NodeKind::Boss {return false;}
     if enemy.npc==950000196||relocated(enemy).is_some() {return kind==NodeKind::Elite;}
-    let minimum=match (kind,enemy.act) {
-        (NodeKind::Boss,1)=>35,(NodeKind::Boss,2)=>70,(NodeKind::Boss,3)=>100,
-        (NodeKind::Elite,1)=>35,(NodeKind::Elite,2)=>60,(NodeKind::Elite,3)=>90,
-        _=>return false,
-    };
-    recommended_level(enemy.name).is_some_and(|level|level>=minimum)
+    let tag=match kind {NodeKind::Boss=>"B",NodeKind::Elite=>"E",_=>return false};
+    !EXCLUDED.contains(&(tag,enemy.npc))
 }
+/// 原来按原版推荐等级设门槛（Boss：35/70/100，精英版：35/60/90），门槛已取消；取消时不在门槛内的条目
+/// 列在 boss-excluded.txt 里照旧不抽。只有“恶兆妖鬼”玛尔基特（推荐等级 25）放进了第一幕 Boss 房
+static EXCLUDED:LazyLock<std::collections::HashSet<(&'static str,i32)>>=LazyLock::new(||
+    include_str!("../../scene-assets/boss-excluded.txt").lines().filter(|l|!l.is_empty()&&!l.starts_with('#')).map(|line|{
+        let mut p=line.split('|');(p.next().unwrap(),p.next().unwrap().parse().expect("Invalid excluded npc"))
+    }).collect());
 /// 试验中的 Boss 不会被抽到；仅单人的 Boss 联机时抽不到
 fn boss_roster(kind:NodeKind,seed:u64,ordinal:usize,act:u8,party:bool)->Vec<Enemy> {
     let mut encounters=Vec::new();
@@ -643,19 +645,36 @@ mod tests {
     }
     #[test]
     fn first_act_elites_use_curated_combatants_and_tree_sentinel() {
-        let allowed=[3010,3800,4351,4352,4353,4354,4355,4290,4340,2270,4490,5040,5192,3251];
+        // 3460 是狮子混种（联机也有）与混种战士（仅单人）共用的模型，3150 黑夜骑兵、4950 提比亚的唤声船也仅单人
+        let allowed=[3010,3800,4351,4352,4353,4354,4355,4290,4340,2270,4490,5040,5192,3251,3460,3150,4950];
         let mut seen=std::collections::HashSet::new();
         for seed in 0..100 {for ordinal in 0..24 {for layer in 0..12 {
             let group=roster_in(NodeKind::Elite,seed,ordinal,layer,1,false);
             assert!(group.iter().any(|e|e.kind==NodeKind::Elite));
             for enemy in group.iter().filter(|e|e.kind==NodeKind::Elite) {
                 assert!(allowed.contains(&enemy.model),"Unexpected elite: {}",enemy.name);
-                assert_eq!(enemy.npc,if enemy.model==3251 {950000071}else{900000000+enemy.model*10000});
+                let boss=BOSSES.iter().find(|(_,e)|e.npc+1==enemy.npc&&elite_only(e));
+                assert_eq!(enemy.npc,boss.map_or(900000000+enemy.model*10000,|(_,e)|e.npc+1),"{}",enemy.name);
                 seen.insert(enemy.model);
             }
             assert_eq!(group,roster_in(NodeKind::Elite,seed,ordinal,layer,1,false));
         }}}
         assert_eq!(seen,allowed.into_iter().collect());
+    }
+    #[test]
+    fn act_one_elites_include_the_new_field_bosses() {
+        let names=["狮子混种","黑夜骑兵","混种战士","提比亚的唤声船"];
+        for party in [false,true] {
+            let mut seen=std::collections::HashSet::new();
+            for seed in 0..200 {for ordinal in 0..24 {
+                for e in roster_in(NodeKind::Elite,seed,ordinal,0,1,party).iter().filter(|e|e.kind==NodeKind::Elite) {
+                    if names.contains(&e.name) {seen.insert(e.name);assert_eq!(e.bar,0);}
+                }
+                assert!(roster_in(NodeKind::Boss,seed,ordinal,0,1,party).iter().all(|e|!names.contains(&e.name)),"they are elites only");
+            }}
+            let expected:std::collections::HashSet<_>=if party {["狮子混种"].into_iter().collect()}else{names.into_iter().collect()};
+            assert_eq!(seen,expected,"party={party}");
+        }
     }
     #[test]
     fn act_three_has_no_loretta_or_misbegotten_crusader() {
@@ -702,8 +721,8 @@ mod tests {
     }
     #[test]
     fn eligible_encounters_are_reachable_as_boss_and_elite() {
-        assert_eq!(BOSSES.len(),159);
-        assert_eq!(BOSSES.iter().map(|(id,_)|*id).collect::<std::collections::HashSet<_>>().len(),124);
+        assert_eq!(BOSSES.len(),162);
+        assert_eq!(BOSSES.iter().map(|(id,_)|*id).collect::<std::collections::HashSet<_>>().len(),127);
         for act in 1..=3 {
             for kind in [NodeKind::Boss,NodeKind::Elite] {
                 if act==1&&kind==NodeKind::Elite {continue;}
@@ -805,26 +824,24 @@ mod tests {
         }}
     }
     #[test]
-    fn bosses_respect_reference_levels_and_exclude_unrated_champions() {
+    fn bosses_follow_the_frozen_list_and_margit_joins_act_one() {
         for act in 1..=3 {
-            let minimum=[35,70,100][usize::from(act-1)];
-            let expected:std::collections::HashSet<_>=BOSSES.iter().filter(|(id,e)|e.npc!=950000196&&!elite_only(e)&&e.act==act&&recommended_level(e.name).is_some_and(|level|level>=minimum)&&encounter_allowed(NodeKind::Boss,*id)).map(|(id,_)|*id).collect();
+            let expected:std::collections::HashSet<_>=BOSSES.iter().filter(|(id,e)|e.npc!=950000196&&!elite_only(e)&&e.act==act&&!EXCLUDED.contains(&("B",e.npc))&&encounter_allowed(NodeKind::Boss,*id)).map(|(id,_)|*id).collect();
             assert!(expected.len()>=5);
             let mut seen=std::collections::HashSet::new();
             for seed in 0..2000 {
-                let group=roster(NodeKind::Boss,seed,0,11,act);
-                for enemy in &group {
-                    assert!(recommended_level(enemy.name).is_some_and(|level|level>=minimum));
+                for enemy in &roster(NodeKind::Boss,seed,0,11,act) {
+                    assert!(!EXCLUDED.contains(&("B",enemy.npc)));
                     seen.insert(BOSSES.iter().find(|(_,e)|e.npc==enemy.npc).unwrap().0);
                 }
             }
             assert_eq!(seen,expected);
         }
-        for (_,e) in BOSSES.iter() {
-            if recommended_level(e.name).is_none_or(|level|level<35) {
-                assert!(!boss_eligible(NodeKind::Boss,e));
-                assert_eq!(boss_eligible(NodeKind::Elite,e),elite_only(e));
-            }
+        let margit=BOSSES.iter().find(|(_,e)|e.name=="“恶兆妖鬼”玛尔基特").unwrap();
+        assert!(boss_eligible(NodeKind::Boss,&margit.1)&&!boss_eligible(NodeKind::Elite,&margit.1));
+        assert!((0..2000).any(|seed|roster(NodeKind::Boss,seed,0,11,1).iter().any(|e|e.npc==margit.1.npc)),"Margit shows up in act one boss rooms");
+        for (_,e) in BOSSES.iter().filter(|(_,e)|recommended_level(e.name).is_none()) {
+            assert!(!boss_eligible(NodeKind::Boss,e));assert_eq!(boss_eligible(NodeKind::Elite,e),elite_only(e));
         }
     }
     #[test]
