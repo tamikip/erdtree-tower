@@ -197,6 +197,10 @@ impl Link {
         steam.roster=next.clone();steam.transport.set_roster(next.clone());
         Some(gone)
     }
+    /// 掉线排查：列出 Steam 到这些队员的连接状态（断开原因、延迟、质量）
+    pub fn net_diagnosis(&self,peers:&[u64])->Vec<String> {
+        self.steam.as_ref().map_or_else(Vec::new,|s|peers.iter().map(|&p|s.transport.diagnose(p)).collect())
+    }
     pub fn latencies(&self)->Vec<erdtree_tower::party_latency::Row> {
         if self.stopped.is_some(){return Vec::new();}
         self.steam.as_ref().map_or_else(Vec::new,|s|s.latency.rows(&s.roster))

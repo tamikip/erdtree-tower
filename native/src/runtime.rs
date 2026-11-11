@@ -830,9 +830,26 @@ fn tick_auto_party(state:&mut Runtime)->Result<bool,String> {
     if super::party::manual_config().is_some()||!super::seamless::active(){return Ok(false);}
     let Ok(session)=(unsafe {CSSessionManager::instance()}) else{return Ok(state.party_pending.is_some());};
     if let Some(link)=state.party.as_ref().filter(|p|p.roster().is_some()) {
-        if !matches!(session.lobby_state,LobbyState::Host|LobbyState::Client) {return Err("无缝会话已退出，队伍同步已暂停".into());}
+        if !matches!(session.lobby_state,LobbyState::Host|LobbyState::Client) {
+            // 房主这边最后一名队员离开后，无缝房间随之关闭：房主按一个人继续这局，不再停队。队员失去房主仍然暂停。
+            let alone=link.roster().filter(|r|r.local==r.host).map(|r|erdtree_tower::party_roster::Roster{local:r.local,host:r.host,members:vec![r.host]});
+            let peers:Vec<u64>=link.roster().map(|r|r.members.iter().copied().filter(|&id|id!=r.local).collect()).unwrap_or_default();
+            for line in link.net_diagnosis(&peers) {super::log(format!("PARTY_NET session closed {line}"));}
+            if let Some(next)=alone {
+                if link.roster()==Some(&next) {return Ok(false);}
+                if let Some(gone)=state.party.as_mut().and_then(|link|link.shrink(&next)) {
+                    let names:Vec<String>=gone.iter().map(|id|super::seamless::player_name(*id).unwrap_or_else(||id.to_string())).collect();
+                    super::log(format!("Seamless room closed with host alone: {gone:?}; continuing solo"));
+                    report(state,format!("{} 已退出联机，旅程继续（剩 1 人）。",names.join("、")));
+                    return Ok(false);
+                }
+            }
+            return Err("无缝会话已退出，队伍同步已暂停".into());
+        }
         if let Ok(roster)=super::seamless::roster(session) {
             if link.roster()!=Some(&roster){
+                let gone:Vec<u64>=link.roster().map(|r|r.members.iter().copied().filter(|id|!roster.members.contains(id)).collect()).unwrap_or_default();
+                for line in link.net_diagnosis(&gone) {super::log(format!("PARTY_NET member gone {line}"));}
                 // 有队员中途退出（房主还在）：把他从队伍里去掉，其他人的旅程照常继续；房主退出或有人新加入仍暂停同步
                 if let Some(gone)=state.party.as_mut().and_then(|link|link.shrink(&roster)) {
                     let names:Vec<String>=gone.iter().map(|id|super::seamless::player_name(*id).unwrap_or_else(||id.to_string())).collect();
