@@ -85,24 +85,33 @@ fn locate(memory:&impl Memory,base:usize,world:usize,build:&Build)->Option<Spect
     if keys!=7{return None;}
     Some(Spectator{root,address,target:memory.pointer(address+0x58)?,key})
 }
-struct Pending {player:usize,owner:u32,origin:Position,relocate:bool,fp:i32,started:Instant,sent:bool,stable:u8,reported_lookup:bool}
+struct Pending {player:usize,owner:u32,origin:Position,block_goal:Option<Position>,relocate:bool,fp:i32,started:Instant,sent:bool,stable:u8,reported_lookup:bool}
 pub fn available()->bool {BASE.load(Ordering::Acquire)!=0}
 pub fn finished(player:usize)->bool {player!=0&&FINISHED.load(Ordering::Acquire)==player}
 pub fn owned_address<T>(player:&fromsoftware_shared::OwnedPtr<T>)->usize {player.as_ptr() as usize}
 pub fn cancel(){if let Ok(mut p)=PENDING.lock(){*p=None;}FINISHED.store(0,Ordering::Release);}
 pub fn request(player:&PlayerIns,origin:Position)->Result<(),String> {
-    request_inner(player,origin,false)
+    request_inner(player,origin,false,None)
 }
 pub fn request_at_safe_goal(player:&PlayerIns,origin:Position)->Result<(),String> {
-    request_inner(player,origin,true)
+    request_inner(player,origin,true,None)
 }
-fn request_inner(player:&PlayerIns,origin:Position,relocate:bool)->Result<(),String> {
+pub fn request_at_safe_block_goal(player:&PlayerIns,goal:Position)->Result<(),String> {
+    let (block,physics)=positions(player);
+    let origin=goal.in_physics_space(block,physics).ok_or("复活目标与当前地图不匹配")?;
+    request_inner(player,origin,true,Some(goal))
+}
+fn positions(player:&PlayerIns)->(Position,Position) {
+    let block=i32::from(player.current_block_id);let b=&player.block_position;let h=&player.chr_ins.modules.physics.position;
+    (Position{block,xyz:[b.x,b.y,b.z]},Position{block,xyz:[h.0,h.1,h.2]})
+}
+fn request_inner(player:&PlayerIns,origin:Position,relocate:bool,block_goal:Option<Position>)->Result<(),String> {
     if !available(){return Err("无缝复活请求接口未通过版本校验".into());}
     if !origin.xyz.iter().all(|p|p.is_finite()){return Err("死亡位置无效，未请求复活".into());}
     let mut pending=PENDING.lock().map_err(|_|"复活状态锁不可用")?;
     if pending.is_none() {
         *pending=Some(Pending{player:player as *const _ as usize,owner:unsafe {player.player_game_data.as_ref()}.character_id,
-            origin,relocate,fp:player.chr_ins.modules.data.fp,started:Instant::now(),sent:false,stable:0,reported_lookup:false});
+            origin,block_goal,relocate,fp:player.chr_ins.modules.data.fp,started:Instant::now(),sent:false,stable:0,reported_lookup:false});
         FINISHED.store(0,Ordering::Release);
     }
     Ok(())
@@ -147,22 +156,27 @@ pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
         return;
     }
     if pending.relocate&&alive&&pending.sent&&spectator.target==usize::MAX&&spectator.key==0 {
+        if let Some(goal)=pending.block_goal {
+            let (block,physics)=positions(player);
+            let Some(origin)=goal.in_physics_space(block,physics) else{return;};
+            pending.origin=origin;
+        }
         let physics=&mut player.chr_ins.modules.physics;
         physics.position.0=pending.origin.xyz[0];physics.position.1=pending.origin.xyz[1];physics.position.2=pending.origin.xyz[2];
         physics.last_update_position=physics.position;physics.chr_proxy_pos_update_requested=true;
         pending.relocate=false;
-        super::log(format!("PARTY_REVIVE moved to safe trial goal: {:?}",pending.origin));
+        super::log(format!("PARTY_REVIVE moved to safe goal: {:?}",pending.origin));
         return;
     }
-    let p=&player.chr_ins.modules.physics.position;
-    let current=Position{block:i32::from(player.current_block_id),xyz:[p.0,p.1,p.2]};
-    if !recovered(pending.origin,current,alive,pending.sent,spectator.target,spectator.key){pending.stable=0;return;}
+    let (block,physics)=positions(player);
+    let (origin,current)=pending.block_goal.map_or((pending.origin,physics),|goal|(goal,block));
+    if !recovered(origin,current,alive,pending.sent,spectator.target,spectator.key){pending.stable=0;return;}
     player.chr_ins.modules.data.hp=1;
     player.chr_ins.modules.data.fp=pending.fp.min(player.chr_ins.modules.data.max_fp);
     pending.stable+=1;
     if pending.stable>=2 {
         FINISHED.store(pending.player,Ordering::Release);
-        super::log("PARTY_REVIVE native exit confirmed at death position; HP=1, FP preserved");
+        super::log("PARTY_REVIVE native exit confirmed at recovery goal; HP=1, FP preserved");
         *queue=None;
     }
 }

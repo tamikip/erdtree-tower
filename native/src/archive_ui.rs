@@ -144,7 +144,7 @@ pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<Texture
     ui.window("旅程档案##archive").position([0.0,0.0],Condition::Always).size(size,Condition::Always)
         .flags(WindowFlags::NO_DECORATION|WindowFlags::NO_BACKGROUND|WindowFlags::NO_MOVE|WindowFlags::NO_NAV|WindowFlags::NO_SCROLL_WITH_MOUSE).build(|| {
         let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,align:f32| {
-            ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+            ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
         };
         {
             let title=crate::fancy_text::title_font().map(|font|ui.push_font(font));
@@ -187,7 +187,7 @@ pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<Texture
 fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureId>,action:&mut Option<ArchiveAction>,moved:bool,ready:bool,s:f32,ox:f32,oy:f32) {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let text=|pos:[f32;2],value:&str,color:[f32;4],scale:f32,align:f32| {
-        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([pos[0]-ui.calc_text_size(value)[0]*align,pos[1]]);ui.text_colored(color,value);
+        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([pos[0]-ui.calc_text_size(crate::i18n::t(value))[0]*align,pos[1]]);ui.text_colored(color,crate::i18n::t(value));
     };
     let codex=&archive.codex;
     let summary=if codex.runs==0 {"还没有完整的旅程记录".to_string()} else {
@@ -228,7 +228,7 @@ fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureI
             let oaths:Vec<_>=record.oaths.iter().map(|o|format!("{} {}",o.kind.name(),ROMAN[usize::from(o.level.min(3))]).trim().to_owned()).collect();
             let mut line=if oaths.is_empty(){"没有誓约".to_string()}else{oaths.join(" · ")};
             ui.set_window_font_scale(0.84*s);
-            while ui.calc_text_size(&line)[0]>380.0*s&&line.chars().count()>4 {let keep=line.chars().count()-2;line=line.chars().take(keep).collect::<String>();line.push('…');line=line.replace("……","…");}
+            while ui.calc_text_size(crate::i18n::t(&line))[0]>380.0*s&&line.chars().count()>4 {let keep=line.chars().count()-2;line=line.chars().take(keep).collect::<String>();line.push('…');line=line.replace("……","…");}
             text([min[0]+520.0*s,min[1]+12.0*s],&line,if oaths.is_empty(){DIM}else{BOON},0.84,0.0);
             for (n,ember) in record.embers.iter().take(10).enumerate() {
                 let at=[min[0]+(520.0+n as f32*30.0)*s,min[1]+42.0*s];
@@ -256,7 +256,7 @@ fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureI
 fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Option<TextureId>,moved:bool,s:f32,ox:f32,oy:f32) {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let text=|pos:[f32;2],value:&str,color:[f32;4],scale:f32,align:f32| {
-        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([pos[0]-ui.calc_text_size(value)[0]*align,pos[1]]);ui.text_colored(color,value);
+        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([pos[0]-ui.calc_text_size(crate::i18n::t(value))[0]*align,pos[1]]);ui.text_colored(color,crate::i18n::t(value));
     };
     archive.focus=archive.focus.min(layout.items.len().saturating_sub(1));
     ui.set_cursor_screen_pos(p(70.0,176.0));
@@ -269,7 +269,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
         }
         for (title,y,unlocked,total) in &layout.headings {
             text(at(0.0,*y+6.0),title,GOLD,1.05,0.0);
-            ui.same_line();ui.set_window_font_scale(0.82*s);ui.text_colored(MUTED,format!("  {unlocked} / {total}"));
+            ui.same_line();ui.set_window_font_scale(0.82*s);ui.text_colored(MUTED,crate::i18n::t(format!("  {unlocked} / {total}")));
             let end=ui.item_rect_max();
             ui.get_window_draw_list().add_rect_filled_multicolor([end[0]+12.0*s,end[1]-9.0*s],[origin[0]+996.0*s,end[1]-8.0*s],
                 ImColor32::from_rgba(214,180,112,150),ImColor32::from_rgba(214,180,112,0),ImColor32::from_rgba(214,180,112,0),ImColor32::from_rgba(214,180,112,150));
@@ -297,7 +297,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
                         ui.get_window_draw_list().add_image(texture,at(cx-32.0,r[1]+8.0),at(cx+32.0,r[1]+72.0)).col(ImColor32::from_rgba(tint,tint,tint,255)).build();
                     }
                     let name=if lit{ember.name()}else{"？？？"};ui.set_window_font_scale(0.84*s);
-                    let fit=((r[2]-10.0)*s/ui.calc_text_size(name)[0]).min(1.0);
+                    let fit=((r[2]-10.0)*s/ui.calc_text_size(crate::i18n::t(name))[0]).min(1.0);
                     text(at(cx,r[1]+76.0),name,name_color,0.84*fit,0.5);
                     text(at(cx,r[1]+97.0),&if lit{format!("获得 {taken} 次")}else{"未解锁".into()},MUTED,0.74,0.5);
                 },
@@ -305,7 +305,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
                     let (act,name)=&archive.bosses[i];
                     let stats=archive.codex.boss(name);
                     let label=if lit{name.as_str()}else{"？？？"};ui.set_window_font_scale(0.9*s);
-                    let fit=((r[2]-20.0)*s/ui.calc_text_size(label)[0]).min(1.0);
+                    let fit=((r[2]-20.0)*s/ui.calc_text_size(crate::i18n::t(label))[0]).min(1.0);
                     text(at(r[0]+12.0,r[1]+7.0),label,name_color,0.9*fit,0.0);
                     let act=if *act>0{format!("第 {act} 幕")}else{String::new()};
                     let line=stats.map_or(if act.is_empty(){"未遇见".into()}else{format!("{act} · 未遇见")},|(seen,won)|format!("{act}{}击败 {won} / 交手 {seen}",if act.is_empty(){""}else{" · "}));
@@ -391,7 +391,7 @@ fn wear_aura(archive:&mut Archive,row:usize,now:f64) {
 fn auras(ui:&Ui,archive:&mut Archive,moved:bool,ready:bool,s:f32,ox:f32,oy:f32) {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,align:f32| {
-        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
     };
     let worn=crate::auras::worn();
     text(800.0,176.0,&format!("已解锁 {} / {}",archive.auras.len(),erdtree_tower::auras::AURAS.len()),MUTED,0.9,0.5);
@@ -436,7 +436,7 @@ fn wear(archive:&mut Archive,row:usize,now:f64) {
 fn titles(ui:&Ui,archive:&mut Archive,moved:bool,ready:bool,s:f32,ox:f32,oy:f32) {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,align:f32| {
-        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
     };
     let worn=crate::name_tags::worn();
     text(800.0,176.0,&format!("已解锁 {} / {}",archive.titles.len(),erdtree_tower::titles::TITLES.len()),MUTED,0.9,0.5);
@@ -480,7 +480,7 @@ fn train_weapon(archive:&mut Archive,upgrade:bool,now:f64) {
 #[allow(clippy::too_many_arguments)]
 fn weapons(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureId>,ready:bool,s:f32,ox:f32,oy:f32) {
     let Some((_,data))=archive.legacy.clone() else {
-        ui.set_window_font_scale(s);ui.set_cursor_screen_pos([ox+600.0*s,oy+430.0*s]);ui.text_colored(DIM,"载入角色后才能设置武器偏好");return;
+        ui.set_window_font_scale(s);ui.set_cursor_screen_pos([ox+600.0*s,oy+430.0*s]);ui.text_colored(DIM,crate::i18n::t("载入角色后才能设置武器偏好"));return;
     };
     let now=ui.time();
     let notice=archive.notice.as_ref().filter(|(_,at)|now-at<4.0).map(|(message,_)|message.clone());
@@ -524,7 +524,7 @@ fn bar(ui:&Ui,min:[f32;2],max:[f32;2],fill:f32,s:f32) {
 fn legacy(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureId>,moved:bool,ready:bool,s:f32,ox:f32,oy:f32) {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,align:f32| {
-        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+        ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
     };
     let Some((_,data))=archive.legacy.clone() else {
         text(800.0,460.0,"载入角色后才能查看职业传承",DIM,1.0,0.5);return;

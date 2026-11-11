@@ -80,6 +80,7 @@ impl Prompts {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
+    pub language:crate::localization::Language,
     pub debug: bool,
     pub dlc: crate::dlc::Mode,
     keys: [&'static str; 6],
@@ -90,7 +91,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options { debug: false, dlc: crate::dlc::Mode::Full, keys: Hotkey::ALL.map(Hotkey::default_key), sfx: 70, prompts: Prompts::Keyboard }
+        Options { language:Default::default(), debug: false, dlc: crate::dlc::Mode::Full, keys: Hotkey::ALL.map(Hotkey::default_key), sfx: 70, prompts: Prompts::Keyboard }
     }
 }
 
@@ -113,7 +114,9 @@ pub fn parse(text: &str) -> Options {
         }
         let Some((name, value)) = line.split_once('=') else { continue };
         let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
-        if name == "debug" {
+        if name == "language" {
+            if let Some(language)=crate::localization::Language::parse(value){options.language=language;}
+        } else if name == "debug" {
             options.debug = matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes");
         } else if name == "sfx" {
             if let Ok(volume) = value.trim().parse::<u32>() {
@@ -141,6 +144,14 @@ pub fn parse(text: &str) -> Options {
 mod tests {
     use super::*;
 
+    #[test]
+    fn language_selection_follows_the_game_and_preserves_other_options() {
+        use crate::localization::Language;
+        assert_eq!(parse("").language,Language::Auto);
+        let en=parse("language=en-US\ndlc=none\nkey.debug=F8");
+        assert_eq!(en.language,Language::English);assert_eq!(en.dlc,crate::dlc::Mode::None);assert_eq!(en.key(Hotkey::Debug),"F8");
+        assert_eq!(parse("language=invalid").language,Language::Auto);
+    }
     #[test]
     fn missing_or_empty_file_keeps_the_original_keys() {
         let options = parse("");

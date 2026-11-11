@@ -18,7 +18,7 @@ fn look(part:usize,id:i32)->(&'static str,Option<u32>) {
 #[allow(clippy::too_many_arguments)]
 pub fn draw(ui:&Ui,page:&mut Page,icon:&mut dyn FnMut(u32)->Option<TextureId>,ready:bool,s:f32,ox:f32,oy:f32) {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
-    let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32|{ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos(p(x,y));ui.text_colored(color,value);};
+    let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32|{ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos(p(x,y));ui.text_colored(color,crate::i18n::t(value));};
     text(76.0,176.0,"防具幻化",GOLD,1.45);
     text(214.0,186.0,"只改变外观，保留当前装备的防御、重量与词条",MUTED,0.92);
     if !transmog::unlocked() {
@@ -41,7 +41,7 @@ pub fn draw(ui:&Ui,page:&mut Page,icon:&mut dyn FnMut(u32)->Option<TextureId>,re
         text(x+92.0,234.0,name,if active{GOLD}else{MUTED},1.1);
     }
     // 搜索框
-    let choices:Vec<_>=transmog::catalog().iter().filter(|a|a.slot==page.part&&a.name.contains(page.search.trim())&&erdtree_tower::dlc::item_allowed(0x10000000|a.id as u32)).collect();
+    let choices:Vec<_>=transmog::catalog().iter().filter(|a|a.slot==page.part&&crate::i18n::matches(&a.name,&page.search)&&erdtree_tower::dlc::item_allowed(0x10000000|a.id as u32)).collect();
     let (changed,typing)=style::search(ui,"##transmog-search",&mut page.search,p(76.0,284.0),p(1000.0,322.0),"搜索防具…",&format!("{} 件",choices.len()),s);
     if changed {page.page=0;page.selection=0;}
     let pages=choices.len().div_ceil(12).max(1);page.page=page.page.min(pages-1);
@@ -68,7 +68,7 @@ pub fn draw(ui:&Ui,page:&mut Page,icon:&mut dyn FnMut(u32)->Option<TextureId>,re
         if let Some(texture)=icon(item.icon){draw.add_image(texture,p(x+67.0,y+8.0),p(x+151.0,y+92.0)).build();}
         draw.add_line(p(x+14.0,y+96.0),p(x+204.0,y+96.0),ImColor32::from_rgba(120,104,74,90)).thickness(s).build();
         drop(draw);
-        ui.set_window_font_scale(0.95*s);let fit=(200.0*s/ui.calc_text_size(&item.name)[0]).min(1.0);
+        ui.set_window_font_scale(0.95*s);let fit=(200.0*s/ui.calc_text_size(crate::i18n::t(&item.name))[0]).min(1.0);
         style::centered(ui,&item.name,p(x,y+98.0),p(x+218.0,y+126.0),if active{GOLD}else if focus{[1.0,0.95,0.82,1.0]}else{WHITE},0.95*fit,s);
         if active {style::ribbon(ui,"当前外观",p(x+218.0,y),s);}
     }
@@ -116,13 +116,13 @@ pub fn draw(ui:&Ui,page:&mut Page,icon:&mut dyn FnMut(u32)->Option<TextureId>,re
         }
         drop(draw);
         style::centered(ui,PARTS[part],p(x-30.0,y+88.0),p(x+114.0,y+112.0),if active{GOLD}else{MUTED},0.9,s);
-        ui.set_window_font_scale(0.82*s);let fit=(150.0*s/ui.calc_text_size(name)[0]).min(1.0);
+        ui.set_window_font_scale(0.82*s);let fit=(150.0*s/ui.calc_text_size(crate::i18n::t(name))[0]).min(1.0);
         style::centered(ui,name,p(x-34.0,y+112.0),p(x+118.0,y+134.0),if armor_icon.is_some(){WHITE}else{DIM},0.82*fit,s);
     }
     if style::button(ui,"transmog-hide","隐藏当前部位",p(1100.0,668.0),p(1292.0,712.0),Tone::Normal,s)&&ready{apply(page,BARE[page.part]);}
     if style::button(ui,"transmog-restore","恢复当前部位",p(1308.0,668.0),p(1500.0,712.0),Tone::Normal,s)&&ready{apply(page,-1);}
     let status=if page.notice.is_empty(){transmog::status()}else{page.notice.clone()};
-    ui.set_window_font_scale(0.85*s);let w=ui.calc_text_size(&status)[0];
+    ui.set_window_font_scale(0.85*s);let w=ui.calc_text_size(crate::i18n::t(&status))[0];
     if w<=400.0*s {style::centered(ui,&status,p(left,730.0),p(right,760.0),if page.notice.is_empty(){DIM}else{GOLD},0.85,s);}
     else {wrapped(ui,p(1100.0,730.0),ox+1500.0*s,&status,DIM,0.85*s);}
 }

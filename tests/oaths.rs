@@ -13,11 +13,39 @@ fn finish_act(run:&mut Run) {
 }
 
 #[test]
+fn opening_has_three_unique_choices_and_third_choice_roundtrips() {
+    for seed in 0..64 {
+        let mut state=State::start(seed,Class::Samurai,1,vec![],0);
+        assert_eq!(state.options(),3);
+        assert!(state.valid(1));
+        assert!(!state.offers.contains(&Kind::Hunter));
+        assert_eq!(state,State::start(seed,Class::Samurai,1,vec![],0));
+        let third=state.offers[2];
+        state.choose(2,seed,Class::Samurai).unwrap();
+        assert_eq!(state.held,vec![Oath{kind:third,level:1}]);
+        assert!(state.valid(1));
+        let restored:State=serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert_eq!(restored,state);
+        assert!(state.choose(0,seed,Class::Samurai).is_err());
+    }
+}
+
+#[test]
+fn old_two_choice_saves_remain_valid_and_malformed_offers_are_rejected() {
+    let mut state=State::start(31,Class::Samurai,1,vec![],0);
+    state.offers.truncate(2);
+    let old:State=serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(old.valid(1));assert_eq!(old.options(),2);
+    state.offers.push(state.offers[0]);assert!(!state.valid(1));
+    state.offers.clear();assert!(!state.valid(1));
+}
+
+#[test]
 fn oaths_persist_and_can_be_deepened_to_level_three() {
     let mut run=Run::new(31,Class::Samurai);run.enable_contracts();
     let state=run.contract.as_ref().unwrap();
     assert_eq!((state.rules,state.deepen),(1,None),"no deepen card before holding an oath");
-    assert!(matches!(state.cards()[..],[Card::Oath(_),Card::Oath(_)]),"first act offers two oaths");
+    assert!(matches!(state.cards()[..],[Card::Oath(_),Card::Oath(_),Card::Oath(_)]),"first act offers three oaths");
     let seed=run.reward_seed();
     let state=run.contract.as_mut().unwrap();state.choose(0,seed,run.class).unwrap();let first=state.chosen.unwrap();
     assert_eq!(state.held,vec![Oath{kind:first,level:1}]);
@@ -67,6 +95,7 @@ fn new_gifts_are_epic_and_old_saves_keep_the_old_rules() {
     }).collect();
     for kind in Kind::ALL {for seed in 0..64 {
         let mut s=State::start(seed,Class::Prophet,1,vec![],0);s.offers[0]=kind;s.offers[1]=*Kind::ALL.iter().find(|k|**k!=kind).unwrap();
+        s.offers[2]=*Kind::ALL.iter().find(|k|!s.offers[..2].contains(k)).unwrap();
         s.choose(0,seed,Class::Prophet).unwrap();assert!(s.valid(1));
         assert!(s.gear.iter().all(|id|tiers[id]==2),"{kind:?} gift must be epic");
         if kind==Kind::Guard {assert!(matches!(s.gear[0]/1_000_000,31|32));}

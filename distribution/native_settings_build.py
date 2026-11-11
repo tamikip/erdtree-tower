@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import urllib.request
 import zipfile
+import sys
 
 VERSION = '1.3.0'
 ARCHIVE = f'ERNativeUI-{VERSION}-windows-x64.zip'
@@ -13,6 +14,7 @@ SHA256 = '5f385b887ef0d0fe3bb0e7461fd8f5c8d9fe31f64dd5171df3bbc96fbd525e8d'
 
 
 def build_native_settings(project, destination):
+    subprocess.run([sys.executable, str(project / 'localization/generate_native_settings.py')], check=True)
     cache = project.parents[1] / 'work/tower-native-settings'
     cache.mkdir(parents=True, exist_ok=True)
     archive = cache / ARCHIVE

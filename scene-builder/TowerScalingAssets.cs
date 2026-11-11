@@ -27,7 +27,7 @@ static class TowerScalingAssets {
         var targets=new List<Target>();
         foreach(var p in File.ReadAllLines(Path.Combine(input,"enemy-pools.txt")).Select(l=>l.Split('|')))
             targets.Add(new(900000000+int.Parse(p[2])*10000,int.Parse(p[0]),p[1] switch {"weak"=>"weak","elite"=>"elite",_=>"boss"},p[4]));
-        foreach(var p in BossAssets.Parts(input)) {targets.Add(new(BossAssets.Npc(p,false),p.Act,"boss",p.Name,true));targets.Add(new(BossAssets.Npc(p,true),p.Name=="坠星成兽"||p.Name=="英雄石像鬼双人组"?3:p.Act,"elite",p.Name));}
+        foreach(var p in BossAssets.Parts(input)) {targets.Add(new(BossAssets.Npc(p,false),p.Act,"boss",p.Name,true));targets.Add(new(BossAssets.Npc(p,true),p.Index==54||p.Name=="坠星成兽"||p.Name=="英雄石像鬼双人组"?3:p.Act,"elite",p.Name));}
         return targets;
     }
     static int Tier(Dictionary<int,int[]> tiers,Target t)=>tiers[t.Act][t.Role switch {"weak"=>0,"elite"=>1,_=>2}];

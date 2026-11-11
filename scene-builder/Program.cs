@@ -1,5 +1,45 @@
 using SoulsFormats;
 using System.Numerics;
+if(args.Length==5&&args[3]=="english-theme") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    LocalizationAssets.BuildTheme(args[2],args[1],args[4]);return;
+}
+if(args.Length==5&&args[3]=="english-text") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    LocalizationAssets.Build(args[0],args[2],args[1],args[4]);return;
+}
+if(args.Length==4&&args[3]=="localization-export") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    LocalizationAssets.Export(args[0],args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="messmer-phase-one") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    MessmerAssets.Patch(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="first-act-elites") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    FirstActEliteAssets.Patch(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3] is "field-elite-161" or "field-elite-162" or "field-elite-163") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    BossAssets.Append(args[2],args[1],int.Parse(args[3].Split('-')[2]));FirstActEliteAssets.ScaleNew(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="third-elite-scale") {
+    Directory.CreateDirectory(args[1]);File.Copy(Path.Combine(args[2],"regulation.bin"),Path.Combine(args[1],"regulation.bin"),true);
+    ThirdActEliteAssets.ScaleNew(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3] is "niall-param" or "fortissax-param") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    BossAssets.Append(args[2],args[1],args[3]=="niall-param"?159:160);ThirdActEliteAssets.ScaleNew(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="third-act-elites") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    ThirdActEliteAssets.Patch(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="second-act-elites") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    SecondActEliteAssets.Patch(args[2],args[1]);return;
+}
 if(args.Length==4&&args[3]=="spirit-tuning-bridge-patch") {
     Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
     SpiritLevelAssets.PatchTuningBridge(args[2],args[1]);return;

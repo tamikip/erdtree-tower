@@ -28,8 +28,9 @@ namespace Tower.Launcher
         public LauncherPaths()
         {
             InstallDir = Path.GetDirectoryName(Path.GetFullPath(Application.ExecutablePath))!;
-            DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ErdtreeTowerLauncher");
-            Directory.CreateDirectory(DataDir);
+            DataDir = LauncherData.Select(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ErdtreeTowerLauncher"),
+                Path.Combine(InstallDir, "launcher-data"));
         }
 
         /// <summary>只有启动器自己的文件（exe、依赖库）变了才需要重开启动器；界面文件重新加载页面即可</summary>

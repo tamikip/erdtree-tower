@@ -21,7 +21,7 @@ namespace Tower.Launcher
         static readonly Color Backdrop = Color.FromArgb(16, 16, 18);
 
         readonly LauncherPaths paths;
-        readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Backdrop };
+        WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Backdrop };
         readonly TowerHost host;
 
         public MainForm(LauncherPaths paths)
@@ -89,8 +89,22 @@ namespace Tower.Launcher
                 Close();
                 return;
             }
-            var environment = await CoreWebView2Environment.CreateAsync(null, paths.WebViewData);
-            await web.EnsureCoreWebView2Async(environment);
+            try
+            {
+                var environment = await CoreWebView2Environment.CreateAsync(null, paths.WebViewData);
+                await web.EnsureCoreWebView2Async(environment);
+            }
+            catch (Exception error) when (error.HResult == unchecked((int)0x800700AA))
+            {
+                Log.Write("WebView2 数据目录占用，尝试独立缓存：" + error);
+                Controls.Remove(web);
+                web.Dispose();
+                web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Backdrop };
+                Controls.Add(web);
+                var cache = Path.Combine(paths.DataDir, "WebView2-recovery-" + Guid.NewGuid().ToString("N"));
+                var environment = await CoreWebView2Environment.CreateAsync(null, cache);
+                await web.EnsureCoreWebView2Async(environment);
+            }
             var core = web.CoreWebView2;
             var debug = File.Exists(Path.Combine(paths.InstallDir, "tower-debug.enable"));
             core.Settings.AreDevToolsEnabled = debug;

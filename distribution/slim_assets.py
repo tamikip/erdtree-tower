@@ -11,12 +11,13 @@ TARGETS = (
     'menu/hi/01_common.tpf.dcx',
     'sfx/sfxbnd_commoneffects.ffxbnd.dcx',
 )
+ENGLISH_THEME = 'locales/en-US/menu/hi/01_common.tpf.dcx'
 
 
 def build_icon_codec(project, output):
     output.mkdir(parents=True, exist_ok=True)
     vswhere = Path(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')) / 'Microsoft Visual Studio/Installer/vswhere.exe'
-    installation = subprocess.check_output([str(vswhere), '-latest', '-products', '*', '-requires',
+    installation = subprocess.check_output([str(vswhere), '-latest', '-prerelease', '-products', '*', '-requires',
                                            'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'], text=True).strip()
     if not installation:
         raise RuntimeError('Visual C++ x64 build tools are required for the icon decoder')
@@ -30,6 +31,7 @@ def build_icon_codec(project, output):
 
 def prepare(project, stage, game):
     project, stage, game = map(lambda p: Path(p).resolve(), (project, stage, game))
+    targets = (*TARGETS, ENGLISH_THEME) if (stage / 'scene-assets' / ENGLISH_THEME).is_file() else TARGETS
     if stage == project or stage == game or stage == project / 'scene-assets':
         raise ValueError('Use a separate distribution stage')
     patches = stage / 'asset-patches'
@@ -48,7 +50,7 @@ def prepare(project, stage, game):
     helper = validation / 'helper/Tower.AssetRestore.exe'
     subprocess.run([str(helper), str(validation), str(game), '--build-validation'], check=True)
     manifest = json.loads((patches / 'manifest.json').read_text(encoding='utf-8'))
-    if {f['Path'] for f in manifest['Files']} != set(TARGETS):
+    if {f['Path'] for f in manifest['Files']} != set(targets):
         raise ValueError('Unexpected generated assets')
     for file in manifest['Files']:
         original = stage / 'scene-assets' / file['Path']
@@ -68,9 +70,9 @@ def prepare(project, stage, game):
         shutil.copy2(validation / 'helper' / name, stage / name)
     (stage / 'licenses').mkdir(exist_ok=True)
     shutil.copy2(project / 'licenses/bcdec.txt', stage / 'licenses/bcdec.txt')
-    for relative in TARGETS:
+    for relative in targets:
         (stage / 'scene-assets' / relative).unlink()
-    for relative in ('menu/low/01_common.tpf.dcx', 'menu/low/01_common.sblytbnd.dcx'):
+    for relative in ('menu/low/01_common.tpf.dcx', 'menu/low/01_common.sblytbnd.dcx', 'locales/en-US/menu/low/01_common.tpf.dcx'):
         (stage / 'scene-assets' / relative).unlink(missing_ok=True)
     for icon in icons:
         (stage / 'scene-assets/reward-icons' / f"{icon['Id']}.rgba").unlink()

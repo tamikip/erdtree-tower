@@ -111,6 +111,9 @@ mod tests {
     }
     #[test]
     fn full_route_renders_during_loading_and_after_player_ready() {
+        if std::env::var("ERDTREE_UI_PREVIEW_LANGUAGE").is_ok_and(|value|value=="en") {
+            erdtree_tower::localization::set(erdtree_tower::localization::Language::English);
+        }
         let mut context = hudhook::imgui::Context::create();
         context.set_ini_filename(None);
         context.io_mut().display_size = [1920.0, 1080.0];
@@ -249,15 +252,15 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, vitals: &str) {
             ui.child_window("route-content").flags(hudhook::imgui::WindowFlags::NO_NAV).scroll_bar(false).scrollable(false).size([size[0]-left-right-2.0*margin,size[1]-2.0*margin]).build(|| {
                 let _disabled=ui.begin_disabled(!view.ready||view.busy);
                 match &run.phase {
-                    Phase::Reward { .. } => { ui.text("选择战利品以继续旅程。"); }
-                    Phase::Dead => { ui.text("旅程结束"); crate::fancy_text::text_wrapped(ui,"角色死亡。重新启动游戏可开始新一局。"); }
-                    Phase::Won => { ui.text("登顶 · 本局通关"); }
+                    Phase::Reward { .. } => { ui.text(crate::i18n::t("选择战利品以继续旅程。")); }
+                    Phase::Dead => { ui.text(crate::i18n::t("旅程结束")); crate::fancy_text::text_wrapped(ui,"角色死亡。重新启动游戏可开始新一局。"); }
+                    Phase::Won => { ui.text(crate::i18n::t("登顶 · 本局通关")); }
                     Phase::Map => {route(ui, run, view.ready && !view.busy,&view.ballots);party_legend(ui,&view.ballots,&view.latencies);},
                     Phase::Node { id } => {
                         match run.nodes[*id].kind {
-                            NodeKind::Camp | NodeKind::Chest | NodeKind::Shop => { ui.text("使用房间内的原生交互继续。"); }
+                            NodeKind::Camp | NodeKind::Chest | NodeKind::Shop => { ui.text(crate::i18n::t("使用房间内的原生交互继续。")); }
                             NodeKind::Event => {
-                                ui.text("进入事件区域，开启宝匣或与守坛人交谈。");
+                                ui.text(crate::i18n::t("进入事件区域，开启宝匣或与守坛人交谈。"));
                             }
                             _ => {}
                         }
@@ -274,8 +277,8 @@ fn sidebar(ui:&Ui,run:&Run,view:&View,vitals:&str,origin:[f32;2],extent:[f32;2],
     use crate::archive_style::{self as style,GOLD,WHITE,MUTED};
     let (x0,w)=(origin[0],extent[0]);let at=|x:f32,y:f32|[x0+x*scale,origin[1]+y*scale];
     let text=|x:f32,y:f32,value:&str,color:[f32;4],px:f32,align:f32| {
-        ui.set_window_font_scale(px/20.0*scale);let tw=ui.calc_text_size(value)[0];
-        ui.set_cursor_screen_pos([x0+x*scale-tw*align,origin[1]+y*scale]);ui.text_colored(color,value);
+        ui.set_window_font_scale(px/20.0*scale);let tw=ui.calc_text_size(crate::i18n::t(value))[0];
+        ui.set_cursor_screen_pos([x0+x*scale-tw*align,origin[1]+y*scale]);ui.text_colored(color,crate::i18n::t(value));
     };
     let inner=w/scale;
     {
@@ -291,8 +294,8 @@ fn sidebar(ui:&Ui,run:&Run,view:&View,vitals:&str,origin:[f32;2],extent:[f32;2],
         let font=crate::fancy_text::title_font().map(|f|ui.push_font(f));
         ui.set_window_font_scale(if font.is_some(){24.0/32.0}else{1.2}*scale);
         // 名字太长时缩小到放得下
-        let tw=ui.calc_text_size(theme.name)[0];if tw>(inner-36.0)*scale {ui.set_window_font_scale(if font.is_some(){24.0/32.0}else{1.2}*scale*(inner-36.0)*scale/tw);}
-        ui.set_cursor_screen_pos(at(20.0,38.0));ui.text_colored(accent,theme.name);
+        let tw=ui.calc_text_size(crate::i18n::t(theme.name))[0];if tw>(inner-36.0)*scale {ui.set_window_font_scale(if font.is_some(){24.0/32.0}else{1.2}*scale*(inner-36.0)*scale/tw);}
+        ui.set_cursor_screen_pos(at(20.0,38.0));ui.text_colored(accent,crate::i18n::t(theme.name));
         drop(font);
     }
     text(20.0,74.0,theme.region,MUTED,14.0,0.0);
@@ -400,7 +403,7 @@ pub(crate) fn reward_description(run: &Run, reward: &Reward) -> String {
 const VOTER_COLORS:[[u8;3];8]=[[62,114,185],[173,67,68],[53,135,86],[154,102,179],[180,126,42],[52,139,142],[171,91,129],[99,103,114]];
 /// 图例里一行的文字：序号、名字（没有 Steam 名字时写“队员 N”）、“你”、是否已选路线
 fn legend_line(index:usize,name:Option<String>,local:bool,voted:bool)->String {
-    format!("{}  {}{}  ·  {}",index+1,name.unwrap_or_else(||format!("队员 {}",index+1)),if local{"（你）"}else{""},if voted{"已选"}else{"未选"})
+    format!("{}  {}{}  ·  {}",index+1,name.unwrap_or_else(||crate::i18n::t(format!("队员 {}",index+1))),crate::i18n::t(if local{"（你）"}else{""}),crate::i18n::t(if voted{"已选"}else{"未选"}))
 }
 /// 联机时路线图右上角的队员图例：投票标记上的序号对应谁
 fn latency_label(status:&erdtree_tower::party_latency::Status)->String {
@@ -418,17 +421,17 @@ fn party_legend(ui:&Ui,ballots:&[erdtree_tower::party_vote::Ballot],latencies:&[
     }).collect();
     let header=if latencies.is_empty(){"队伍"}else{"队伍 · 至房主延迟（RTT）"};
     let row=ui.text_line_height()+6.0;
-    let width=lines.iter().map(|l|ui.calc_text_size(l)[0]).fold(ui.calc_text_size(header)[0],f32::max)+46.0;
+    let width=lines.iter().map(|l|ui.calc_text_size(crate::i18n::t(l))[0]).fold(ui.calc_text_size(crate::i18n::t(header))[0],f32::max)+46.0;
     let (pos,size)=(ui.window_pos(),ui.window_size());
     let (x,y)=(pos[0]+size[0]-width-10.0,pos[1]+10.0);
     let draw=ui.get_window_draw_list();
     draw.add_rect([x,y],[x+width,y+row*(lines.len()+1) as f32+10.0],ImColor32::from_rgba(233,222,196,230)).filled(true).rounding(5.0).build();
     draw.add_rect([x,y],[x+width,y+row*(lines.len()+1) as f32+10.0],ImColor32::from_rgb(143,95,22)).rounding(5.0).build();
-    draw.add_text([x+12.0,y+5.0],ImColor32::from_rgb(64,54,38),header);
+    draw.add_text([x+12.0,y+5.0],ImColor32::from_rgb(64,54,38),crate::i18n::t(header));
     for (i,line) in lines.iter().enumerate() {
         let cy=y+5.0+row*(i+1) as f32+row*0.5;let c=VOTER_COLORS[i%VOTER_COLORS.len()];
         draw.add_circle([x+16.0,cy],7.0,ImColor32::from_rgb(c[0],c[1],c[2])).filled(true).build();
-        draw.add_text([x+30.0,cy-ui.text_line_height()*0.5],ImColor32::from_rgb(64,54,38),line);
+        draw.add_text([x+30.0,cy-ui.text_line_height()*0.5],ImColor32::from_rgb(64,54,38),crate::i18n::t(line));
     }
 }
 fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ballot]) {
@@ -524,8 +527,7 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
         let y = origin[1] + 60.0 + (last - floor) as f32 * row;
         draw.add_text(
             [origin[0] + 8.0, y - 8.0],
-            ImColor32::from_rgba(98, 81, 50, 140),
-            format!("{:02}", floor + 1),
+            ImColor32::from_rgba(98, 81, 50, 140),crate::i18n::t(format!("{:02}", floor + 1)),
         );
     }
     for (id, node) in run.nodes.iter().enumerate() {
@@ -614,10 +616,10 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
         if !crate::map_art::icon_scaled(&draw,pos,node.kind,if enabled||visited{1.0}else{0.8}*fade,zoom){glyph(&draw, pos, node.kind, color);}
         // 节点下方的小牌子：当前位置（深绿底）、最终试炼（深墨底），不再把字直接压在纸和图标上
         let plate=|label:&str,dy:f32,fill:ImColor32| {
-            let tw=ui.calc_text_size(label)[0];let (w,h)=(tw+18.0,ui.text_line_height()+6.0);let y=pos[1]+dy;
+            let tw=ui.calc_text_size(crate::i18n::t(label))[0];let (w,h)=(tw+18.0,ui.text_line_height()+6.0);let y=pos[1]+dy;
             draw.add_rect([pos[0]-w*0.5,y],[pos[0]+w*0.5,y+h],fill).filled(true).rounding(h*0.5).build();
             draw.add_rect([pos[0]-w*0.5,y],[pos[0]+w*0.5,y+h],ImColor32::from_rgba(240,226,190,150)).rounding(h*0.5).thickness(1.0).build();
-            draw.add_text([pos[0]-tw*0.5,y+3.0],ImColor32::from_rgb(244,234,208),label);
+            draw.add_text([pos[0]-tw*0.5,y+3.0],ImColor32::from_rgb(244,234,208),crate::i18n::t(label));
         };
         if run.visited.last()==Some(&id) {plate("当前位置",radius+8.0,ImColor32::from_rgba(44,84,56,235));}
         if node.kind==NodeKind::Boss {plate("最终试炼",radius+22.0,ImColor32::from_rgba(52,38,22,235));}
@@ -632,7 +634,7 @@ fn route(ui: &Ui, run: &Run, ready: bool,ballots:&[erdtree_tower::party_vote::Ba
             let y=pos[1]-radius-17.0;
             let c=VOTER_COLORS[*index%VOTER_COLORS.len()];
             draw.add_circle([x,y],10.0,ImColor32::from_rgb(c[0],c[1],c[2])).filled(true).build();
-            draw.add_text([x-5.0,y-10.0],ImColor32::WHITE,(index+1).to_string());
+            draw.add_text([x-5.0,y-10.0],ImColor32::WHITE,crate::i18n::t((index+1).to_string()));
         }
         if hovered==Some(id) {
                 use crate::fancy_text::{self,Effect,Layer,Style};
@@ -740,7 +742,7 @@ fn glyph(draw: &hudhook::imgui::DrawListMut<'_>, p: [f32; 2], kind: NodeKind, co
             line([-8.0, 5.0], [8.0, 5.0]);
         }
         NodeKind::Event => {
-            draw.add_text(q(-5.0, -11.0), color, "?");
+            draw.add_text(q(-5.0, -11.0), color,crate::i18n::t("?"));
         }
     }
 }

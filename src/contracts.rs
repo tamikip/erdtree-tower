@@ -82,7 +82,7 @@ pub enum Card {Oath(Kind),Deepen(Kind)}
 pub struct Gift {pub index:usize,pub delivered:[bool;2]}
 #[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct State {
-    pub act:u8,pub offers:[Kind;2],pub chosen:Option<Kind>,pub gear:[u32;3],
+    pub act:u8,pub offers:Vec<Kind>,pub chosen:Option<Kind>,pub gear:[u32;3],
     pub gear_done:bool,pub peak:u8,pub gift:Option<Gift>,
     /// 0：旧规则（每幕一份、下一幕作废）；1：誓约整局保留，可以深化
     #[serde(default)] pub rules:u8,
@@ -115,9 +115,9 @@ impl State {
         pool.sort_by_key(|k|crate::mix(roll^k.index() as u64));
         let first=if Some(preferred)!=previous{preferred}else{pool[0]};
         let second=*pool.iter().find(|k|**k!=first).unwrap();
-        Self{act,offers:[first,second],chosen:None,gear:[0;3],gear_done:false,peak:peak.min(MAX_PEAK),gift:None,rules:0,held:vec![],deepen:None,deepened:false}
+        Self{act,offers:vec![first,second],chosen:None,gear:[0;3],gear_done:false,peak:peak.min(MAX_PEAK),gift:None,rules:0,held:vec![],deepen:None,deepened:false}
     }
-    /// 新规则：两份新誓约（不与已有的重复），已有誓约未满级时加一张深化卡
+    /// 开局三份新誓约；后续两份新誓约，并提供未满级誓约的深化。
     pub fn start(seed:u64,class:Class,act:u8,held:Vec<Oath>,peak:u8)->Self {
         let roll=crate::mix(seed^0xc071ac7);
         let preferred=preferred(class,roll);
@@ -126,13 +126,15 @@ impl State {
         let first=if pool.contains(&preferred){preferred}else{pool[0]};
         let second=*pool.iter().find(|k|**k!=first).unwrap();
         let deepen=held.iter().rev().filter(|o|o.kind!=Kind::Hunter&&o.level<MAX_LEVEL).max_by_key(|o|o.level).map(|o|o.kind);
-        Self{act,offers:[first,second],chosen:None,gear:[0;3],gear_done:false,peak:peak.min(MAX_PEAK),gift:None,rules:1,held,deepen,deepened:false}
+        let mut offers=vec![first,second];
+        if act==1&&held.is_empty() {offers.push(*pool.iter().find(|k|!offers.contains(k)).unwrap());}
+        Self{act,offers,chosen:None,gear:[0;3],gear_done:false,peak:peak.min(MAX_PEAK),gift:None,rules:1,held,deepen,deepened:false}
     }
     /// 进入下一幕：旧规则换一份新契约，新规则保留已有誓约
     pub fn next_act(&self,seed:u64,class:Class,act:u8)->Self {
         if self.rules==0 {Self::new(seed,class,act,self.chosen,self.peak)}else{Self::start(seed,class,act,self.held.clone(),self.peak)}
     }
-    /// 两份新誓约；新规则下已有誓约未满级时加一张深化卡
+    /// 当前候选誓约及深化卡。
     pub fn cards(&self)->Vec<Card> {
         let mut cards:Vec<_>=self.offers.iter().map(|k|Card::Oath(*k)).collect();
         if self.rules==1 {if let Some(kind)=self.deepen {cards.push(Card::Deepen(kind));}}
@@ -141,7 +143,7 @@ impl State {
     pub fn options(&self)->usize {self.cards().len()}
     pub fn retire_ranged_offers(&mut self) {
         if !self.selection_pending(){return;}
-        for slot in 0..2 {
+        for slot in 0..self.offers.len() {
             if self.offers[slot]==Kind::Hunter {
                 if let Some(kind)=Kind::ALL.into_iter().find(|k|*k!=Kind::Hunter&&!self.offers.contains(k)&&!self.held.iter().any(|o|o.kind==*k)) {
                     self.offers[slot]=kind;
@@ -203,7 +205,8 @@ impl State {
                 &&(!self.deepened||self.chosen.is_some()&&self.chosen==self.deepen),
             _=>false,
         };
-        self.act==act&&self.peak<=MAX_PEAK&&self.offers[0]!=self.offers[1]&&held_ok
+        let count_ok=self.offers.len()==2||(self.rules==1&&act==1&&self.offers.len()==3&&self.deepen.is_none());
+        self.act==act&&self.peak<=MAX_PEAK&&count_ok&&self.offers.iter().enumerate().all(|(i,k)|!self.offers[..i].contains(k))&&held_ok
             &&self.chosen.is_none_or(|k|self.offers.contains(&k)||self.deepened)
             &&if self.chosen.is_none()||self.deepened{self.gift.is_none()&&self.gear==[0;3]}else{
                 self.gear.iter().enumerate().all(|(i,id)|!self.gear[..i].contains(id)&&crate::rewards::lookup(*id).is_some_and(|r|r.kind==crate::rewards::ItemKind::Weapon))

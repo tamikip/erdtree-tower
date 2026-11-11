@@ -237,6 +237,8 @@ window.HOYO_CONFIG = {
           {
             title: '界面（下次启动游戏生效）',
             rows: [
+              { type: 'select', key: 'language', label: '语言 / Language', hint: '下次启动生效。英文物品与对话需将游戏本体也设为 English。 Restart required; set the game language to English for English items and dialogue.',
+                value: '跟随游戏 / Follow game', options: ['跟随游戏 / Follow game', '简体中文 / Chinese', 'English'] },
               { type: 'select', key: 'prompts', label: '按键提示', hint: '界面里的按键提示固定显示所选的一种，不随最近用的手柄或键鼠来回切换',
                 value: '键鼠', options: ['键鼠', '手柄'] },
             ],

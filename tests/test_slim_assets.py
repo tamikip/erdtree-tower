@@ -13,7 +13,7 @@ spec.loader.exec_module(slim)
 
 
 class SlimAssets(unittest.TestCase):
-    def exercise(self, failure):
+    def exercise(self, failure, english=False):
         with tempfile.TemporaryDirectory(prefix='tower-slim-test-') as directory:
             root = Path(directory)
             project, stage, game = root / 'project', root / 'stage', root / 'game'
@@ -24,8 +24,9 @@ class SlimAssets(unittest.TestCase):
             icon_root.mkdir(parents=True)
             for icon in (123, 456, 990000):
                 (icon_root / f'{icon}.rgba').write_bytes(icon_bytes)
-            low_files = ('menu/low/01_common.tpf.dcx', 'menu/low/01_common.sblytbnd.dcx')
-            for relative in (*slim.TARGETS, *low_files):
+            targets=(*slim.TARGETS,slim.ENGLISH_THEME) if english else slim.TARGETS
+            low_files = ('menu/low/01_common.tpf.dcx', 'menu/low/01_common.sblytbnd.dcx', 'locales/en-US/menu/low/01_common.tpf.dcx')
+            for relative in (*targets, *low_files):
                 path = stage / 'scene-assets' / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(relative.encode())
@@ -34,7 +35,7 @@ class SlimAssets(unittest.TestCase):
                 if 'run' in command:
                     folder = stage / 'asset-patches'
                     folder.mkdir()
-                    manifest = {'Files': [{'Path': p, 'TargetHash': hashlib.sha256(p.encode()).hexdigest()} for p in slim.TARGETS]}
+                    manifest = {'Files': [{'Path': p, 'TargetHash': hashlib.sha256(p.encode()).hexdigest()} for p in targets]}
                     manifest['Icons'] = [{'Id': 123, 'Sha256': hashlib.sha256(icon_bytes).hexdigest()}]
                     (folder / 'manifest.json').write_text(json.dumps(manifest))
                 elif 'build' in command:
@@ -44,7 +45,7 @@ class SlimAssets(unittest.TestCase):
                 else:
                     if failure == 'runtime':
                         raise subprocess.CalledProcessError(1, command)
-                    for relative in slim.TARGETS:
+                    for relative in targets:
                         path = Path(command[1]) / 'scene-assets' / relative
                         path.parent.mkdir(parents=True, exist_ok=True)
                         path.write_bytes(b'wrong' if failure == 'hash' else relative.encode())
@@ -62,7 +63,7 @@ class SlimAssets(unittest.TestCase):
                 if failure:
                     with self.assertRaises((ValueError, subprocess.CalledProcessError)):
                         slim.prepare(project, stage, game)
-                    for relative in slim.TARGETS:
+                    for relative in targets:
                         self.assertEqual((stage / 'scene-assets' / relative).read_bytes(), relative.encode())
                     self.assertFalse((stage / 'asset-mode.txt').exists())
                     for relative in low_files:
@@ -70,7 +71,7 @@ class SlimAssets(unittest.TestCase):
                     self.assertEqual((icon_root / '123.rgba').read_bytes(), icon_bytes)
                 else:
                     slim.prepare(project, stage, game)
-                    for relative in slim.TARGETS:
+                    for relative in targets:
                         self.assertFalse((stage / 'scene-assets' / relative).exists())
                     self.assertEqual((stage / 'asset-mode.txt').read_text().strip(), 'local-v1')
                     self.assertTrue((stage / 'Tower.AssetRestore.exe').exists())
@@ -85,3 +86,5 @@ class SlimAssets(unittest.TestCase):
     def test_generation_failure_preserves_full_assets(self): self.exercise('runtime')
     def test_wrong_output_hash_preserves_full_assets(self): self.exercise('hash')
     def test_wrong_icon_hash_preserves_full_assets(self): self.exercise('icon')
+    def test_english_theme_is_reconstructed_instead_of_shipping_base_assets(self): self.exercise(None,english=True)
+    def test_english_reconstruction_failure_preserves_assets(self): self.exercise('hash',english=True)

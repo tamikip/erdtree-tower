@@ -37,6 +37,7 @@ pub struct EventSync {
     pub host_bound_at:Option<Instant>,
     pub job:Option<erdtree_tower::party_events::Job>,
     pub done:Option<u8>,
+    pub scarab_owners:[u64;3],
     pub applied:Option<u8>,
     pub hunting:bool,
     pub aborted:bool,
@@ -45,6 +46,10 @@ pub struct EventSync {
     pub guards_cleared:bool,
 }
 impl EventSync {
+    pub fn scarab_rewards(&self,player:u64)->u8 {
+        if self.aborted||player==0||self.job.is_none_or(|j|!matches!(j.kind,erdtree_tower::party_events::Kind::Scarabs(_))||self.applied==Some(j.wave)){return 0;}
+        self.scarab_owners.iter().enumerate().fold(0,|mask,(slot,owner)|mask|if *owner==player {self.done.unwrap_or(0)&(1<<slot)}else{0})
+    }
     pub fn trial_victory(&self)->bool {
         self.descent_complete||self.storm_decision==Some(erdtree_tower::stormveil::Decision::Complete)
     }
@@ -65,6 +70,22 @@ impl EventSync {
     pub fn combat_active(&self)->bool {
         self.job.is_some_and(|j|matches!(j.kind,erdtree_tower::party_events::Kind::Guards(_))
             &&self.bound==Some(j.wave)&&self.applied!=Some(j.wave))&&self.hunting&&self.done.is_none()&&!self.aborted
+    }
+}
+
+#[cfg(test)]
+mod scarab_reward_tests {
+    use super::*;
+    #[test]
+    fn nonpayer_gets_only_host_assigned_kills_without_local_observation() {
+        let job=erdtree_tower::party_events::Job{epoch:3,wave:2,player:1,kind:erdtree_tower::party_events::Kind::Scarabs(1)};
+        let mut event=EventSync{job:Some(job),done:Some(7),scarab_owners:[2,1,2],..Default::default()};
+        assert_eq!(event.scarab_rewards(2),5);assert_eq!(event.scarab_rewards(1),2);
+        assert_eq!(event.scarab_rewards(3),0);assert_eq!(event.scarab_rewards(0),0);
+        event.applied=Some(job.wave);assert_eq!(event.scarab_rewards(2),0);
+        event.applied=None;event.aborted=true;assert_eq!(event.scarab_rewards(1),0);
+        event.aborted=false;event.done=None;assert_eq!(event.scarab_rewards(2),0);
+        event.done=Some(7);event.scarab_owners=[0;3];assert_eq!(event.scarab_rewards(1),0);
     }
 }
 pub struct Link {
@@ -245,8 +266,11 @@ impl Link {
         let order=self.gate.victory()?;self.send(Send::Broadcast(order))?;self.victory=true;Ok(())
     }
     pub fn event_result(&mut self,wave:u8,killed:u8)->Result<(),String> {
+        self.event_result_owned(wave,killed,[0;3])
+    }
+    pub fn event_result_owned(&mut self,wave:u8,killed:u8,owners:[u64;3])->Result<(),String> {
         if !self.host()||self.stopped.is_some(){return Err("当前不能提交事件结算".into());}
-        let order=self.gate.event_done(wave,killed)?;
+        let order=self.gate.event_done_owned(wave,killed,owners)?;
         self.send(Send::Broadcast(order.clone()))?;self.accept(&order)?;Ok(())
     }
     pub fn event_hunt(&mut self,wave:u8)->Result<(),String> {
@@ -349,7 +373,7 @@ impl Link {
                 if self.event.job==Some(*job){return Ok(false);}
                 let next=self.event.job.map_or(1,|j|j.wave.saturating_add(1));
                 if job.wave!=next||(self.event.job.is_some()&&self.event.done.is_none()){return Err("事件波次不连续或上一波未结束".into());}
-                self.event.job=Some(*job);self.event.done=None;self.event.bound=None;self.event.hunting=false;self.event.aborted=false;
+                self.event.job=Some(*job);self.event.done=None;self.event.scarab_owners=[0;3];self.event.bound=None;self.event.hunting=false;self.event.aborted=false;
                 if job.player==self.config.player&&self.event.request==Some(job.kind){self.event.request=None;}
             },
             Order::EventHunt{epoch,wave} if *epoch==self.epoch&&self.event.job.is_some_and(|j|j.wave==*wave)=>{
@@ -363,9 +387,11 @@ impl Link {
                 if self.event.done.is_some(){return Err("已结算的事件不能退款".into());}
                 self.event.aborted=true;self.event.done=Some(0);
             },
-            Order::EventDone{epoch,wave,killed} if *epoch==self.epoch&&*killed<=7&&!self.event.aborted&&self.event.job.is_some_and(|j|j.wave==*wave)=>{
-                if let Some(previous)=self.event.done {if previous==*killed{return Ok(false);}return Err("事件结算重复且结果不一致".into());}
-                self.event.done=Some(*killed);
+            Order::EventDone{epoch,wave,killed,owners} if *epoch==self.epoch&&*killed<=7&&!self.event.aborted&&self.event.job.is_some_and(|j|j.wave==*wave)=>{
+                if owners.iter().enumerate().any(|(slot,owner)|*owner!=0&&killed&(1<<slot)==0)
+                    ||self.event.job.is_some_and(|j|matches!(j.kind,erdtree_tower::party_events::Kind::Guards(_)))&&*owners!=[0;3]{return Err("事件奖励归属无效".into());}
+                if let Some(previous)=self.event.done {if previous==*killed&&self.event.scarab_owners==*owners{return Ok(false);}return Err("事件结算重复且结果不一致".into());}
+                self.event.done=Some(*killed);self.event.scarab_owners=*owners;
                 if self.event.job.is_some_and(|j|matches!(j.kind,erdtree_tower::party_events::Kind::Guards(_))) {self.event.guards_cleared=true;}
             },
             Order::Spawn{epoch} if *epoch==self.epoch=>{self.spawn=true;self.encounter=Some(Instant::now());},
@@ -547,12 +573,10 @@ impl Link {
                     if let Err(e)=self.send(Send::Broadcast(order.clone())){self.stop(e);}else{self.rewards=true;orders.push(order);}
                 }
                 if self.spawn&&self.bound {self.event.host_bound_at.get_or_insert_with(Instant::now);}
-                let unbound=self.gate.unbound();
                 let engage=self.gate.engage_within(self.event.host_bound_at.map(|t|t.elapsed().as_millis() as u64));
                 if engage.is_some() {
                     let since=self.encounter.map_or(0.0,|t|t.elapsed().as_secs_f32());
-                    super::log(if unbound.is_empty() {format!("PARTY_ENGAGE epoch={} all replicas ready {since:.1} s after spawn",self.epoch)}
-                        else {format!("PARTY_ENGAGE epoch={} after the {} ms grace, {since:.1} s after spawn; still loading: {unbound:?}",self.epoch,erdtree_tower::party_game::ENGAGE_GRACE_MS)});
+                    super::log(format!("PARTY_ENGAGE epoch={} all replicas ready {since:.1} s after spawn",self.epoch));
                 }
                 for order in [self.gate.defeat(),self.gate.trial_order(),self.gate.stormveil_order(),self.gate.descent_order(),self.gate.spawn(),engage].into_iter().flatten() {
                     if let Err(e)=self.send(Send::Broadcast(order.clone())){self.stop(e);}else{orders.push(order);}
@@ -632,10 +656,10 @@ mod tests {
         let (mut link,_events,_commands)=test_link(2);
         let guard=Job{epoch:4,wave:1,player:1,kind:Kind::Guards(0)};
         link.accept(&Order::EventStart(guard)).unwrap();
-        link.accept(&Order::EventDone{epoch:4,wave:1,killed:0}).unwrap();assert!(link.event.guards_cleared);
+        link.accept(&Order::EventDone{epoch:4,wave:1,killed:0,owners:[0;3]}).unwrap();assert!(link.event.guards_cleared);
         link.accept(&Order::EventStart(Job{wave:2,kind:Kind::Scarabs(1),..guard})).unwrap();
         assert!(link.event.guards_cleared);
-        link.accept(&Order::EventDone{epoch:4,wave:2,killed:2}).unwrap();
+        link.accept(&Order::EventDone{epoch:4,wave:2,killed:2,owners:[0;3]}).unwrap();
         link.accept(&Order::Enter{epoch:5,act:1,visited:vec![],node:0,has_stonesword_key:false}).unwrap();
         assert!(!link.event.guards_cleared);
     }
@@ -823,7 +847,7 @@ mod tests {
         link.accept(&Order::EventHunt{epoch:4,wave:1}).unwrap();assert!(link.event.combat_active());
         assert!(link.accept(&Order::Defeat{epoch:4}).unwrap());
         assert!(!link.event.combat_active());assert!(!link.fighting&&!link.spawn&&!link.rewards);
-        for order in [Order::Defeat{epoch:4},Order::EventStart(job),Order::EventHunt{epoch:4,wave:1},Order::EventDone{epoch:4,wave:1,killed:0},Order::Spawn{epoch:4},Order::Victory{epoch:4}] {
+        for order in [Order::Defeat{epoch:4},Order::EventStart(job),Order::EventHunt{epoch:4,wave:1},Order::EventDone{epoch:4,wave:1,killed:0,owners:[0;3]},Order::Spawn{epoch:4},Order::Victory{epoch:4}] {
             assert!(!link.accept(&order).unwrap());
         }
         assert!(link.event.job.is_none());
@@ -918,15 +942,15 @@ mod tests {
         link.event.bound=Some(2);assert!(link.accept(&hunt).is_err());assert!(!link.event.hunting);
         link.event.bound=Some(1);
         assert!(link.accept(&hunt).unwrap());assert!(!link.accept(&hunt).unwrap());
-        let done=Order::EventDone{epoch:0,wave:1,killed:5};
+        let done=Order::EventDone{epoch:0,wave:1,killed:5,owners:[0;3]};
         assert!(link.accept(&done).unwrap());assert!(!link.accept(&done).unwrap());
-        assert!(link.accept(&Order::EventDone{epoch:0,wave:1,killed:3}).is_err());
+        assert!(link.accept(&Order::EventDone{epoch:0,wave:1,killed:3,owners:[0;3]}).is_err());
         assert!(link.accept(&Order::EventStart(erdtree_tower::party_events::Job{wave:2,..job})).unwrap());
         assert!(link.event.done.is_none());assert!(link.event.bound.is_none());assert!(!link.event.hunting);
         let abort=Order::EventAborted{epoch:0,wave:2};
         assert!(link.accept(&abort).unwrap());assert!(!link.accept(&abort).unwrap());
         assert!(link.event.aborted);
-        assert!(link.accept(&Order::EventDone{epoch:0,wave:2,killed:0}).is_err());
+        assert!(link.accept(&Order::EventDone{epoch:0,wave:2,killed:0,owners:[0;3]}).is_err());
         assert!(link.accept(&Order::Engage{epoch:0}).is_err());
         link.accept(&Order::Spawn{epoch:0}).unwrap();
         // 还没加载完敌人也接受开战（房主宽限后先开战）

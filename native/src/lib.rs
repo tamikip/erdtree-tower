@@ -75,6 +75,7 @@ mod random_ashes;
 mod contracts;
 mod rooms;
 mod scarabs;
+mod i18n;
 mod map_scarabs;
 mod chest_award;
 mod ember_notice;
@@ -100,6 +101,7 @@ mod star_stream;
 mod bgm;
 mod ailments;
 mod diagnostics;
+mod landing_probe;
 mod render_diagnostics;
 mod rest_end;
 mod party_death;
@@ -219,15 +221,15 @@ fn draw_resource_alert(ui:&hudhook::imgui::Ui,files:&[String]) {
     lines.push("请关闭游戏，在启动器里点「校验并修复文件」，再从启动器启动。".into());
     let title="整合包文件不完整";
     let size=ui.io().display_size;let line_h=ui.text_line_height_with_spacing();
-    let width=lines.iter().map(|l|ui.calc_text_size(l)[0]).fold(ui.calc_text_size(title)[0],f32::max)+48.0;
+    let width=lines.iter().map(|l|ui.calc_text_size(crate::i18n::t(l))[0]).fold(ui.calc_text_size(crate::i18n::t(title))[0],f32::max)+48.0;
     let height=line_h*(lines.len() as f32+1.6)+32.0;
     let (x,y)=((size[0]-width)*0.5,size[1]*0.1);
     let draw=ui.get_foreground_draw_list();
     draw.add_rect([x,y],[x+width,y+height],ImColor32::from_rgba(18,10,10,235)).filled(true).rounding(6.0).build();
     draw.add_rect([x,y],[x+width,y+height],ImColor32::from_rgb(214,82,64)).rounding(6.0).thickness(2.0).build();
-    draw.add_text([x+24.0,y+16.0],ImColor32::from_rgb(240,120,96),title);
+    draw.add_text([x+24.0,y+16.0],ImColor32::from_rgb(240,120,96),crate::i18n::t(title));
     for (i,line) in lines.iter().enumerate() {
-        draw.add_text([x+24.0,y+16.0+line_h*(i as f32+1.6)],ImColor32::from_rgb(236,226,210),line);
+        draw.add_text([x+24.0,y+16.0+line_h*(i as f32+1.6)],ImColor32::from_rgb(236,226,210),crate::i18n::t(line));
     }
 }
 
@@ -399,8 +401,8 @@ impl ImguiRenderLoop for TowerPreview {
         if self.visible&&!run_screen&&let Some(combat)=view.as_ref().filter(|v|v.run.as_ref().is_some_and(|r|matches!(r.phase,Phase::Combat{..}))) {
             let draw=ui.get_foreground_draw_list();
             let line=|text:&str,y:f32,color:hudhook::imgui::ImColor32| {
-                let x=(ui.io().display_size[0]-ui.calc_text_size(text)[0])*0.5;
-                draw.add_text([x+1.5,y+1.5],hudhook::imgui::ImColor32::from_rgba(0,0,0,200),text);draw.add_text([x,y],color,text);
+                let x=(ui.io().display_size[0]-ui.calc_text_size(crate::i18n::t(text))[0])*0.5;
+                draw.add_text([x+1.5,y+1.5],hudhook::imgui::ImColor32::from_rgba(0,0,0,200),crate::i18n::t(text));draw.add_text([x,y],color,crate::i18n::t(text));
             };
             let mut y=30.0;
             // Boss 词条：每个词条用自己的颜色与动态效果（与 Boss 身上的光效同色）

@@ -28,6 +28,11 @@ pub fn active(run:Option<&erdtree_tower::Run>)->bool {
         if run.nodes.get(id).is_some_and(|n|n.kind==erdtree_tower::NodeKind::Event))
         &&run.regional_event.mausoleum.as_ref().is_some_and(|copy|copy.accepted))
 }
+pub fn recovery_target(run:Option<&erdtree_tower::Run>,entrance:Option<super::party_death::Position>,flow:Option<(bool,bool)>,survivor:bool)->Option<super::party_death::Position> {
+    let target=entrance?;
+    (active(run)&&flow==Some((true,true))&&survivor&&target.block==0x0d000000
+        &&target.xyz.iter().all(|v|v.is_finite())).then_some(target)
+}
 pub fn sync_visibility(run:Option<&erdtree_tower::Run>) {
     let wanted=active(run);
     if super::native_talk::flag(45011859).is_ok_and(|current|current!=wanted)
@@ -76,6 +81,46 @@ pub fn request_copy(data:&PlayerGameData,receipt:&erdtree_tower::mausoleum::Rece
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn visit()->erdtree_tower::Run {
+        let mut run=erdtree_tower::Run::new(42,erdtree_tower::Class::Hero);
+        let id=run.nodes.iter().position(|n|n.kind==erdtree_tower::NodeKind::Event).unwrap();
+        run.phase=erdtree_tower::Phase::Node{id};run.regional_event.mausoleum=Some(erdtree_tower::mausoleum::CopyState::accepted());run
+    }
+    #[test]
+    fn stomp_recovery_waits_for_open_door_and_a_surviving_teammate() {
+        let run=visit();let entrance=super::super::party_death::Position{block:0x0d000000,xyz:[5.86,1.50,4.43]};
+        for flow in [None,Some((false,false)),Some((true,false)),Some((false,true))] {
+            assert_eq!(recovery_target(Some(&run),Some(entrance),flow,true),None);
+        }
+        assert_eq!(recovery_target(Some(&run),Some(entrance),Some((true,true)),false),None,"a party wipe must not be revived");
+        assert_eq!(recovery_target(Some(&run),Some(entrance),Some((true,true)),true),Some(entrance));
+    }
+    #[test]
+    fn stale_flags_and_unknown_entrances_never_trigger_mausoleum_recovery() {
+        let mut run=visit();let p=super::super::party_death::Position{block:0x0d000000,xyz:[5.86,1.50,4.43]};
+        assert_eq!(recovery_target(Some(&run),None,Some((true,true)),true),None);
+        for bad in [super::super::party_death::Position{block:0x2d010000,..p},super::super::party_death::Position{xyz:[f32::NAN,1.0,0.0],..p}] {
+            assert_eq!(recovery_target(Some(&run),Some(bad),Some((true,true)),true),None);
+        }
+        assert_eq!(recovery_target(None,Some(p),Some((true,true)),true),None);
+        for phase in [erdtree_tower::Phase::Map,erdtree_tower::Phase::Dead,erdtree_tower::Phase::Won] {
+            run.phase=phase;
+            assert_eq!(recovery_target(Some(&run),Some(p),Some((true,true)),true),None);
+        }
+    }
+    #[test]
+    fn crushed_player_recovers_at_entrance_without_regranting_copy_rewards() {
+        use super::super::party_death::{Action,Death,Position};
+        let run=visit();let before=run.clone();let entry=Position{block:0x0d000000,xyz:[5.86,1.50,4.43]};
+        let crushed=Position{xyz:[0.0,0.0,30.0],..entry};let mut death=Death::default();
+        assert_eq!(death.observe(Some(7),Some((crushed,true)),false,false),Action::Waiting);
+        let target=recovery_target(Some(&run),Some(entry),Some((true,true)),true).unwrap();
+        assert_eq!(death.observe(Some(7),Some((crushed,true)),true,false),Action::RequestRevival(crushed));
+        death.redirect(target);
+        assert_eq!(death.observe_confirmed(Some(7),Some((target,false)),true,false,false),Action::Waiting);
+        assert_eq!(death.observe_confirmed(Some(7),Some((target,false)),true,false,true),Action::FinishRevival);
+        assert_eq!(run,before);
+    }
     #[test]
     fn structure_is_visible_only_during_an_accepted_mausoleum_visit() {
         use erdtree_tower::{Run,Class,Phase,NodeKind};

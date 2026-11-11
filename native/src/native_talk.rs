@@ -110,7 +110,9 @@ impl CampInteraction {
 unsafe impl Send for NativeTalk {}
 impl NativeTalk {
     fn log_shop_tear(&mut self,stage:&str) {
-        if !super::debug_menu::enabled(){return;}
+        let debug=super::debug_menu::enabled();
+        if !debug&&!super::seamless::active(){return;}
+        super::native_shop::log_stock_sources(stage);
         let owns=self.query(47,&[3,erdtree_tower::elite::TEAR as i32,2,0,0]);
         super::log(format!("SHOP_TEAR {stage} native_item_query={owns:?} (raw result; not purchase eligibility)"));
         if let Ok(player)=unsafe {eldenring::cs::PlayerIns::local_player()} {

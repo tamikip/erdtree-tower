@@ -21,8 +21,8 @@ pub fn card(draw:&DrawListMut<'_>,min:[f32;2],max:[f32;2],focus:bool,hover:bool,
 }
 /// 文字在 min..max 里居中（scale 按 20 像素字号算）
 pub fn centered(ui:&Ui,label:&str,min:[f32;2],max:[f32;2],color:[f32;4],scale:f32,s:f32) {
-    ui.set_window_font_scale(scale*s);let size=ui.calc_text_size(label);
-    ui.set_cursor_screen_pos([(min[0]+max[0]-size[0])*0.5,(min[1]+max[1]-size[1])*0.5]);ui.text_colored(color,label);
+    ui.set_window_font_scale(scale*s);let size=ui.calc_text_size(crate::i18n::t(label));
+    ui.set_cursor_screen_pos([(min[0]+max[0]-size[0])*0.5,(min[1]+max[1]-size[1])*0.5]);ui.text_colored(color,crate::i18n::t(label));
 }
 #[derive(Clone,Copy,PartialEq,Eq)]
 pub enum Tone {Normal,Primary,Disabled}
@@ -55,12 +55,12 @@ pub fn button_pad(ui:&Ui,id:&str,label:&str,input:Option<crate::pad::Input>,min:
 }
 /// 右上角的金色角标（如“当前外观”）：right_top 为卡片右上角
 pub fn ribbon(ui:&Ui,label:&str,right_top:[f32;2],s:f32) {
-    ui.set_window_font_scale(0.78*s);let size=ui.calc_text_size(label);
+    ui.set_window_font_scale(0.78*s);let size=ui.calc_text_size(crate::i18n::t(label));
     let (w,h)=(size[0]+16.0*s,size[1]+6.0*s);let min=[right_top[0]-w,right_top[1]];
     let draw=ui.get_window_draw_list();
     draw.add_polyline(vec![[min[0]-8.0*s,min[1]],[right_top[0],min[1]],[right_top[0],min[1]+h],[min[0],min[1]+h]],gold(0.95)).filled(true).build();
     drop(draw);
-    ui.set_cursor_screen_pos([min[0]+8.0*s-4.0*s,min[1]+3.0*s]);ui.text_colored([0.12,0.09,0.05,1.0],label);
+    ui.set_cursor_screen_pos([min[0]+8.0*s-4.0*s,min[1]+3.0*s]);ui.text_colored([0.12,0.09,0.05,1.0],crate::i18n::t(label));
 }
 /// 搜索框：暗色内凹的框、金色细边、左边放大镜、右边写结果数；返回（内容是否改变, 是否正在输入）
 pub fn search(ui:&Ui,id:&str,value:&mut String,min:[f32;2],max:[f32;2],hint:&str,count:&str,s:f32)->(bool,bool) {
@@ -75,7 +75,7 @@ pub fn search(ui:&Ui,id:&str,value:&mut String,min:[f32;2],max:[f32;2],hint:&str
         let _colors=[ui.push_style_color(StyleColor::FrameBg,[0.0,0.0,0.0,0.0]),ui.push_style_color(StyleColor::FrameBgHovered,[0.0,0.0,0.0,0.0]),
             ui.push_style_color(StyleColor::FrameBgActive,[0.0,0.0,0.0,0.0]),ui.push_style_color(StyleColor::Text,WHITE),ui.push_style_color(StyleColor::TextSelectedBg,[0.6,0.48,0.25,0.6])];
         let _border=ui.push_style_var(StyleVar::FrameBorderSize(0.0));
-        ui.input_text(id,value).hint(hint).build()
+        ui.input_text(crate::i18n::t(id),value).hint(hint).build()
     };
     let typing=ui.is_item_active();let hover=ui.is_item_hovered();
     let draw=ui.get_window_draw_list();
@@ -84,8 +84,8 @@ pub fn search(ui:&Ui,id:&str,value:&mut String,min:[f32;2],max:[f32;2],hint:&str
     draw.add_circle([cx,cy],r,lens).thickness(1.6*s).num_segments(20).build();
     draw.add_line([cx+r*0.7,cy+r*0.7],[cx+r*1.6,cy+r*1.6],lens).thickness(2.0*s).build();
     drop(draw);
-    ui.set_window_font_scale(0.85*s);let size=ui.calc_text_size(count);
-    ui.set_cursor_screen_pos([max[0]-16.0*s-size[0],(min[1]+max[1]-size[1])*0.5]);ui.text_colored(MUTED,count);
+    ui.set_window_font_scale(0.85*s);let size=ui.calc_text_size(crate::i18n::t(count));
+    ui.set_cursor_screen_pos([max[0]-16.0*s-size[0],(min[1]+max[1]-size[1])*0.5]);ui.text_colored(MUTED,crate::i18n::t(count));
     (changed,typing)
 }
 /// 页码圆点：当前页实心金色；页数太多时按比例只画最多 15 个

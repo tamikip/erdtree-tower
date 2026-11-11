@@ -61,7 +61,7 @@ impl Run {
         self.debug_begin()?;
         for step in 2..=act {seed=crate::mix(seed^u64::from(step));}
         if act<self.act {self.larval_gift=Default::default();}
-        self.act=act;self.seed=seed;self.schema=7;self.nodes=crate::route_graph(seed);
+        self.act=act;self.seed=seed;self.schema=7;self.nodes=crate::law_graph(seed,self.schema,self.law);
         self.visited.clear();self.reached_layer=0;self.phase=Phase::Map;
         self.hp=self.max_hp;self.flasks=self.flask_limit;
         self.regional_event=Default::default();self.shop_purchased=0;self.shop_stock=None;self.checkpoint=None;

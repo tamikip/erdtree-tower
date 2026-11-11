@@ -19,6 +19,9 @@ fn choice_allowed(npc:usize,choice:i32,party_ready:bool)->bool {
     party_ready||npc!=0||!matches!(choice,1|2|3)
 }
 fn follows_host(remote:bool,paused:bool,settled:bool)->bool {remote&&!paused&&!settled}
+fn return_before_reset(active:bool,reset:bool,settled:bool,block:i32,grounded:bool)->bool {
+    reset&&settled&&block>=0&&block!=BLOCK&&(active||!grounded)
+}
 #[derive(Default)]
 enum WarpGate {
     #[default]
@@ -63,6 +66,21 @@ pub fn path(owner:(u32,i32), suffix:&str)->PathBuf {
 mod tests {
     use super::*;
     fn sec(n:u64)->Duration {Duration::from_secs(n)}
+    #[test]
+    fn settled_falling_player_returns_before_reset_without_another_void_respawn() {
+        let bridge=0x3c343900;
+        assert!(return_before_reset(false,true,true,bridge,false));
+        assert!(!return_before_reset(false,true,false,bridge,false));
+        assert!(!return_before_reset(false,true,true,BLOCK,false));
+        assert!(!return_before_reset(false,true,true,-1,false));
+        assert!(!return_before_reset(false,true,true,bridge,true));
+        assert!(return_before_reset(true,true,true,bridge,true));
+        let mut gate=WarpGate::default();
+        assert_eq!(gate.poll(sec(0),false,false),WarpStep::Request);
+        for t in 1..5 {assert_eq!(gate.poll(sec(t),false,false),WarpStep::Wait);}
+        assert_eq!(gate.poll(sec(5),true,true),WarpStep::Wait);
+        assert_eq!(gate.poll(sec(7),true,true),WarpStep::Ready);
+    }
     #[test]
     fn settled_guest_returns_independently_instead_of_waiting_forever() {
         assert!(follows_host(true,false,false));
@@ -151,6 +169,7 @@ pub struct Hub {
     fixed_seed:Option<u64>,
     law:erdtree_tower::law::Law,
     settled:bool,
+    recovery_return:bool,
 }
 impl Hub {
     pub fn dialog_active(&self)->bool {self.active && self.room.as_ref().is_some_and(|r|r.dialog_active())}
@@ -171,9 +190,9 @@ impl Hub {
         let paused=!reset&&path(owner,"paused").exists();
         if paused {if let Some(run)=&resume {super::run_screen::summary_with((erdtree_tower::journal::Record::new(run,super::run_log::read(&super::run_log::path(owner)),vec![],0),None));}}
         let settled=resume.as_ref().is_some_and(|r|matches!(r.phase,Phase::Dead|Phase::Won));
-        Ok(Self {active:true,paused,owner,room:None,clock:Instant::now(),warp:WarpGate::default(),reset,start:false,chosen,resume,seed:None,fixed_seed:None,law:Default::default(),settled})
+        Ok(Self {active:true,paused,owner,room:None,clock:Instant::now(),warp:WarpGate::default(),reset,start:false,chosen,resume,seed:None,fixed_seed:None,law:Default::default(),settled,recovery_return:false})
     }
-    pub fn finish(&mut self) { self.active=true;self.paused=false;self.settled=true;self.reset=true;self.start=false;self.resume=None;self.seed=None;self.law=Default::default();self.warp=WarpGate::default(); }
+    pub fn finish(&mut self) { self.active=true;self.paused=false;self.settled=true;self.reset=true;self.start=false;self.resume=None;self.seed=None;self.law=Default::default();self.warp=WarpGate::default();self.recovery_return=false; }
     /// 选职业界面默认选中上次的职业
     fn current_class(&self)->Class {super::class_from_archetype(self.chosen).unwrap_or(Class::PLAYABLE[0])}
     /// 选定职业后开局：重置为该职业的出身再开始旅程
@@ -199,6 +218,20 @@ impl Hub {
         if guest&&(i32::from(player.current_block_id)!=BLOCK||game.warp_requested){return Ok(None);}
         if player.chr_ins.modules.data.hp<=0 || player.chr_ins.chr_flags1c5.death_flag() {return Ok(None);}
         if (self.reset || matches!(self.warp,WarpGate::Idle)) && (game.warp_requested || i32::from(player.current_block_id)==-1) {return Ok(None);}
+        let grounded=player.chr_ins.modules.physics.standing_on_solid_ground&&!player.chr_ins.modules.physics.is_falling;
+        if return_before_reset(self.recovery_return,self.reset,self.settled,i32::from(player.current_block_id),grounded) {
+            self.recovery_return=true;
+            match self.warp.poll(self.clock.elapsed(),false,false) {
+                WarpStep::Request=>{
+                    super::bloodstain::clear()?;
+                    super::log("HUB_VOID_RECOVERY return requested before class reset; waiting for safe hub ground");
+                    game.move_map_target=BlockId::from(BLOCK);game.initial_area_entity_id=11102691;game.warp_requested=true;
+                },
+                WarpStep::Failed=>return Err("返回大赐福超时，已停止重复传送。请退出游戏后重新启动，并保留日志。".into()),
+                _=>{},
+            }
+            return Ok(None);
+        }
         if self.reset && (!player.chr_ins.modules.physics.standing_on_solid_ground || player.chr_ins.chr_flags1c5.is_invincible()) {return Ok(None);}
         if self.reset {
             if path(self.owner,"paused").exists(){std::fs::remove_file(path(self.owner,"paused")).map_err(|e|e.to_string())?;}self.paused=false;
@@ -212,8 +245,13 @@ impl Hub {
             std::fs::remove_file(path(self.owner,"reset")).map_err(|e|e.to_string())?;
             self.resume=None;self.reset=false;
             if let Some(room)=self.room.take(){room.retire(world);}
-            self.warp=WarpGate::default();
-            super::log("Hub class reset complete before the single return warp");
+            if self.recovery_return {
+                self.recovery_return=false;
+                super::log("HUB_VOID_RECOVERY class reset after safe hub arrival");
+            } else {
+                self.warp=WarpGate::default();
+                super::log("Hub class reset complete before the single return warp");
+            }
 
         }
         let player=world.main_player.as_ref().unwrap();

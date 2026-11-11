@@ -147,9 +147,7 @@ static class BossAssets {
     }
     public static void Verify(string output,Func<string,PARAM> read) {
         var parts=Parts(output);var barNames=BarNames(output);var npcs=read("NpcParam");var ai=read("NpcThinkParam");
-        // 原有 105 组 140 个部件；之后追加 13 个单部件 Boss（追忆与 DLC），再追加 5 个 DLC Boss（序号 153–157，仅单人）、碎星拉塔恩（158），
-        // 以及只当第一幕精英的黑夜骑兵、混种战士、提比亚的唤声船（159–161，仅单人）
-        if(parts.Select(p=>p.Encounter).Distinct().Count()!=127||parts.Length!=162||parts.Select(p=>p.Index).Distinct().Count()!=parts.Length)throw new Exception("Boss table coverage mismatch");
+        if(parts.Select(p=>p.Encounter).Distinct().Count()!=129||parts.Length!=164||parts.Select(p=>p.Index).Distinct().Count()!=parts.Length)throw new Exception("Boss table coverage mismatch");
         var names=BND4.Read(Path.Combine(output,"msg/zhocn/item_dlc02.msgbnd.dcx")).Files.Where(f=>f.Name.Contains("NpcName")).SelectMany(f=>FMG.Read(f.Bytes).Entries).ToList();
         foreach(var p in parts) {
             if(!ai.Rows.Any(r=>r.ID==p.Think)||!names.Any(e=>e.ID==9600000+p.Index&&e.Text==barNames[e.ID]))throw new Exception("Boss AI/name missing");

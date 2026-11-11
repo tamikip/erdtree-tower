@@ -93,7 +93,7 @@ pub enum Order {
     EventStart(crate::party_events::Job),
     EventHunt{epoch:u64,wave:u8},
     EventAborted{epoch:u64,wave:u8},
-    EventDone{epoch:u64,wave:u8,killed:u8},
+    EventDone{epoch:u64,wave:u8,killed:u8,owners:[u64;3]},
     Spawn{epoch:u64},Engage{epoch:u64},Victory{epoch:u64},Rewards{epoch:u64},Defeat{epoch:u64},Stop(String),
     /// 全队的称号：(Steam ID, 称号编号)；不分轮次，随时覆盖
     Titles(Vec<(u64,u8)>),
@@ -206,11 +206,15 @@ impl Gate {
         Ok(events.start().map(Order::EventStart))
     }
     pub fn event_done(&mut self,wave:u8,killed:u8)->RuleResult<Order> {
+        self.event_done_owned(wave,killed,[0;3])
+    }
+    pub fn event_done_owned(&mut self,wave:u8,killed:u8,owners:[u64;3])->RuleResult<Order> {
         let job=self.events.as_ref().and_then(|q|q.active()).ok_or("没有活动事件波次")?;
         if self.stage!=Stage::Service||wave!=job.wave||killed>7||!self.all(|r|r.event_bound==Some(wave))
-            ||(matches!(job.kind,crate::party_events::Kind::Guards(_))&&killed!=0){return Err("事件波次尚未同步或结算无效".into());}
+            ||(matches!(job.kind,crate::party_events::Kind::Guards(_))&&(killed!=0||owners!=[0;3]))
+            ||owners.iter().enumerate().any(|(slot,owner)|*owner!=0&&(killed&(1<<slot)==0||!self.peers.iter().any(|(id,_)|id==owner))){return Err("事件波次尚未同步或结算无效".into());}
         self.events.as_mut().unwrap().finish(self.epoch,wave)?;
-        Ok(Order::EventDone{epoch:self.epoch,wave,killed})
+        Ok(Order::EventDone{epoch:self.epoch,wave,killed,owners})
     }
     pub fn event_bound(&self,wave:u8)->bool {
         self.stage==Stage::Service&&self.events.as_ref().and_then(|q|q.active()).is_some_and(|j|j.wave==wave)
@@ -288,11 +292,9 @@ impl Gate {
     }
     pub fn engage(&mut self)->Option<Order> {self.engage_within(None)}
     /// 开战屏障：全员确认敌人复制后开战（敌人此前在各自的游戏里不动、无敌）。
-    /// host_ready_ms：房主本机的敌人已经就绪多久；超过 ENGAGE_GRACE_MS 还有队员没就绪也先开战，免得一个加载慢的队员让全队的怪愣在原地，
-    /// 慢的队员加载好后自己接上（胜利仍要等全员确认）
-    pub fn engage_within(&mut self,host_ready_ms:Option<u64>)->Option<Order> {
+    pub fn engage_within(&mut self,_host_ready_ms:Option<u64>)->Option<Order> {
         if self.stage!=Stage::Combat {return None;}
-        let ready=self.all(|r|r.bound)||host_ready_ms.is_some_and(|ms|ms>=ENGAGE_GRACE_MS)&&self.all(|_|true);
+        let ready=self.all(|r|r.bound);
         if ready {self.stage=Stage::Fighting;Some(Order::Engage{epoch:self.epoch})}else{None}
     }
     /// 还没确认敌人复制的队员
@@ -301,8 +303,6 @@ impl Gate {
     }
     pub fn stop(&mut self){self.stage=Stage::Stopped;}
 }
-/// 房主本机的敌人就绪后，最多再等队员这么久（毫秒）就开战
-pub const ENGAGE_GRACE_MS:u64=1500;
 
 #[cfg(test)]
 mod tests {
@@ -586,16 +586,18 @@ mod tests {
         assert!(gate.victory().is_ok(),"victory no longer waits for the player who left");
     }
     #[test]
-    fn a_slow_member_delays_the_fight_by_at_most_the_grace_window() {
+    fn slow_members_must_bind_before_any_fight_starts() {
         let run=Run::new(42,crate::Class::Samurai);let mut gate=Gate::new(vec![1,2]);gate.stage=Stage::Combat;
         gate.report(1,Report::new(&run,0,true,true,true)).unwrap();
         gate.report(2,Report::new(&run,0,true,false,true)).unwrap();
         assert_eq!(gate.unbound(),vec![2]);
         assert!(gate.engage_within(None).is_none(),"host enemies not ready yet");
-        assert!(gate.engage_within(Some(ENGAGE_GRACE_MS-1)).is_none());
-        assert!(matches!(gate.engage_within(Some(ENGAGE_GRACE_MS)),Some(Order::Engage{epoch:0})));
-        assert!(gate.victory().is_err(),"victory still needs every replica");
-        gate.report(2,Report::new(&run,0,true,true,true)).unwrap();assert!(gate.victory().is_ok());
+        for elapsed in [1499,1500,10_000,21_500,90_000] {
+            assert!(gate.engage_within(Some(elapsed)).is_none(),"unbound guest must not be bypassed after {elapsed} ms");
+        }
+        gate.report(2,Report::new(&run,0,true,true,true)).unwrap();
+        assert!(matches!(gate.engage_within(Some(21_501)),Some(Order::Engage{epoch:0})));
+        assert!(gate.victory().is_ok());
         // 队员掉线（没有汇报）时不靠宽限开战
         let mut gate=Gate::new(vec![1,2]);gate.stage=Stage::Combat;
         gate.report(1,Report::new(&run,0,true,true,true)).unwrap();
@@ -650,6 +652,24 @@ mod tests {
         for id in [1,2] {report.event_applied=Some(second.wave);gate.report(id,report.clone()).unwrap();}
         assert!(gate.event_start().unwrap().is_none());
         assert!(gate.resolve_votes(&run,0).unwrap().is_some());
+    }
+    #[test]
+    fn scarab_killer_can_be_nonpayer_and_invalid_owners_do_not_settle() {
+        let run=Run::new(42,crate::Class::Samurai);
+        let mut gate=Gate::new(vec![1,2]);gate.stage=Stage::Service;gate.begin_events().unwrap();
+        let mut payer=Report::new(&run,0,true,false,true);
+        payer.event_request=Some(crate::party_events::Kind::Scarabs(1));
+        let mut guest=Report::new(&run,0,true,false,true);
+        gate.report(1,payer.clone()).unwrap();gate.report(2,guest.clone()).unwrap();
+        let Some(Order::EventStart(job))=gate.event_start().unwrap() else{panic!()};assert_eq!(job.player,1);
+        payer.event_bound=Some(job.wave);guest.event_bound=Some(job.wave);
+        gate.report(1,payer).unwrap();gate.report(2,guest).unwrap();
+        assert!(gate.event_done_owned(job.wave,5,[9,0,1]).is_err());
+        assert!(gate.event_done_owned(job.wave,5,[2,2,1]).is_err());
+        let order=gate.event_done_owned(job.wave,5,[2,0,1]).unwrap();
+        let restored:Order=serde_json::from_str(&serde_json::to_string(&order).unwrap()).unwrap();
+        assert!(matches!(restored,Order::EventDone{killed:5,owners:[2,0,1],..}));
+        assert!(gate.event_done_owned(job.wave,5,[2,0,1]).is_err());
     }
     #[test]
     fn host_can_reseed_only_before_anyone_sets_out() {

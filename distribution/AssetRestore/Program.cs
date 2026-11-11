@@ -40,8 +40,10 @@ namespace Tower.Assets
             {
                 AssetManifest manifest;
                 using (var stream = File.OpenRead(manifestPath)) manifest = (AssetManifest)new DataContractJsonSerializer(typeof(AssetManifest)).ReadObject(stream);
-                if (manifest.Version != 1 || manifest.Files == null || manifest.Files.Length != Targets.Length ||
-                    !new HashSet<string>(manifest.Files.Select(f => f.Path)).SetEquals(Targets)) throw new InvalidDataException("Invalid asset manifest");
+                var paths=manifest.Files==null?new HashSet<string>():new HashSet<string>(manifest.Files.Select(f=>f.Path));
+                var allowed=Targets.Concat(new[]{"locales/en-US/menu/hi/01_common.tpf.dcx"});
+                if (manifest.Version != 1 || manifest.Files == null || paths.Count!=manifest.Files.Length ||
+                    !paths.IsSupersetOf(Targets)||!paths.IsSubsetOf(allowed)) throw new InvalidDataException("Invalid asset manifest");
                 var pending = new List<AssetRecipe>();
                 foreach (var file in manifest.Files)
                 {

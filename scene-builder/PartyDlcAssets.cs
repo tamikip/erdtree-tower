@@ -53,9 +53,17 @@ static class PartyDlcAssets {
         var newParts=new Dictionary<int,List<MSBE.Part.Enemy>>();var newModels=new Dictionary<int,List<MSBE.Model.Enemy>>();var newEvents=new Dictionary<int,List<long>>();var initCounts=new Dictionary<int,int>();
         for(int act=1;act<=3;act++){newParts[act]=new();newModels[act]=new();newEvents[act]=new();initCounts[act]=0;}
         var manifest=File.Exists(Path.Combine(input,"party-dlc-slots.tsv"))?File.ReadAllLines(Path.Combine(input,"party-dlc-slots.tsv")).ToList():new List<string>();
+        var newRegions=new Dictionary<int,List<string>>{{1,new()},{2,new()},{3,new()}};
         var extra=File.Exists(Path.Combine(input,"party-extra-slots.tsv"))?File.ReadAllLines(Path.Combine(input,"party-extra-slots.tsv")).ToList():new List<string>();
         void Add(Enemy enemy,uint id,int act,bool guard,MSBE.Part.Enemy template) {
             var map=maps[act];var events=scripts[act];var init=events.Events.Single(e=>e.ID==0);
+            if(!guard&&id/10000!=4800+act)for(uint slot=0;slot<12;slot++) {
+                var regionId=PartyEnemyEvents.Region(id,slot);
+                if(map.Regions.GetEntries().Any(r=>r.EntityID==regionId))continue;
+                var region=map.Regions.GetEntries().Single(r=>r.EntityID==PartyEnemyEvents.Region((uint)(48000000+act*10000),slot)).DeepCopy();
+                region.EntityID=regionId;region.Name="tower_extra_position_"+regionId;region.ActivationPartName=null;
+                map.Regions.Add(region);newRegions[act].Add(region.Name);
+            }
             if(map.Parts.GetEntries().Any(p=>p.EntityID==id))throw new Exception($"Entity already exists: {id}");
             var part=(MSBE.Part.Enemy)template.DeepCopy();part.Name=guard?$"tower_guard_{id}":$"tower_party_{act}_{id%10000}";
             part.InstanceID=guard?12000+(enemy.Act-1)*300+(int)(id%10000):6000+(int)(id%10000);
@@ -106,7 +114,7 @@ static class PartyDlcAssets {
                 if(!extra.Contains(line))extra.Add(line);
             }
             foreach(var (enemy,copies) in added.Where(p=>p.enemy.Act==act)) {
-                var placed=existing.Where(p=>p.NPCParamID==enemy.Npc).OrderBy(p=>p.EntityID).ToArray();
+                var placed=maps[act].Parts.Enemies.Where(p=>ArenaPartyAssets.Combat(p.EntityID)&&p.NPCParamID==enemy.Npc).OrderBy(p=>p.EntityID).ToArray();
                 if(placed.Length>0) {
                     if(placed.Length!=copies)throw new Exception("Incomplete appended slots");
                     for(int copy=0;copy<copies;copy++) {
@@ -116,7 +124,11 @@ static class PartyDlcAssets {
                     continue;
                 }
                 for(int copy=0;copy<copies;copy++) {
-                    uint id=first+(uint)ordinal++;if(ordinal>300)throw new Exception("Party flag capacity exceeded");
+                    uint id;
+                    if(FirstActEliteAssets.Npc(enemy.Npc)) {
+                        id=48030294u+(uint)(enemy.Npc-950000322);
+                        if(maps.Values.Any(m=>m.Parts.Enemies.Any(p=>p.EntityID==id)))throw new Exception("Reserved first-act elite slot already occupied");
+                    } else {id=first+(uint)ordinal++;if(ordinal>300)throw new Exception("Party flag capacity exceeded");}
                     Add(enemy,id,act,false,templates[enemy.Model]);Add(enemy,id+3000000,2,true,templates[enemy.Model]);
                     extra.Add($"{act}|{enemy.Npc}|{enemy.Model}|{enemy.Think}|{copy}|{id}|{id+3000000}");
                 }
@@ -136,6 +148,7 @@ static class PartyDlcAssets {
             }
             var newIds=newParts[act].Select(p=>p.EntityID).ToHashSet();reread.Parts.Enemies.RemoveAll(p=>newIds.Contains(p.EntityID));
             var modelNames=newModels[act].Select(m=>m.Name).ToHashSet();reread.Models.Enemies.RemoveAll(m=>modelNames.Contains(m.Name));
+            if(reread.Regions.InvasionPoints.RemoveAll(r=>newRegions[act].Contains(r.Name))!=newRegions[act].Count)throw new Exception("Unexpected formation region type");
             if(!reread.Write().SequenceEqual(originals[act]))throw new Exception("Unrelated map data changed");
             check.Events.RemoveAll(e=>newEvents[act].Contains(e.ID));check.Events.Single(e=>e.ID==0).Instructions.RemoveRange(0,initCounts[act]);
             foreach(var ev in check.Events)if(!Same(ev,oldEvents[act][ev.ID]))throw new Exception("Unrelated event changed");

@@ -60,7 +60,7 @@ fn refresh_special_prices(stock:&mut [Stock],run:&Run) {
         let per_act=run.nodes.iter().map(|n|n.layer+1).max().unwrap();
         run.act=3;run.reached_layer=per_act;assert_eq!(run.shop_position_percent(),erdtree_tower::SHOP_PRICE_END);
         assert_eq!((final_price(&run,5000),final_price(&run,20),final_price(&run,2500)),(7500,30,3750));
-        run.law=run.law.toggle(19).toggle(20).toggle(21);assert_eq!(final_price(&run,5000),8650,"奸商 I：+15% 后再乘 1.5（5750 × 1.5 = 8625，取整到 50）");
+        run.law=run.law.toggle(21);assert_eq!(final_price(&run,5000),9000,"奸商 I：+20% 后再乘 1.5");
         run.law=Default::default();
         run.act=2;run.reached_layer=1;let mid=final_price(&run,3000);assert!(mid>3000&&mid<4500,"{mid}");
         let mut last=0;
@@ -129,7 +129,7 @@ fn saved_special_prices_update_without_restocking_or_double_discounting() {
     let mut run=Run::new(42,erdtree_tower::Class::Samurai);run.law=run.law.toggle(19).toggle(20).toggle(21).toggle(22);
     let mut saved=vec![Stock{kind:3,id:8000,price:4000,quantity:0},Stock{kind:3,id:10020,price:5000,quantity:1},Stock{kind:3,id:900,price:123,quantity:3}];
     refresh_special_prices(&mut saved,&run);
-    assert_eq!((saved[0].price,saved[0].quantity),(3250,0));assert_eq!((saved[1].price,saved[1].quantity),(6500,1));
+    assert_eq!((saved[0].price,saved[0].quantity),(3500,0));assert_eq!((saved[1].price,saved[1].quantity),(7000,1));
     let once=saved.clone();refresh_special_prices(&mut saved,&run);assert_eq!(saved,once);assert_eq!(saved[2].price,123);
 }
 const STOCK_FLAGS: u32 = 45020800;
@@ -510,6 +510,15 @@ pub fn prepare(run: &Run, node: usize, refresh: bool, data:&mut PlayerGameData) 
 }
 pub fn reset_arrived_stock(count:usize)->Result<(),String> {
     if count>MAX_STOCK as usize{return Err("商店库存数量超限".into());}
+    let update=checked_stock_update()?;
+    let pending=sold_counts(count)?;
+    for (slot,sold) in pending.iter().copied().enumerate() {
+        if sold==0 {continue;}
+        let row=CounterRow::new(stock_flag(slot as u32));
+        let context=StockUpdateContext{pad:[0;0x60],row:&row};
+        unsafe {update(&context,-i32::from(sold));}
+    }
+    if sold_counts(count)?.iter().any(|sold|*sold!=0){return Err("原生商店库存重置未完成".into());}
     let flags=unsafe {CSEventFlagMan::instance_mut()}.map_err(|_|"商店库存标记未加载")?;
     for i in 0..count as u32 {
         if flags.virtual_memory_flag.flag_block_descriptors.find(&(stock_flag(i)/1000)).is_none(){return Err("抵达后商店库存旗标尚未加载".into());}
@@ -517,15 +526,61 @@ pub fn reset_arrived_stock(count:usize)->Result<(),String> {
     let counters:Vec<_>=(0..count as u32).flat_map(|i|stock_flag(i)..stock_flag(i)+8).collect();
     let stale=counters.iter().filter(|&&flag|flags.virtual_memory_flag.get_flag(flag)).count();
     for flag in counters {flags.virtual_memory_flag.set_flag(flag,false);}
-    super::log(format!("SHOP_STOCK arrival reset slots={count} stale_bits={stale}"));Ok(())
+    let changed:Vec<_>=pending.iter().enumerate().filter(|(_,sold)|**sold!=0).collect();
+    super::log(format!("SHOP_STOCK arrival reset slots={count} stale_bits={stale} native_cleared={changed:?} verified=true"));Ok(())
 }
 /// 每个商品槽的售出计数（8 个旗标一组的位），诊断联机客机商品变空用
 pub fn sold_counts(count:usize)->Result<Vec<u8>,String> {
     let flags=unsafe {CSEventFlagMan::instance()}.map_err(|_|"商店库存标记未加载")?;
     (0..count.min(MAX_STOCK as usize) as u32).map(|i|{
-        if flags.virtual_memory_flag.flag_block_descriptors.find(&(stock_flag(i)/1000)).is_none(){return Err("商店库存旗标尚未加载".to_string());}
-        Ok((0..8).fold(0u8,|bits,b|bits|(u8::from(flags.virtual_memory_flag.get_flag(stock_flag(i)+b))<<b)))
+        if flags.virtual_memory_flag.flag_block_descriptors.find(&(stock_flag(i)/1000)).filter(|d|matches!(d.location_mode,1|2)).is_none(){return Err("商店库存旗标尚未加载".to_string());}
+        let row=CounterRow::new(stock_flag(i));
+        let remaining=native_stock_remaining(GOODS+i,(&row as *const CounterRow).cast())?;
+        Ok((-counter_reset_delta(remaining)?) as u8)
     }).collect()
+}
+fn expected_remaining(quantity:i16,sold:u8)->i32 {
+    if quantity<0 {-1}else{(i32::from(quantity)-i32::from(sold)).max(0)}
+}
+fn counter_reset_delta(remaining:i32)->Result<i32,String> {
+    if (0..=255).contains(&remaining){Ok(remaining-255)}else{Err(format!("invalid native stock counter: {remaining}"))}
+}
+#[test]
+fn native_counter_reset_clears_full_byte_even_after_stock_size_changes() {
+    for sold in 0..=255 {assert_eq!(counter_reset_delta(255-sold).unwrap(),-sold);}
+    assert!(counter_reset_delta(-1).is_err());
+    assert!(counter_reset_delta(256).is_err());
+}
+#[test]
+fn stock_diagnostics_preserve_unlimited_inventory() {
+    assert_eq!(expected_remaining(-1,0),-1);
+    assert_eq!(expected_remaining(-1,255),-1);
+    assert_eq!(expected_remaining(1,0),1);
+    assert_eq!(expected_remaining(1,1),0);
+    assert_eq!(expected_remaining(3,5),0);
+}
+pub fn log_stock_sources(stage:&str) {
+    let result=(||->Result<(),String>{
+        let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"parameters unavailable")?;
+        let flags=unsafe {CSEventFlagMan::instance()}.map_err(|_|"flags unavailable")?;
+        for slot in 0..MAX_STOCK {
+            let Some(row)=params.get::<ShopLineupParam>(GOODS+slot).filter(|r|r.equip_id()>=0) else{continue};
+            let flag=row.event_flag_for_stock();
+            let local=(0..8).try_fold(0u8,|bits,b|{
+                let bit=flag.checked_add(b)?;
+                flags.virtual_memory_flag.flag_block_descriptors.find(&(bit/1000))
+                    .filter(|d|matches!(d.location_mode,1|2))?;
+                Some(bits|(u8::from(flags.virtual_memory_flag.get_flag(bit))<<b))
+            });
+            let native=native_stock_remaining(GOODS+slot,row as *const _ as *const std::ffi::c_void);
+            let mismatch=local.zip(native.as_ref().ok().copied()).map(|(sold,remaining)|
+                remaining!=expected_remaining(row.sell_quantity(),sold));
+            super::log(format!("SHOP_STOCK {stage} source_check world_type={} slot={slot} kind={} item={} quantity={} stock_flag={flag} local_sold={local:?} native_remaining={native:?} mismatch={mismatch:?}",
+                flags.world_type,row.equip_type(),row.equip_id(),row.sell_quantity()));
+        }
+        Ok(())
+    })();
+    if let Err(error)=result {super::log(format!("SHOP_STOCK {stage} source_check unavailable: {error}"));}
 }
 pub fn log_sacred_tear_shop(stage:&str,data:&PlayerGameData) {
     use fromsoftware_shared::NonEmptyIteratorExt;
@@ -562,19 +617,39 @@ pub fn log_sacred_tear_shop(stage:&str,data:&PlayerGameData) {
 }
 #[repr(C)]
 struct ShopParamRef {kind:u8,pad:[u8;3],id:i32,row:*const std::ffi::c_void}
-fn native_tear_limits(id:u32,row:*const std::ffi::c_void,storage:bool)->Result<(i32,i32,Option<i32>),String> {
-    // Verified read-only stock and inventory-capacity routines in game 2.7.2.0.
+#[repr(C)]
+struct CounterRow {pad:[u8;12],flag:u32,pad10:[u8;4],quantity:i16,pad16:[u8;2]}
+impl CounterRow {
+    fn new(flag:u32)->Self {Self{pad:[0;12],flag,pad10:[0;4],quantity:255,pad16:[0;2]}}
+}
+#[repr(C)]
+struct StockUpdateContext {pad:[u8;0x60],row:*const CounterRow}
+type StockUpdate=unsafe extern "C" fn(*const StockUpdateContext,i32);
+fn checked_stock_update()->Result<StockUpdate,String> {
+    // Native stock-only adjustment; preserves Seamless's redirected counter read/write calls.
+    let address=super::items::checked_function(0x787610,&[0x40,0x56,0x57,0x48,0x83,0xec,0x48,0x4c,0x8b,0x41,0x60,0x8b,0xf2,0x48,0x8b,0xf9])?;
+    super::items::checked_function(0x787723,&[0x45,0x8d,0x0c,0x36,0x48,0x89,0x44,0x24,0x20,0x41,0xb8,0x08,0x00,0x00,0x00,0x48,0x8d,0x54,0x24,0x60,0x48,0x8b,0xcb])?;
+    Ok(unsafe {std::mem::transmute(address)})
+}
+fn native_stock_remaining(id:u32,row:*const std::ffi::c_void)->Result<i32,String> {
     let stock=super::items::checked_function(0x786c80,&[0x48,0x89,0x5c,0x24,0x20,0x55,0x48,0x83,0xec,0x30,0x48,0x8b,0xd9,0x48,0x8b,0x4a])?;
-    let bag=super::items::checked_function(0x7864b0,&[0x40,0x53,0x48,0x83,0xec,0x20,0x48,0x83,0x3d,0x82,0xc3,0x5e,0x03,0x00,0x48,0x8b])?;
-    let all=super::items::checked_function(0x7863a0,&[0x40,0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe,0xff,0xff,0xff,0x48])?;
     let reference=ShopParamRef{kind:0,pad:[0;3],id:id as i32,row};
-    let item=0x40000000|erdtree_tower::elite::TEAR;
     let mut remaining=-2;
     unsafe {
         let stock:unsafe extern "C" fn(*mut i32,*const ShopParamRef)->*mut i32=std::mem::transmute(stock);
+        if stock(&mut remaining,&reference)!=&mut remaining as *mut i32 {return Err("unexpected stock result pointer".into());}
+    }
+    Ok(remaining)
+}
+fn native_tear_limits(id:u32,row:*const std::ffi::c_void,storage:bool)->Result<(i32,i32,Option<i32>),String> {
+    // Verified read-only stock and inventory-capacity routines in game 2.7.2.0.
+    let remaining=native_stock_remaining(id,row)?;
+    let bag=super::items::checked_function(0x7864b0,&[0x40,0x53,0x48,0x83,0xec,0x20,0x48,0x83,0x3d,0x82,0xc3,0x5e,0x03,0x00,0x48,0x8b])?;
+    let all=super::items::checked_function(0x7863a0,&[0x40,0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe,0xff,0xff,0xff,0x48])?;
+    let item=0x40000000|erdtree_tower::elite::TEAR;
+    unsafe {
         let bag:unsafe extern "C" fn(*const u32)->i32=std::mem::transmute(bag);
         let all:unsafe extern "C" fn(*const u32)->i32=std::mem::transmute(all);
-        if stock(&mut remaining,&reference)!=&mut remaining as *mut i32 {return Err("unexpected stock result pointer".into());}
         Ok((remaining,bag(&item),storage.then(||all(&item))))
     }
 }
@@ -582,6 +657,9 @@ fn native_tear_limits(id:u32,row:*const std::ffi::c_void,storage:bool)->Result<(
 fn native_shop_probe_reference_matches_verified_stock_abi() {
     assert_eq!(std::mem::offset_of!(ShopParamRef,row),8);
     assert_eq!(std::mem::size_of::<ShopParamRef>(),16);
+    assert_eq!(std::mem::offset_of!(CounterRow,flag),0xc);
+    assert_eq!(std::mem::offset_of!(CounterRow,quantity),0x14);
+    assert_eq!(std::mem::offset_of!(StockUpdateContext,row),0x60);
 }
 pub fn refresh_weapon_levels(data:&PlayerGameData)->Result<(),String> {
     let params=unsafe {SoloParamRepository::instance_mut()}.map_err(|_|"商店参数未加载")?;

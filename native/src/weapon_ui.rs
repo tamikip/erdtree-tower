@@ -16,8 +16,8 @@ pub enum WeaponAction {Group(usize),Row(usize),Upgrade,Toggle}
 #[allow(clippy::too_many_arguments)]
 pub fn draw(ui:&Ui,data:&Legacy,group:usize,row:usize,notice:Option<&str>,icon:&mut dyn FnMut(u32)->Option<TextureId>,ready:bool,s:f32,ox:f32,oy:f32)->Option<WeaponAction> {
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
-    let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32| {ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos(p(x,y));ui.text_colored(color,value);};
-    let right_text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32| {ui.set_window_font_scale(scale*s);let w=ui.calc_text_size(value)[0];ui.set_cursor_screen_pos([ox+x*s-w,oy+y*s]);ui.text_colored(color,value);};
+    let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32| {ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos(p(x,y));ui.text_colored(color,crate::i18n::t(value));};
+    let right_text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32| {ui.set_window_font_scale(scale*s);let w=ui.calc_text_size(crate::i18n::t(value))[0];ui.set_cursor_screen_pos([ox+x*s-w,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));};
     let mut action=None;
     // ── 左：分类 ──
     panel(&ui.get_window_draw_list(),p(56.0,170.0),p(300.0,800.0),s);
@@ -83,7 +83,7 @@ pub fn draw(ui:&Ui,data:&Legacy,group:usize,row:usize,notice:Option<&str>,icon:&
     let now=format!("{:.1}×",weight_percent(level) as f32/100.0);
     if level<5 {
         let next=format!("{:.1}×",weight_percent(level+1) as f32/100.0);
-        ui.set_window_font_scale(2.0*s);let (a,b)=(ui.calc_text_size(&now)[0]/s,ui.calc_text_size(&next)[0]/s);
+        ui.set_window_font_scale(2.0*s);let (a,b)=(ui.calc_text_size(crate::i18n::t(&now))[0]/s,ui.calc_text_size(crate::i18n::t(&next))[0]/s);
         let total=a+56.0+b;let x0=(left+right)*0.5-total*0.5;
         text(x0,402.0,&now,WHITE,2.0);text(x0+a+14.0,410.0,"→",MUTED,1.4);text(x0+a+56.0,402.0,&next,GOLD,2.0);
     } else {style::centered(ui,&format!("{now}  ·  研习已满级"),p(left,402.0),p(right,446.0),GOLD,1.6,s);}

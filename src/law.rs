@@ -3,13 +3,13 @@
 pub struct Node {pub name:&'static str,pub branch:usize,pub parent:Option<usize>,pub points:u32,pub effect:&'static str,pub art:u8,pub col:u8,pub row:u8}
 pub const BRANCHES:[&str;4]=["敌人","我方","经济","规则"];
 const fn n(name:&'static str,branch:usize,parent:Option<usize>,points:u32,effect:&'static str,art:u8,col:u8,row:u8)->Node {Node{name,branch,parent,points,effect,art,col,row}}
-pub const NODES:[Node;34]=[
+pub const NODES:[Node;35]=[
     n("强敌 I",0,None,10,"敌人强度 +1 档：生命 +10%，攻击 +6%",0,1,0),
     n("强敌 II",0,Some(0),20,"再 +1 档：累计生命 +21%，攻击 +13%",0,2,0),
     n("强敌 III",0,Some(1),30,"再 +2 档：累计生命 +45%，攻击 +28%",0,3,0),
     n("词条蔓延 I",0,None,10,"Boss 词条点数预算 +2（受本幕上限约束）",1,1,1),
     n("词条蔓延 II",0,Some(3),20,"Boss 词条点数按最高的 6 点抽取",1,2,1),
-    n("精英词条",0,Some(4),20,"精英战的敌人也获得词条（按本幕 Boss 预算，额外卢恩为 Boss 的 1/3）",2,3,1),
+    n("精英词条",0,None,20,"精英战的敌人也获得词条（按本幕 Boss 预算，额外卢恩为 Boss 的 1/3）",2,3,1),
     n("坚不可摧 I",0,None,10,"敌人受到的削韧 -30%",4,1,2),
     n("坚不可摧 II",0,Some(6),10,"敌人受到的削韧累计 -44%",4,2,2),
     n("节制 I",1,None,10,"红圣杯瓶上限 -1",7,1,3),
@@ -19,26 +19,27 @@ pub const NODES:[Node;34]=[
     n("脆弱 II",1,Some(11),10,"我方受到的伤害累计 +20%",8,2,4),
     n("脆弱 III",1,Some(12),20,"我方受到的伤害累计 +35%",8,3,4),
     n("孤狼",1,Some(13),30,"无法召唤骨灰，奖励与商店不再出现骨灰",9,4,4),
-    n("疲惫 I",1,None,10,"精力恢复速度约 -20%",10,1,5),
-    n("疲惫 II",1,Some(15),20,"精力恢复速度约 -40%",10,2,5),
+    n("疲惫 I",1,None,20,"精力恢复速度约 -20%",10,1,5),
+    n("疲惫 II",1,Some(15),30,"精力恢复速度约 -40%",10,2,5),
     n("断念 I",1,None,10,"魔法、祷告与战技的专注消耗 +25%",11,1,6),
     n("断念 II",1,Some(17),10,"专注消耗累计 +50%",11,2,6),
     n("贫瘠 I",2,None,10,"击杀与战斗奖励的卢恩 -15%",12,1,7),
     n("贫瘠 II",2,Some(19),10,"击杀与战斗奖励的卢恩累计 -30%",12,2,7),
-    n("奸商 I",2,Some(20),10,"商店价格 +15%",13,3,7),
-    n("奸商 II",2,Some(21),10,"商店价格累计 +30%",13,4,7),
-    n("吝啬的赐福",2,Some(22),20,"战后奖励三选一改为二选一",14,5,7),
-    n("限时 I",3,None,20,"每场战斗限时 3 分钟，超时后每秒失去 2% 生命",15,1,8),
-    n("限时 II",3,Some(24),20,"战斗限时缩短为 2 分钟",15,2,8),
-    n("嫉妒的世界",3,Some(25),30,"你喝圣杯瓶时，所有敌人回复 10% 生命",16,3,8),
+    n("奸商 I",2,None,10,"商店价格 +20%",13,3,7),
+    n("奸商 II",2,Some(21),10,"商店价格累计 +40%",13,4,7),
+    n("吝啬的赐福",2,None,30,"战后奖励三选一改为二选一",14,5,7),
+    n("限时 I",3,None,10,"每场战斗限时 3 分钟，超时后每秒失去 2% 生命",15,1,8),
+    n("限时 II",3,Some(24),10,"战斗限时缩短为 2 分钟",15,2,8),
+    n("嫉妒的世界",3,None,30,"你喝圣杯瓶时，所有敌人回复 10% 生命",16,3,8),
     n("元素庇护 I",0,None,10,"敌人受到魔力、火、雷、圣伤害 -10%，不影响物理伤害",5,1,9),
     n("元素庇护 II",0,Some(27),10,"敌人受到四种元素伤害累计 -20%",5,2,9),
     n("异常耐性 I",0,None,10,"敌人中毒、腐败、出血、冻伤、睡眠、发狂、死亡耐性 +15%，原有免疫不变",6,1,10),
     n("异常耐性 II",0,Some(29),10,"七类异常耐性累计 +30%，原有免疫不变",6,2,10),
-    n("词条强化",0,Some(5),20,"Boss 与精英的词条数值约提高一半：减伤、攻击、回复、吸血、反弹、加速都更强",3,4,1),
+    n("词条强化",0,None,20,"Boss 与精英的词条数值约提高一半：减伤、攻击、回复、吸血、反弹、加速都更强",3,4,1),
     // 32 起超出原来的 32 位：律法以 64 位记录，前 32 个节点的律法码不变
-    n("精英成双 I",0,Some(2),10,"精英战第一只精英生命降到一半时，第二只上场（默认第一只倒下后才出来）",17,4,0),
-    n("精英成双 II",0,Some(32),20,"精英战里的两只精英同时上场",17,5,0),
+    n("精英成双 I",0,None,20,"精英战第一只精英生命降到一半时，第二只上场（默认第一只倒下后才出来）",17,4,0),
+    n("精英成双 II",0,Some(32),40,"精英战里的两只精英同时上场",17,5,0),
+    n("精英横行",0,None,20,"从第 6 个点起，普通战斗房有 25% 概率替换为精英房，路线结果固定",18,5,1),
 ];
 /// 停用的节点：位置与编号保留（存档、旅程档案与律法码里的位不变），界面不再显示，新开局选不上；
 /// 已经带着它开局的旅程照旧生效。14 孤狼（2026-11-06 移除）
@@ -57,6 +58,7 @@ impl Law {
     /// 词条蔓延：Boss 词条预算（不超过组合表上限）
     pub fn affix_budget(self,base:u8,max:u8)->u8 {match self.chain(&[3,4]) {0=>base,1=>(base+2).min(max),_=>max}}
     pub fn elite_affixes(self)->bool {self.has(5)}
+    pub fn elite_pressure(self)->bool {self.has(34)}
     /// 词条强化：Boss 词条使用强化后的数值
     pub fn empowered_affixes(self)->bool {self.has(31)}
     /// 精英成双：精英战里精英怪池的精英怎么上场
@@ -78,7 +80,7 @@ impl Law {
     pub fn rune_percent(self)->u32 {[100,85,70][usize::from(self.poverty())]}
     pub fn runes(self,amount:u32)->u32 {if self.rune_percent()==100 {amount}else{(u64::from(amount)*u64::from(self.rune_percent())/100) as u32}}
     /// 奸商：商店价格百分比
-    pub fn price_percent(self)->u32 {[100,115,130][usize::from(self.chain(&[21,22]))]}
+    pub fn price_percent(self)->u32 {[100,120,140][usize::from(self.chain(&[21,22]))]}
     pub fn stingy(self)->bool {self.has(23)}
     /// 限时：每场战斗的秒数
     pub fn time_limit(self)->Option<u64> {match self.chain(&[24,25]) {0=>None,1=>Some(180),_=>Some(120)}}
@@ -159,7 +161,7 @@ mod tests {
             assert_eq!(Law::parse(&old_code(law.0 as u32)),Some(law));
         }
         let half=Law::default().toggle(32);
-        assert!(half.elite_pacing()==crate::encounter::Pacing::HalfHealth&&half.has(2)&&half.has(1)&&half.has(0),"its route comes with it");
+        assert!(half.elite_pacing()==crate::encounter::Pacing::HalfHealth&&!half.has(2)&&!half.has(1)&&!half.has(0),"pacing is independent of enemy strength");
         let paired=Law::default().toggle(33);
         assert!(paired.elite_pacing()==crate::encounter::Pacing::Together&&paired.has(32));
         assert_eq!(Law::default().elite_pacing(),crate::encounter::Pacing::Apart);
@@ -169,8 +171,8 @@ mod tests {
     }
     #[test]
     fn every_route_has_its_own_icon() {
-        // 律法图标集的格数，与 scene-builder/law_icons.py 的 ICONS 一致
-        const ICONS:u8=18;
+        // 18 个图集图标，加上由精英徽记与上升箭头组成的精英横行图标。
+        const ICONS:u8=19;
         let stem=|n:&Node|n.name.trim_end_matches(['I',' ']);
         assert!(NODES.iter().all(|n|n.art<ICONS));
         assert_eq!(NODES.iter().map(|n|n.art).collect::<std::collections::BTreeSet<_>>().len(),usize::from(ICONS),"every icon is used");
@@ -180,10 +182,10 @@ mod tests {
     fn graph_is_well_formed() {
         for (id,node) in NODES.iter().enumerate() {
             if let Some(p)=node.parent {assert!(p<id&&NODES[p].branch==node.branch&&NODES[p].row==node.row&&NODES[p].col+1==node.col,"{}",node.name);}
-            else {assert_eq!(node.col,1,"{}",node.name);}
+            if let Some(p)=node.parent {if Law::listed(id){assert_eq!(node.art,NODES[p].art,"different rules must not be chained");}}
             assert!(NODES.iter().enumerate().all(|(o,other)|o==id||(other.col,other.row)!=(node.col,node.row)));
         }
-        assert_eq!(Law((1u64<<NODES.len())-1).score(),510);
+        assert_eq!(Law((1u64<<NODES.len())-1).score(),570);
     }
     #[test]
     fn selection_follows_paths_and_cascades() {
@@ -194,8 +196,8 @@ mod tests {
         let law=Law::default().toggle(0).toggle(1).toggle(2);assert_eq!(law.score(),60);
         assert_eq!(law.toggle(1),Law::default().toggle(0),"removing a node removes its successors");
         let all=(0..NODES.len()).fold(Law::default(),|l,id|l.toggle(id));
-        assert_eq!(all.score(),480,"everything except the retired lone wolf");assert_eq!(all.grade(),Some("危机"));assert!(all.valid());
-        assert_eq!(Law::default().grade(),None);assert_eq!(Law::default().toggle(24).toggle(25).toggle(26).toggle(0).grade(),Some("老练"));
+        assert_eq!(all.score(),540,"everything except the retired lone wolf");assert_eq!(all.grade(),Some("危机"));assert!(all.valid());
+        assert_eq!(Law::default().grade(),None);assert_eq!(Law::default().toggle(24).toggle(25).toggle(26).toggle(23).grade(),Some("老练"));
         assert!(!Law(1<<1).valid());
     }
     #[test]
@@ -210,13 +212,42 @@ mod tests {
         let mut run=crate::Run::new(3,crate::Class::Samurai);run.set_law(lone).unwrap();assert!(!run.law.lone_wolf(),"new runs drop it");
     }
     #[test]
+    fn elite_pressure_survives_act_transitions_and_keeps_legacy_maps() {
+        let mut run=crate::Run::new(42,crate::Class::Samurai);run.set_law(Law::default().toggle(34)).unwrap();
+        for act in 1..=3 {
+            assert_eq!(run.act,act);assert_eq!(run.nodes,crate::law_graph(run.seed,7,run.law));
+            assert_eq!(crate::Run::decode(&run.encode().unwrap()).unwrap().nodes,run.nodes);
+            if act<3 {let boss=run.nodes.iter().position(|n|n.kind==crate::NodeKind::Boss).unwrap();run.finish(boss);}
+        }
+        for schema in 1..=7 {
+            let mut old=crate::Run::new(42,crate::Class::Samurai);old.schema=schema;old.nodes=crate::law_graph(42,schema,Law::default());
+            assert_eq!(crate::Run::decode(&old.encode().unwrap()).unwrap().nodes,old.nodes);
+        }
+    }
+    #[test]
+    fn different_rules_can_be_selected_and_removed_independently() {
+        for id in [5,21,23,26,31,32] {
+            let law=Law::default().toggle(id);
+            assert_eq!(law.0,1u64<<id);assert!(law.valid());assert!(law.missing_prerequisites(id).is_empty());
+            assert_eq!(Law::parse(&law.code()),Some(law));
+        }
+        let economy=Law::default().toggle(20).toggle(22).toggle(23);
+        let remaining=economy.toggle(19);
+        assert_eq!(remaining.rune_percent(),100);assert_eq!(remaining.price_percent(),140);assert!(remaining.stingy());
+        let enemies=Law::default().toggle(2).toggle(33).toggle(4).toggle(5).toggle(31);
+        let remaining=enemies.toggle(0).toggle(3);
+        assert_eq!(remaining.enemy_tiers(),0);assert!(remaining.elite_affixes()&&remaining.empowered_affixes());
+        assert_eq!(remaining.elite_pacing(),crate::encounter::Pacing::Together);
+        assert_eq!((Law::default().toggle(32).score(),Law::default().toggle(33).score()),(20,60));
+    }
+    #[test]
     fn effects_follow_each_route() {
         let law=|ids:&[usize]|ids.iter().fold(Law::default(),|l,&id|l.toggle(id));
         assert_eq!((law(&[]).enemy_tiers(),law(&[0]).enemy_tiers(),law(&[0,1]).enemy_tiers(),law(&[0,1,2]).enemy_tiers()),(0,1,2,4));
         assert_eq!((law(&[]).flask_cut(),law(&[8]).flask_cut(),law(&[8,9]).flask_cut(),law(&[8,9,10]).flask_cut()),([0,0],[1,0],[1,1],[2,2]));
         assert_eq!((law(&[]).affix_budget(2,6),law(&[3]).affix_budget(2,6),law(&[3,4]).affix_budget(2,6),law(&[3]).affix_budget(6,6)),(2,4,6,6));
         assert_eq!((law(&[19]).runes(1000),law(&[19,20]).runes(1000),law(&[]).runes(1000)),(850,700,1000));
-        assert_eq!((law(&[19,20,21]).price_percent(),law(&[19,20,21,22]).price_percent()),(115,130));
+        assert_eq!((law(&[21]).price_percent(),law(&[22]).price_percent()),(120,140));
         assert_eq!((law(&[24]).time_limit(),law(&[24,25]).time_limit(),law(&[]).time_limit()),(Some(180),Some(120),None));
         let all=law(&(0..NODES.len()).collect::<Vec<_>>());
         assert!(!all.lone_wolf()&&Law(1<<14).lone_wolf(),"retired: cannot be chosen, old runs keep it");

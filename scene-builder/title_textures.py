@@ -70,18 +70,18 @@ def title_underlay(data):
     return gb.build(head,tags)
 
 
-def title_art(image):
+def title_art(image, config=None):
     root = Path(__file__).resolve().parents[1]
-    config = json.loads(Path(__file__).with_name('title_theme.json').read_text(encoding='utf-8'))
+    config = config or json.loads(Path(__file__).with_name('title_theme.json').read_text(encoding='utf-8'))
     layer = Image.new('RGBA',image.size)
     draw = ImageDraw.Draw(layer)
     draw.rounded_rectangle((96,120,716,1000),9,fill=(11,15,14,158))
     gold = '#'+config['palette']['gold']
     draw.line([(130,348),(620,348)],fill=gold,width=2)
     for at,text,size,color,bold in [((128,170),config['subtitle'],28,gold,False),
-        ((122,225),config['title'],82,'#'+config['palette']['paper'],True),
+        ((122,225),config['title'],config.get('title_size',82),'#'+config['palette']['paper'],True),
         ((130,375),config['tagline'],24,'#c9d2be',False),
-        ((130,930),'每一次攀登，都是新的选择',20,'#c9d2be',False)]:
+        ((130,930),config.get('footer','每一次攀登，都是新的选择'),20,'#c9d2be',False)]:
         font=root/'scene-assets/fonts'/('TowerTitleSerif-Bold.otf' if bold else 'TowerSerif-Regular.otf')
         draw.text(at,text,font=ImageFont.truetype(str(font),size),fill=color)
     return Image.alpha_composite(image,layer)
@@ -138,9 +138,9 @@ def loading_underlay(data):
     return gb.build(head,out)
 
 
-def loading_art(image, index):
+def loading_art(image, index, config=None):
     root=Path(__file__).resolve().parents[1]
-    config=json.loads(Path(__file__).with_name('title_theme.json').read_text(encoding='utf-8'))
+    config=config or json.loads(Path(__file__).with_name('title_theme.json').read_text(encoding='utf-8'))
     layer=Image.new('RGBA',image.size);draw=ImageDraw.Draw(layer)
     draw.rectangle((0,760,1920,1080),fill=(7,9,8,199))
     gold='#'+config['palette']['gold']
@@ -154,9 +154,9 @@ def loading_art(image, index):
     return Image.alpha_composite(image,layer)
 
 
-def tip_atlases(output):
+def tip_atlases(output, config=None):
     root=Path(__file__).resolve().parents[1]
-    tips=json.loads(Path(__file__).with_name('title_theme.json').read_text(encoding='utf-8'))['tips']
+    tips=(config or json.loads(Path(__file__).with_name('title_theme.json').read_text(encoding='utf-8')))['tips']
     if len(tips)!=12:
         raise ValueError('Expected twelve loading tips')
     for page in range(2):
@@ -221,7 +221,7 @@ def externalize(data, names):
     return gb.build(head, [(1009, replacements[body]) if code == gb.DEFINE_BITS_JPEG2 else (code, body) for code, body in tags])
 
 
-def write_dds(art, output):
+def write_dds(art, output, config=None):
     output.mkdir(parents=True, exist_ok=True)
     for name in ART:
         source = next((art / (name + suffix) for suffix in ('.png', '.jpg') if (art / (name + suffix)).exists()), None)
@@ -230,15 +230,15 @@ def write_dds(art, output):
         with Image.open(source) as image:
             prepared = image.convert('RGBA').resize((1920, 1080), Image.Resampling.LANCZOS)
             if name=='title':
-                prepared=title_art(prepared)
+                prepared=title_art(prepared,config)
             else:
-                prepared=loading_art(prepared,ART.index(name)-1)
+                prepared=loading_art(prepared,ART.index(name)-1,config)
             path = output / (name + '.dds')
             prepared.save(path)
             with Image.open(path) as restored:
                 if restored.size != prepared.size or restored.convert('RGBA').tobytes() != prepared.tobytes():
                     raise ValueError('DDS pixel round-trip failed: ' + name)
-    tip_atlases(output)
+    tip_atlases(output,config)
 
 
 if __name__ == '__main__':

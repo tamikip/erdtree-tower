@@ -105,7 +105,7 @@ mod tests {
         assert_eq!(enemy_effects(law(&[27,29])),vec![FIRST+61,FIRST+71]);
         assert_eq!(enemy_effects(law(&[27,28,29,30])),vec![FIRST+62,FIRST+72]);
         for id in player_effects(law(&(0..erdtree_tower::law::NODES.len()).collect::<Vec<_>>()),true) {assert!(PLAYER.contains(&id));}
-        assert_eq!((shop_price(law(&[19,20,21]),1000),shop_price(law(&[19,20,21,22]),1000),shop_price(Law::default(),1000),shop_price(law(&[19,20,21]),-1)),(1150,1300,1000,-1));
+        assert_eq!((shop_price(law(&[21]),1000),shop_price(law(&[22]),1000),shop_price(Law::default(),1000),shop_price(law(&[21]),-1)),(1200,1400,1000,-1));
     }
     #[test]
     fn best_scores_only_rise_per_class() {

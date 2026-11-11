@@ -77,6 +77,10 @@ pub struct Dummy {
     display:Option<(f64,f64,View)>,
 }
 impl Dummy {
+    pub fn target(&self,world:&WorldChrMan)->Option<FieldInsHandle> {
+        let (handle,address)=self.bound?;
+        world.chr_ins_by_handle(&handle).filter(|c|std::ptr::from_ref(*c) as usize==address).map(|_|handle)
+    }
     pub fn view(&mut self,now:f64)->View {
         let visible=self.meter.last.is_some_and(|last|now-last<IDLE);
         let Some(first)=self.meter.first.filter(|_|visible) else {self.display=None;return View::default();};

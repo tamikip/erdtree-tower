@@ -27,6 +27,22 @@ path = 'assets'
     Assert ($ini.IndexOf('ersc.dll') -lt $ini.IndexOf('tower.dll')) 'Seamless must load first'
     Assert (!$ini.Contains('extra.dll')) 'Disabled plugin was loaded'
     Assert ($ini.Contains('tower='+[IO.Path]::GetFullPath("$root/assets").Replace('\','/'))) 'Assets must use an absolute root'
+    New-Item -ItemType Directory -Path "$root/scene-assets/locales/en-US/menu" -Force | Out-Null
+    [IO.File]::WriteAllText("$root/tower-options.ini",'language=en-US')
+    $localized=Add-TowerLanguagePackage $profile $root $root
+    Assert ($localized.Contains("id = 'tower-language'")) 'English package missing'
+    $localizedIni=ConvertTo-TowerYafsmlConfig $localized $root
+    Assert ($localizedIni.IndexOf('overlay1=') -gt $localizedIni.IndexOf('tower=')) 'Language override must load after base assets'
+    Assert ((Add-TowerLanguagePackage $localized $root $root) -eq $localized) 'Language package must be idempotent'
+    [IO.File]::WriteAllText("$root/tower-options.ini",'language=zh-CN')
+    Assert (!(Add-TowerLanguagePackage $localized $root $root).Contains("id = 'tower-language'")) 'Chinese selection retained English override'
+    $game=Join-Path $root 'steamapps/common/ELDEN RING/Game'
+    New-Item -ItemType Directory -Path $game -Force | Out-Null
+    [IO.File]::WriteAllText("$root/tower-options.ini",'language=auto')
+    [IO.File]::WriteAllText("$root/steamapps/appmanifest_1245620.acf",'"UserConfig" { "language" "english" }')
+    Assert ((Add-TowerLanguagePackage $profile $root $game).Contains("id = 'tower-language'")) 'Auto did not read Steam English language'
+    [IO.File]::WriteAllText("$root/steamapps/appmanifest_1245620.acf",'"UserConfig" { "language" "schinese" }')
+    Assert (!(Add-TowerLanguagePackage $profile $root $game).Contains("id = 'tower-language'")) 'Auto selected English for Chinese game'
     $coop=ConvertTo-TowerYafsmlConfig ($profile -replace 'savefile = "ER_TOWER_PREVIEW.sl2"','') $root
     Assert ($coop.Contains("replace_save_filename=`n")) 'Seamless must keep its own save extension'
     Assert ($coop.Contains("replace_seamless_coop_save_filename=`n")) 'Seamless save name was overridden'

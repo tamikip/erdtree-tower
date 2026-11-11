@@ -16,7 +16,7 @@ fn ranged_oaths_are_retired_from_new_offers_and_deepening() {
 #[test]
 fn pending_ranged_offer_migrates_but_selected_gear_remains_readable() {
     let mut run=erdtree_tower::Run::new(42,Class::Samurai);run.enable_contracts();
-    let state=run.contract.as_mut().unwrap();state.offers=[Kind::Hunter,Kind::Steel];
+    let state=run.contract.as_mut().unwrap();state.offers=vec![Kind::Hunter,Kind::Steel];
     let loaded=erdtree_tower::Run::decode(&run.encode().unwrap()).unwrap();
     assert!(!loaded.contract.unwrap().offers.contains(&Kind::Hunter));
     run.contract.as_mut().unwrap().choose(0,42,Class::Samurai).unwrap();

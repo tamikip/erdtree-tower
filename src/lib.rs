@@ -41,6 +41,7 @@ pub mod themes;
 
 pub mod music;
 pub mod options;
+pub mod localization;
 pub mod lobby;
 pub mod dlc;
 pub mod stat_summary;
@@ -658,6 +659,18 @@ fn route_graph(seed:u64)->Vec<Node> {
     nodes
 }
 
+fn law_graph(seed:u64,schema:u32,law:law::Law)->Vec<Node> {
+    let mut nodes=match schema {1=>legacy_graph(seed),2=>graph(seed),3=>balanced_graph(seed),4=>expedition_graph(seed),5=>spaced_graph(seed),6=>camp_graph(seed),_=>route_graph(seed)};
+    if law.elite_pressure() {
+        for (id,node) in nodes.iter_mut().enumerate() {
+            if node.kind==NodeKind::Monster&&node.layer>=5&&mix(seed^(id as u64).wrapping_mul(0x9e3779b97f4a7c15)^0xe117e_f4e9)%4==0 {
+                node.kind=NodeKind::Elite;
+            }
+        }
+    }
+    nodes
+}
+
 fn space_rest_nodes(mut nodes:Vec<Node>)->Vec<Node> {
     let rest=|kind|matches!(kind,NodeKind::Chest|NodeKind::Camp);
     for id in (0..nodes.len()).rev() {
@@ -755,6 +768,7 @@ impl Run {
         let law=law.current();
         let full=self.flasks==self.flask_limit;
         self.law=law;self.flask_limit=self.full_flask_limit();
+        self.nodes=law_graph(self.seed,self.schema,law);
         self.flasks=if full {self.flask_limit}else{self.flasks.min(self.flask_limit)};
         Ok(())
     }
@@ -789,7 +803,7 @@ impl Run {
         if self.act!=1||!self.visited.is_empty()||self.phase!=Phase::Map {
             return Err("已有旅程不能替换路线，请从大赐福开始共同旅程".into());
         }
-        let mut next=self.clone();next.seed=seed;next.initial_seed=Some(seed);next.schema=7;next.nodes=route_graph(seed);
+        let mut next=self.clone();next.seed=seed;next.initial_seed=Some(seed);next.schema=7;next.nodes=law_graph(seed,7,next.law);
         next.validate()?;*self=next;Ok(())
     }
 
@@ -862,7 +876,7 @@ impl Run {
             self.seed=mix(self.seed^u64::from(self.act));
             if let Some(old)=&self.contract {self.contract=Some(old.next_act(self.reward_seed(),self.class,self.act));}
             self.schema=7;
-            self.nodes=route_graph(self.seed);
+            self.nodes=law_graph(self.seed,self.schema,self.law);
             self.visited.clear();
             self.phase=Phase::Map;
             return;
@@ -1231,7 +1245,7 @@ impl Run {
             || self.elite_buffs.iter().collect::<std::collections::BTreeSet<_>>().len()!=self.elite_buffs.len()
             || !self.valid_regional_event()
             || !(1..=3).contains(&self.act)
-            || self.nodes != match self.schema {1=>legacy_graph(self.seed),2=>graph(self.seed),3=>balanced_graph(self.seed),4=>expedition_graph(self.seed),5=>spaced_graph(self.seed),6=>camp_graph(self.seed),_=>route_graph(self.seed)}
+            || self.nodes != law_graph(self.seed,self.schema,self.law)
             || self.max_hp == 0
             || self.max_hp > 100
             || self.hp > self.max_hp

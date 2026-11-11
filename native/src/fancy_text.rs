@@ -102,6 +102,9 @@ fn noise(i:u32,k:u32)->f32 {
 }
 /// 按当前字体、指定字号量文字宽度
 pub fn measure(text:&str,size:f32)->f32 {
+    let translated=erdtree_tower::localization::text(text);measure_raw(&translated,size)
+}
+fn measure_raw(text:&str,size:f32)->f32 {
     if text.is_empty() {return 0.0;}
     let mut out=sys::ImVec2{x:0.0,y:0.0};
     unsafe {
@@ -116,13 +119,14 @@ fn glyph(list:*mut sys::ImDrawList,size:f32,pos:[f32;2],color:u32,text:&str) {
 }
 /// 从 pos（左上角）起画一段带特效的文字，返回画完后的宽度
 pub fn draw(layer:Layer,pos:[f32;2],size:f32,text:&str,style:&Style,time:f32,alpha:f32)->f32 {
+    let translated=erdtree_tower::localization::text(text);let text=translated.as_ref();
     let list=list(layer);
     let total=measure(text,size).max(1.0);
     let mut x=pos[0];
     let mut buffer=[0u8;4];
     for (i,ch) in text.chars().enumerate() {
         let s:&str=ch.encode_utf8(&mut buffer);
-        let width=measure(s,size);
+        let width=measure_raw(s,size);
         let (i_f,u)=(i as f32,(x-pos[0]+width*0.5)/total);
         // 颜色
         let mut color=mix(style.color,style.color,0.0);let mut light=1.0f32;
@@ -168,6 +172,7 @@ pub fn draw(layer:Layer,pos:[f32;2],size:f32,text:&str,style:&Style,time:f32,alp
 /// 中文换行：汉字之间都可以断行；连续的数字、英文与符号（如“-25%”）作为整体不拆开；
 /// “，。；）%”等标点不放在行首（放不下时挂在行尾），“（《”等不留在行尾；遇到换行符强制换行
 pub fn wrap_lines(text:&str,width:f32,measure:impl Fn(&str)->f32)->Vec<String> {
+    let translated=erdtree_tower::localization::text(text);let text=translated.as_ref();
     const NO_START:&str="，。、；：！？）》」』】%…·”’,.;:!?)";
     const NO_END:&str="（《「『【“‘(";
     let mut lines=Vec::new();
@@ -202,8 +207,8 @@ impl Drop for WrapAt {fn drop(&mut self) {WRAP_AT.with(|w|w.set(self.0));}}
 pub fn text_wrapped(ui:&hudhook::imgui::Ui,text:impl AsRef<str>) {
     let x=ui.cursor_pos()[0];
     let right=WRAP_AT.with(|w|w.get()).unwrap_or_else(||ui.window_content_region_max()[0]);
-    for line in wrap_lines(text.as_ref(),(right-x).max(1.0),|t|ui.calc_text_size(t)[0]) {
-        ui.set_cursor_pos([x,ui.cursor_pos()[1]]);ui.text(line);
+    for line in wrap_lines(text.as_ref(),(right-x).max(1.0),|t|ui.calc_text_size(crate::i18n::t(t))[0]) {
+        ui.set_cursor_pos([x,ui.cursor_pos()[1]]);ui.text(crate::i18n::t(line));
     }
 }
 /// 传说品质名的描边金色（灾厄燃金的描边色）与字身的暗红紫（在四个相近色之间缓慢流动）
@@ -262,13 +267,14 @@ fn sparkles(list:*mut sys::ImDrawList,origin:[f32;2],total:f32,size:f32,tier:usi
 /// 稀有：一圈随呼吸明暗的柔光 + 深色描边 + 主色与浅色之间流动的字身；普通：深色描边 + 主色字身。
 /// 扫光 ((sin(kx − vt)+1)/2)^n 只落在字上：普通、稀有窄而淡，史诗、传说宽而柔；传说另有渐亮渐暗的闪光（flash 为 0..1）。返回整段宽度
 fn glyph_pass(list:*mut sys::ImDrawList,origin:[f32;2],size:f32,parts:&[(&str,[u8;3])],time:f32,alpha:f32,tier:usize,flash:f32)->f32 {
+    let translated:Vec<_>=parts.iter().map(|(text,color)|(erdtree_tower::localization::text(text),*color)).collect();
     use std::f32::consts::FRAC_PI_4;
     let breath=0.5+0.5*(time*2.3).sin();
     let mut glyphs=Vec::new();
     let mut x=origin[0];
-    for (text,color) in parts {
+    for (text,color) in &translated {
         for (at,ch) in text.char_indices() {
-            let s=&text[at..at+ch.len_utf8()];let width=measure(s,size);
+            let s=&text[at..at+ch.len_utf8()];let width=measure_raw(s,size);
             glyphs.push((x,width,s,*color));x+=width;
         }
     }
@@ -350,13 +356,14 @@ fn auric(layer:Layer,pos:[f32;2],size:f32,parts:&[(&str,[u8;3])],time:f32,alpha:
 }
 /// 传说品质名拆成（文字, 描边色）：前缀与装备名用金色描边，补正属性各用自己的颜色（全属性五色轮转），防具类型用类型色，斜杠灰色
 fn legendary_parts(text:&str,time:f32)->Vec<(&str,[u8;3])> {
-    let Some(rest)=text.strip_prefix("传说·") else {return vec![(text,RIM)]};
+    let Some(rest)=text.strip_prefix("传说·").or_else(||text.strip_prefix("Legendary · ")) else {return vec![(text,RIM)]};
     let mut parts=vec![(&text[..text.len()-rest.len()],RIM)];
-    if let Some((word,name))=rest.split_once('·') {
-        let dot=&rest[word.len()..word.len()+'·'.len_utf8()];
+    let separator=if text.starts_with("Legendary"){" · "}else{"·"};
+    if let Some((word,name))=rest.split_once(separator) {
+        let dot=&rest[word.len()..word.len()+separator.len()];
         let mut middle=Vec::new();
         if let Some(style)=armor(word) {middle.push((word,style.color));}
-        else if word=="全属性" {
+        else if matches!(word,"全属性"|"All Attributes") {
             let colors=["力气","灵巧","智力","信仰","感应"].map(|w|attribute(w).unwrap());
             for (i,(at,ch)) in word.char_indices().enumerate() {
                 let phase=time*1.2+i as f32*0.9;let k=phase.floor() as usize;
@@ -377,15 +384,15 @@ fn legendary_parts(text:&str,time:f32)->Vec<(&str,[u8;3])> {
 }
 /// 补正属性的颜色：力气赤红、灵巧翠绿、智力蔚蓝、信仰圣金、感应绯紫
 fn attribute(word:&str)->Option<[u8;3]> {
-    match word {"力气"=>Some([228,108,70]),"灵巧"=>Some([104,204,146]),"智力"=>Some([98,152,242]),"信仰"=>Some([238,206,108]),"感应"=>Some([204,88,176]),_=>None}
+    match word {"力气"|"Strength"=>Some([228,108,70]),"灵巧"|"Dexterity"=>Some([104,204,146]),"智力"|"Intelligence"=>Some([98,152,242]),"信仰"|"Faith"=>Some([238,206,108]),"感应"|"Arcane"=>Some([204,88,176]),_=>None}
 }
 /// 防具类型的样式：物理钢灰流光、魔法蓝色呼吸、锈蚀锈红波动、艾尔登金色流光发光
 fn armor(word:&str)->Option<Style> {
     Some(match word {
-        "物理"=>Style{color:[170,178,190],accent:[236,240,246],effect:Effect::Shimmer,glow:false},
-        "魔法"=>Style{color:[112,152,238],accent:[196,216,255],effect:Effect::Pulse,glow:false},
-        "锈蚀"=>Style{color:[198,120,72],accent:[238,170,110],effect:Effect::Wave,glow:false},
-        "艾尔登"=>Style{color:[232,196,108],accent:[255,244,200],effect:Effect::Shimmer,glow:true},
+        "物理"|"Physical"=>Style{color:[170,178,190],accent:[236,240,246],effect:Effect::Shimmer,glow:false},
+        "魔法"|"Sorcery"=>Style{color:[112,152,238],accent:[196,216,255],effect:Effect::Pulse,glow:false},
+        "锈蚀"|"Rusted"=>Style{color:[198,120,72],accent:[238,170,110],effect:Effect::Wave,glow:false},
+        "艾尔登"|"Elden"=>Style{color:[232,196,108],accent:[255,244,200],effect:Effect::Shimmer,glow:true},
         _=>return None,
     })
 }
@@ -393,7 +400,7 @@ fn lighter(c:[u8;3])->[u8;3] {c.map(|v|(u16::from(v)+(255-u16::from(v))*3/5) as 
 /// 名字中间的补正组合或防具类型；认不出来时返回 false，由调用方按普通文字画
 fn middle(layer:Layer,x:&mut f32,y:f32,size:f32,word:&str,time:f32,alpha:f32)->bool {
     if let Some(style)=armor(word) {*x+=draw(layer,[*x,y],size,word,&style,time,alpha);return true;}
-    if word=="全属性" {
+    if matches!(word,"全属性"|"All Attributes") {
         // 五色轮转：每个字的颜色随时间在五种属性色之间流动
         let colors=["力气","灵巧","智力","信仰","感应"].map(|w|attribute(w).unwrap());
         let mut buffer=[0u8;4];
@@ -420,21 +427,23 @@ fn middle(layer:Layer,x:&mut f32,y:f32,size:f32,word:&str,time:f32,alpha:f32)->b
 /// 史诗加字后紫光与稀疏星光；稀有、普通只有柔光或描边与扫光。史诗及以下的补正组合与防具类型保留各自的颜色与动态效果（见 middle）。
 /// x 是按 align 对齐的位置（0 左对齐、0.5 居中），返回整段宽度
 pub fn quality_name(layer:Layer,x:f32,y:f32,size:f32,text:&str,color:[f32;4],tier:usize,align:f32,time:f32)->f32 {
+    let translated=erdtree_tower::localization::text(text);let text=translated.as_ref();
     let rgb=[0,1,2].map(|i|(color[i].clamp(0.0,1.0)*255.0) as u8);let alpha=color[3];
     let total=measure(text,size);let mut x=x-total*align;
     if tier>=3 {auric(layer,[x,y],size,&legendary_parts(text,time),time,alpha);return total;}
     let list=list(layer);let origin=[x,y];
     backdrop(list,origin,total,size,tier,time,alpha);
-    let prefix=["普通·","稀有·","史诗·","传说·"].into_iter().find(|p|text.starts_with(p));
+    let prefix=["普通·","稀有·","史诗·","传说·","Common · ","Rare · ","Epic · ","Legendary · "].into_iter().find(|p|text.starts_with(p));
     let rest=match prefix {
         Some(prefix)=>{x+=glyph_pass(list,[x,y],size,&[(prefix,rgb)],time,alpha,tier,0.0);&text[prefix.len()..]},
         None=>text,
     };
     let mut drawn=false;
-    if prefix.is_some()&&let Some((word,name))=rest.split_once('·') {
+    let separator=if prefix.is_some_and(|p|p.ends_with(" · ")){" · "}else{"·"};
+    if prefix.is_some()&&let Some((word,name))=rest.split_once(separator) {
         let start=x;
         if middle(layer,&mut x,y,size,word,time,alpha) {
-            x+=glyph_pass(list,[x,y],size,&[("·",rgb)],time,alpha,tier,0.0);
+            x+=glyph_pass(list,[x,y],size,&[(separator,rgb)],time,alpha,tier,0.0);
             glyph_pass(list,[x,y],size,&[(name,rgb)],time,alpha,tier,0.0);
             drawn=true;
         } else {x=start;}

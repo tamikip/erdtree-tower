@@ -207,6 +207,9 @@ fn pinyin_keys(text:&str)->(String,String) {
 static ITEM_SEARCH:LazyLock<HashMap<u32,(String,String)>>=LazyLock::new(||DETAILS.iter()
     .filter(|(id,_)|erdtree_tower::rewards::lookup(**id).is_some())
     .map(|(id,d)|(*id,pinyin_keys(&format!("{}\n{}",d.name,d.info)))).collect());
+static ENGLISH_ITEM_SEARCH:LazyLock<HashMap<u32,String>>=LazyLock::new(||DETAILS.iter()
+    .filter(|(id,_)|erdtree_tower::rewards::lookup(**id).is_some()||**id==(0x40000000|super::smith::VOUCHER))
+    .map(|(id,d)|(*id,search_key(&format!("{}\n{}",erdtree_tower::localization::translate_en(&d.name),erdtree_tower::localization::translate_en(&d.info))))).collect());
 fn alternate_pinyin_matches(text:&str,query:&str,initials:bool)->bool {
     use pinyin::ToPinyinMulti;
     if query.is_empty()||!query.is_ascii(){return false;}
@@ -238,6 +241,7 @@ pub fn search_items(query:&str,limit:usize)->Vec<(u32,String)> {
     let query=query.trim();if query.is_empty() {return vec![];}
     let key=search_key(query);
     let mut hits:Vec<_>=DETAILS.iter().filter(|(id,d)|(erdtree_tower::rewards::lookup(**id).is_some()||**id==(0x40000000|super::smith::VOUCHER))&&(d.name.contains(query)||d.info.contains(query)
+        ||key.is_ascii()&&ENGLISH_ITEM_SEARCH.get(id).is_some_and(|text|text.contains(&key))
         ||ITEM_SEARCH.get(id).is_some_and(|(full,initials)|full.contains(&key)||initials.contains(&key))
         ||alternate_pinyin_matches(&d.name,&key,false)||alternate_pinyin_matches(&d.name,&key,true)
         ||alternate_pinyin_matches(&d.info,&key,false)||alternate_pinyin_matches(&d.info,&key,true)))
@@ -246,7 +250,7 @@ pub fn search_items(query:&str,limit:usize)->Vec<(u32,String)> {
 }
 #[test]
 fn debug_search_includes_upgrade_stone() {
-    for query in ["强化石","qianghuashi","qhs"] {
+    for query in ["强化石","qianghuashi","qhs","Upgrade Stone"] {
         let hits=search_items(query,80);
         assert!(hits.iter().any(|(id,name)|*id==(0x40000000|super::smith::VOUCHER)&&name.contains("强化石")),"{query}");
     }
@@ -262,6 +266,7 @@ fn item_search_accepts_pinyin_initials_and_keeps_chinese() {
     assert!(search_items("  ",80).is_empty());
     assert!(search_items("zzzzzznotanitem",80).is_empty());
     assert!(search_items("jian",3).len()<=3);
+    assert!(search_items("LONG SWORD",usize::MAX).iter().any(|(id,_)|*id==2_000_000));
 }
 pub fn talisman_description(id:u32)->(String,String) {
     DETAILS.get(&(0x20000000|id)).map(|d|(d.name.clone(),d.info.clone()))
@@ -467,18 +472,18 @@ impl Panel {
                 if let Some(label)=label {
                     let (r,g,b)=accent.unwrap_or((236,196,104));
                     ui.set_window_font_scale(s*0.85);
-                    let half=ui.calc_text_size(label)[0]*0.5+14.0*s;let (cx,cy)=(x+width*0.5,y+300.0*s);
+                    let half=ui.calc_text_size(crate::i18n::t(label))[0]*0.5+14.0*s;let (cx,cy)=(x+width*0.5,y+300.0*s);
                     let draw=ui.get_window_draw_list();
                     draw.add_rect([cx-half,cy-3.0*s],[cx+half,cy+ui.text_line_height()+3.0*s],ImColor32::from_rgba(14,10,7,a8(0.88))).filled(true).rounding(11.0*s).build();
                     draw.add_rect([cx-half,cy-3.0*s],[cx+half,cy+ui.text_line_height()+3.0*s],ImColor32::from_rgba(r,g,b,a8(0.86))).rounding(11.0*s).thickness(1.4*s).build();
                     drop(draw);
                     center(ui,cx,cy,label,[f32::from(r)/255.0*0.6+0.4,f32::from(g)/255.0*0.6+0.4,f32::from(b)/255.0*0.6+0.4,1.0]);
                 }
-                ui.set_window_font_scale(s*1.35);center(ui,x+width*0.5,y+333.0*s,title,gold);
+                center_fitted(ui,x+width*0.5,y+333.0*s,title,gold,s*1.35,width-40.0*s);
                 ui.set_window_font_scale(s*0.95);
                 let bane_y=(401.0+boon.lines().count() as f32*24.0+14.0).max(462.0);
                 for (offset,text,color) in [(401.0,boon.as_str(),[0.64,0.83,0.58,1.0]),(bane_y,bane.as_str(),[0.91,0.49,0.40,1.0])] {
-                    center(ui,x+width*0.5,y+offset*s,text,color);
+                    center_fitted(ui,x+width*0.5,y+offset*s,text,color,s*0.95,width-40.0*s);
                 }
                 if selected {ui.set_window_font_scale(s*0.9);center(ui,x+width*0.5,y+height-52.0*s,"已选",gold);}
                 ui.set_cursor_pos([x,y]);let _disabled=ui.begin_disabled(!ready);
@@ -603,7 +608,7 @@ impl Panel {
                         ui.set_cursor_pos([24.0*scale,285.0*scale]);
                         let _indent=ui.push_style_var(hudhook::imgui::StyleVar::IndentSpacing(24.0*scale));ui.indent();
                         let _wrap=ui.push_text_wrap_pos_with_pos(516.0*scale);let _cjk=crate::fancy_text::wrap_at(516.0*scale);
-                        ui.text_colored(gold,"属性");ui.spacing();
+                        ui.text_colored(gold,crate::i18n::t("属性"));ui.spacing();
                         let _text=ui.push_style_color(StyleColor::Text,ink);
                         crate::fancy_text::text_wrapped(ui,if d.stats.trim().is_empty(){"—"}else{&d.stats});
                         ui.unindent();
@@ -620,15 +625,15 @@ impl Panel {
                     let _wrap=ui.push_text_wrap_pos_with_pos(750.0*scale);let _cjk=crate::fancy_text::wrap_at(750.0*scale);
                     let _text=ui.push_style_color(StyleColor::Text,ink);
                     if let Some(d)=d {
-                        if !d.info.trim().is_empty(){ui.text_colored(gold,"效果");ui.spacing();{let _color=ui.push_style_color(StyleColor::Text,text_color);crate::fancy_text::text_wrapped(ui,&d.info);}ui.spacing();ui.separator();ui.spacing();}
+                        if !d.info.trim().is_empty(){ui.text_colored(gold,crate::i18n::t("效果"));ui.spacing();{let _color=ui.push_style_color(StyleColor::Text,text_color);crate::fancy_text::text_wrapped(ui,&d.info);}ui.spacing();ui.separator();ui.spacing();}
                         if matches!(reward,Reward::TalismanBuff(_)){crate::fancy_text::text_wrapped(ui,"本局生效，不占护符栏位");ui.spacing();}
-                        ui.text_colored(gold,"物品说明");ui.spacing();
+                        ui.text_colored(gold,crate::i18n::t("物品说明"));ui.spacing();
                         if item_id(run,reward).is_some_and(|id|erdtree_tower::affixes::tier(id).is_some()) {
                             if let Some((lore,affix))=d.caption.rsplit_once("\n\n") {
                                 crate::fancy_text::text_wrapped(ui,lore);ui.spacing();let _color=ui.push_style_color(StyleColor::Text,text_color);crate::fancy_text::text_wrapped(ui,affix);
                             } else {let _color=ui.push_style_color(StyleColor::Text,text_color);crate::fancy_text::text_wrapped(ui,&d.caption);}
                         } else {crate::fancy_text::text_wrapped(ui,&d.caption);}
-                        if !d.skill.trim().is_empty(){ui.spacing();ui.separator();ui.spacing();ui.text_colored(gold,"战技");ui.spacing();crate::fancy_text::text_wrapped(ui,&d.skill);}
+                        if !d.skill.trim().is_empty(){ui.spacing();ui.separator();ui.spacing();ui.text_colored(gold,crate::i18n::t("战技"));ui.spacing();crate::fancy_text::text_wrapped(ui,&d.skill);}
                     } else {crate::fancy_text::text_wrapped(ui,crate::map_ui::reward_description(run,reward));}
                     ui.unindent();
                 });
@@ -731,7 +736,7 @@ impl Panel {
                 // 物品名与余烬名用标题字体：传说整名金色流光，其他品质的前缀带特效；其他奖励保持原样
                 if !ember&&!matches!(reward,Reward::Item(_)) {
                     ui.set_window_font_scale(scale*1.2);
-                    let title_width=ui.calc_text_size(&title)[0];
+                    let title_width=ui.calc_text_size(crate::i18n::t(&title))[0];
                     if title_width>width-40.0*scale {ui.set_window_font_scale(scale*1.2*(width-40.0*scale)/title_width);}
                     center(ui,x+width*0.5,y+278.0*scale,&title,quality_color);
                 } else {
@@ -792,7 +797,14 @@ fn textured_button(ui:&Ui,label:&str,input:Option<crate::pad::Input>,pos:[f32;2]
     crate::pad::label_in(ui,min,max,input,label,color,scale,crate::pad::Tone::Light);
     clicked
 }
-fn center(ui:&Ui,x:f32,y:f32,text:&str,color:[f32;4]) {ui.set_cursor_pos([x-ui.calc_text_size(text)[0]*0.5,y]);ui.text_colored(color,text);}
+fn center(ui:&Ui,x:f32,y:f32,text:&str,color:[f32;4]) {ui.set_cursor_pos([x-ui.calc_text_size(crate::i18n::t(text))[0]*0.5,y]);ui.text_colored(color,crate::i18n::t(text));}
+fn center_fitted(ui:&Ui,x:f32,y:f32,text:&str,color:[f32;4],scale:f32,width:f32) {
+    ui.set_window_font_scale(scale);
+    let measured=ui.calc_text_size(crate::i18n::t(text))[0];
+    if measured>width {ui.set_window_font_scale(scale*width/measured);}
+    center(ui,x,y,text,color);
+    ui.set_window_font_scale(scale);
+}
 
 #[cfg(test)]
 fn write_frame(path:&std::path::Path,data:&hudhook::imgui::DrawData,width:i32,height:i32) {
@@ -858,7 +870,7 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
         context.io_mut().display_size=[width as f32,height as f32];
         for kind in erdtree_tower::contracts::Kind::ALL {
             let mut contract=Run::new(42,erdtree_tower::Class::Samurai);contract.enable_contracts();
-            contract.contract.as_mut().unwrap().offers=[kind,erdtree_tower::contracts::Kind::ALL[(kind.index()+1)%erdtree_tower::contracts::Kind::ALL.len()]];
+            contract.contract.as_mut().unwrap().offers=vec![kind,erdtree_tower::contracts::Kind::ALL[(kind.index()+1)%erdtree_tower::contracts::Kind::ALL.len()]];
             for _ in 0..3 {panel.draw_contract(context.frame(),&contract,&view);context.render();}
             panel.draw_contract(context.frame(),&contract,&view);let data=context.render();assert!(data.total_vtx_count>0);
             if let Some(path)=&output {write_frame(&path.join(format!("oath-{}-{width}.draw",kind.index())),data,width,height);}
@@ -877,6 +889,17 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
         if let Some(path)=&output {write_frame(&path.join(format!("oath-deepen-{width}.draw")),data,width,height);}
         let seed=deepen.reward_seed();deepen.contract.as_mut().unwrap().choose(2,seed,deepen.class).unwrap();
         panel.draw(context.frame(),&deepen,&view);context.render();
+    }
+    if let Some(path)=&output {
+        use erdtree_tower::contracts::Kind;
+        let mut screenshot=Run::new(42,erdtree_tower::Class::Samurai);screenshot.enable_contracts();
+        screenshot.contract.as_mut().unwrap().offers=vec![Kind::Mystic,Kind::Execution,Kind::Ascetic];
+        context.io_mut().display_size=[1920.0,1080.0];
+        let mut panel=Panel::default();
+        for _ in 0..120 {panel.draw_contract(context.frame(),&screenshot,&view);context.render();}
+        panel.draw_contract(context.frame(),&screenshot,&view);let data=context.render();
+        assert!(data.total_vtx_count>400,"Oath cards must be visible after their entrance animation");
+        write_frame(&path.join("oath-screenshot-1920.draw"),data,1920,1080);
     }
     run.phase=Phase::Reward{id:0,offers:vec![Reward::Item(1000000),Reward::Item(erdtree_tower::elite::EPIC[0]),Reward::Item(2140000)]};
     for (width,height,details) in [(1280,720,false),(1280,720,true),(1920,1080,false),(1920,1080,true),(3440,1440,false),(3440,1440,true)] {

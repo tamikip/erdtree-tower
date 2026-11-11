@@ -24,7 +24,8 @@ fn ease(elapsed:f64,start:f64,len:f64)->f32 {let t=((elapsed-start)/len).clamp(0
 fn place(id:usize)->(usize,[f32;2]) {
     let n=&NODES[id];let c=f32::from(n.col.saturating_sub(1));
     let (row,pair)=match n.row {0=>(0,None),1=>(1,None),2=>(2,Some(0.0)),9=>(2,Some(1.0)),10=>(2,Some(2.0)),3=>(3,None),4=>(4,None),5=>(5,Some(0.0)),6=>(5,Some(1.0)),7=>(6,None),_=>(7,None)};
-    let x=match pair {Some(p)=>LEFT+p*300.0+c*144.0,None=>LEFT+c*158.0};
+    let gap=match n.art {2|13|16|17=>24.0,3|14=>48.0,18=>72.0,_=>0.0};
+    let x=match pair {Some(p)=>LEFT+p*300.0+c*144.0,None=>LEFT+c*158.0+gap};
     (row,[x,124.0+row as f32*66.0+n.branch as f32*28.0])
 }
 /// 手柄方向键移动焦点：左右只在同一行里走，上下走到最近的一行里横向最近的卡片
@@ -123,9 +124,9 @@ pub fn draw(ui:&Ui,screen:&mut LawScreen,record:Option<(u32,&str)>)->Option<LawA
         let text=|x:f32,y:f32,value:&str,color:[f32;4],px:f32,align:f32| {
             if color[3]<=0.01 {return;}
             let (_font,base)=font_for(value,px);ui.set_window_font_scale(px/base*s);
-            ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+            ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
         };
-        let measure=|value:&str,px:f32|->f32 {let (_font,base)=font_for(value,px);ui.set_window_font_scale(px/base*s);ui.calc_text_size(value)[0]/s};
+        let measure=|value:&str,px:f32|->f32 {let (_font,base)=font_for(value,px);ui.set_window_font_scale(px/base*s);ui.calc_text_size(crate::i18n::t(value))[0]/s};
         // 放不下时缩小字号（最多缩到 75%）
         let fitted=|value:&str,px:f32,width:f32|->f32 {let w=measure(value,px);if w>width {(px*width/w).max(px*0.75)}else{px}};
         // 字母间距拉开的英文小标签
@@ -257,7 +258,7 @@ pub fn draw(ui:&Ui,screen:&mut LawScreen,record:Option<(u32,&str)>)->Option<LawA
                 let x=lx+(1.0-a)*24.0;
                 // 效果一行放不下时折成两行
                 let (_font,base)=font_for(node.effect,15.0);ui.set_window_font_scale(15.0/base*s);
-                let lines=crate::fancy_text::wrap_lines(node.effect,400.0*s,|v|ui.calc_text_size(v)[0]);drop(_font);
+                let lines=crate::fancy_text::wrap_lines(node.effect,400.0*s,|v|ui.calc_text_size(crate::i18n::t(v))[0]);drop(_font);
                 let h=40.0+lines.len() as f32*21.0;
                 let draw=ui.get_window_draw_list();
                 draw.add_rect(p(x,y+10.0),p(x+44.0,y+54.0),col(AMBER,a)).filled(true).build();

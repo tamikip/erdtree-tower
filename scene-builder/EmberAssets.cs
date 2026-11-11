@@ -51,6 +51,7 @@ static class EmberAssets {
         // 异常积累复制原版鲜血油脂、冻结油脂的命中效果：积满后的发作内容（出血扣血、冻伤减防）由这一行提供，只改积累值
         var blood=new PARAM.Row(p.Rows.Single(r=>r.ID==3191)){ID=First+10,Name="Tower ember blood buildup"};Set(blood,"bloodAttackPower",Buildup);rows.Add(blood);
         var frost=new PARAM.Row(p.Rows.Single(r=>r.ID==3141)){ID=First+11,Name="Tower ember frost buildup"};Set(frost,"freezeAttackPower",Buildup);rows.Add(frost);
+        foreach(var row in new[]{blood,frost})Set(row,"effectTargetSelfTarget",1);
         rows.Add(Player(p,First+20,"Tower ember revenge",RevengeRate,-1f));
         var echo=Player(p,First+15,"Tower ember flask echo",EchoAttack,-1f);
         foreach(var cut in new[]{"slash","blow","thrust","neutral","magic","fire","thunder","dark"})Set(echo,cut+"DamageCutRate",EchoCut);
@@ -109,6 +110,11 @@ static class EmberAssets {
         return rows;
     }
     static void Verify(PARAM p) {
+        foreach(var (id,field) in new[]{(First+10,"bloodAttackPower"),(First+11,"freezeAttackPower")}) {
+            var row=p.Rows.Single(r=>r.ID==id);
+            if(Convert.ToInt32(row["effectTargetSelfTarget"].Value)!=1||Convert.ToInt32(row[field].Value)!=Buildup)
+                throw new Exception($"Buildup effect {id} must accept direct application with {Buildup} buildup");
+        }
         foreach(var expected in Build(p)) {
             var actual=p.Rows.Single(r=>r.ID==expected.ID);
             foreach(var cell in expected.Cells)if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(cell.Value,actual[cell.Def.InternalName].Value))throw new Exception($"Ember effect mismatch: {expected.ID} {cell.Def.InternalName}");

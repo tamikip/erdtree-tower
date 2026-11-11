@@ -40,6 +40,15 @@ namespace Tower.Launcher
             ("pad", "手柄"),
         };
 
+        public static readonly (string Id, string Label)[] Languages =
+        {
+            ("auto", "跟随游戏 / Follow game"),
+            ("zh-CN", "简体中文 / Chinese"),
+            ("en-US", "English"),
+        };
+        public static string LanguageLabel(Dictionary<string, string> values) =>
+            Languages.FirstOrDefault(m => values.TryGetValue("language", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? Languages[0].Label;
+
         public static string PromptLabel(Dictionary<string, string> values) =>
             PromptModes.FirstOrDefault(m => values.TryGetValue("prompts", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? PromptModes[0].Label;
 

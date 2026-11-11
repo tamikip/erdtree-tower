@@ -21,5 +21,6 @@
     <Compile Include="../Tower.Launcher/DlcLaunchCheck.cs" Link="DlcLaunchCheck.cs" />
     <Compile Include="../Tower.Launcher/LobbyLaunch.cs" Link="LobbyLaunch.cs" />
     <Compile Include="../Tower.Launcher/HostSettings.cs" Link="HostSettings.cs" />
+    <Compile Include="../Tower.Launcher/LauncherData.cs" Link="LauncherData.cs" />
   </ItemGroup>
 </Project>

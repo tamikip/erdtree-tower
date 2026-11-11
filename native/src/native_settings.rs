@@ -118,11 +118,24 @@ pub fn init(module: Option<std::path::PathBuf>) {
         if host.is_null() { crate::log(format!("NATIVE_SETTINGS host load failed: {}", std::io::Error::last_os_error())); return; }
         let client = LoadLibraryW(wide(&folder.join("tower_native_settings.dll")).as_ptr());
         if client.is_null() { crate::log(format!("NATIVE_SETTINGS client load failed: {}", std::io::Error::last_os_error())); return; }
+        let language_symbol=GetProcAddress(client,c"tower_native_settings_set_language".as_ptr());
+        if !language_symbol.is_null() {
+            let configure:unsafe extern "C" fn(u32)=std::mem::transmute(language_symbol);
+            configure(match crate::options::get().language {erdtree_tower::localization::Language::Auto=>0,erdtree_tower::localization::Language::Chinese=>1,erdtree_tower::localization::Language::English=>2});
+        }
         let symbol = GetProcAddress(client, c"tower_native_settings_init_v3".as_ptr());
         if symbol.is_null() { crate::log("NATIVE_SETTINGS entry missing"); return; }
         type Init = unsafe extern "C" fn(*const u8,*const u32,*const u32,unsafe extern "C" fn(*const u8)->i32,unsafe extern "C" fn(*const u32)->i32,unsafe extern "C" fn(u32))->u32;
         let start: Init = std::mem::transmute(symbol);
         let result = start(initial.as_ptr(),codes.as_ptr(),defaults.as_ptr(),save,save_bindings,activate);
+        if result==0&&crate::options::get().language==erdtree_tower::localization::Language::Auto {
+            let query=GetProcAddress(client,c"tower_native_settings_language".as_ptr());
+            if !query.is_null() {
+                let language:unsafe extern "C" fn()->u32=std::mem::transmute(query);
+                let selected=if language()==1 {erdtree_tower::localization::Language::English}else{erdtree_tower::localization::Language::Chinese};
+                erdtree_tower::localization::set(selected);crate::log(format!("LANGUAGE game={}",selected.id()));
+            }
+        }
         BINDINGS.store(result==0,Ordering::Release);
         crate::log(format!("NATIVE_SETTINGS registration result={result}"));
     }

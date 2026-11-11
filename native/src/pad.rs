@@ -48,11 +48,11 @@ fn set_px(ui:&Ui,px:f32) {ui.set_window_font_scale(1.0);let base=ui.current_font
 fn restore(ui:&Ui,r:Restore) {ui.set_window_font_scale(1.0);let base=ui.current_font_size().max(1.0);ui.set_window_font_scale(r.0/base);}
 /// 在黑体（缺字时用当前字体）、px 像素下量 / 画一段文字
 fn sans_width(ui:&Ui,text:&str,px:f32)->f32 {
-    let _font=crate::fancy_text::button_font().filter(|_|crate::fancy_text::sans_covers(text)).map(|f|ui.push_font(f));set_px(ui,px);ui.calc_text_size(text)[0]
+    let _font=crate::fancy_text::button_font().filter(|_|crate::fancy_text::sans_covers(text)).map(|f|ui.push_font(f));set_px(ui,px);ui.calc_text_size(crate::i18n::t(text))[0]
 }
 fn sans_text(ui:&Ui,pos:[f32;2],text:&str,px:f32,color:[f32;4]) {
     let _font=crate::fancy_text::button_font().filter(|_|crate::fancy_text::sans_covers(text)).map(|f|ui.push_font(f));set_px(ui,px);
-    ui.set_cursor_screen_pos(pos);ui.text_colored(color,text);
+    ui.set_cursor_screen_pos(pos);ui.text_colored(color,crate::i18n::t(text));
 }
 fn pad_label(pad:Pad)->&'static str {match pad {Pad::A=>"A",Pad::B=>"B",Pad::X=>"X",Pad::Y=>"Y",Pad::View=>"View",_=>""}}
 /// 一个标签由几块组成：圆形键、圆角条、十字键、键帽、方向键帽
@@ -159,18 +159,18 @@ pub fn hints(ui:&Ui,anchor:[f32;2],align:f32,items:&[(Option<Input>,&str)],h:f32
 /// 按钮里的文字：标签 + 文字在 min..max 里居中。文字用调用方当前的字体，窗口字号设为 scale（与原来画按钮文字的写法一致）
 pub fn label_in(ui:&Ui,min:[f32;2],max:[f32;2],input:Option<Input>,label:&str,color:[f32;4],scale:f32,tone:Tone) {
     ui.set_window_font_scale(scale);
-    let size=ui.calc_text_size(label);let h=(ui.text_line_height()*1.08).min((max[1]-min[1])*0.62);
+    let size=ui.calc_text_size(crate::i18n::t(label));let h=(ui.text_line_height()*1.08).min((max[1]-min[1])*0.62);
     let bw=input.map(|i|width(ui,i,h)).filter(|w|*w>0.0).map_or(0.0,|w|w+h*0.4);
     let x=(min[0]+max[0]-size[0]-bw)*0.5;let cy=(min[1]+max[1])*0.5;
     // 文字会自动乘上样式的整体透明度（动画淡入淡出时 push 的 StyleVar::Alpha），标签是画在绘制列表上的，要手动乘
     if let Some(input)=input.filter(|_|bw>0.0) {badge(ui,x,cy,h,input,tone,color[3]*ui.clone_style().alpha);}
-    ui.set_window_font_scale(scale);ui.set_cursor_screen_pos([x+bw,cy-size[1]*0.5]);ui.text_colored(color,label);
+    ui.set_window_font_scale(scale);ui.set_cursor_screen_pos([x+bw,cy-size[1]*0.5]);ui.text_colored(color,crate::i18n::t(label));
 }
 /// 代替 ImGui 默认按钮：沿用当前样式的按钮底色、圆角与边框，文字左边加按键标签。size 为屏幕像素（0 表示按内容）。
 /// 先画外观、最后放按钮本体，按钮是最后一个控件，后面的 same_line 等排版照常
 pub fn button(ui:&Ui,id:&str,label:&str,input:Option<Input>,size:[f32;2])->bool {
     let style=ui.clone_style();let pad=style.frame_padding;
-    let text=ui.calc_text_size(label);let h=ui.text_line_height()*1.05;
+    let text=ui.calc_text_size(crate::i18n::t(label));let h=ui.text_line_height()*1.05;
     let bw=input.map(|i|width(ui,i,h)).filter(|w|*w>0.0).map_or(0.0,|w|w+h*0.35);
     let size=[if size[0]>0.0{size[0]}else{text[0]+bw+pad[0]*2.0},if size[1]>0.0{size[1]}else{text[1]+pad[1]*2.0}];
     let min=ui.cursor_screen_pos();let max=[min[0]+size[0],min[1]+size[1]];
@@ -184,7 +184,7 @@ pub fn button(ui:&Ui,id:&str,label:&str,input:Option<Input>,size:[f32;2])->bool 
     let ink=ui.style_color(StyleColor::Text);
     let x=(min[0]+max[0]-text[0]-bw)*0.5;let cy=(min[1]+max[1])*0.5;
     if let Some(input)=input.filter(|_|bw>0.0) {badge(ui,x,cy,h,input,Tone::Light,ink[3]);}
-    ui.set_cursor_screen_pos([x+bw,cy-text[1]*0.5]);ui.text_colored(ink,label);
+    ui.set_cursor_screen_pos([x+bw,cy-text[1]*0.5]);ui.text_colored(ink,crate::i18n::t(label));
     ui.set_cursor_screen_pos(min);
     ui.invisible_button(id,size)
 }

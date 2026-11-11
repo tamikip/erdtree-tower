@@ -33,14 +33,21 @@ pub fn upgrade(data: &mut PlayerGameData) -> Result<(), String> {
     }
     swap_right(data, slot, old, next, "upgraded")
 }
-/// 词条重铸：右手的词条武器换成同一件武器的另一种词条组合，强化等级与战灰保留
+fn reforge_plan(run:&erdtree_tower::Run,node:usize,old:u32,guaranteed:bool)->Result<(u32,u32),String> {
+    let variant=old/10000*10000;
+    if erdtree_tower::affixes::lookup(variant).is_none_or(|item|item.kind!=erdtree_tower::rewards::ItemKind::Weapon) {
+        return Err("右手武器没有词条，未扣除卢恩".into());
+    }
+    let target=erdtree_tower::affixes::reforge(run,node,variant,guaranteed)
+        .ok_or(if guaranteed {"传说品质的武器不能精炼，未扣除卢恩"} else {"这把武器没有其他词条组合，未扣除卢恩"})?;
+    Ok((target+old%10000/100*100,old%100))
+}
+/// 词条重铸：换成同一件武器的另一种词条组合，质变、强化等级与战灰保留
 pub fn reforge_target(data: &PlayerGameData, run: &erdtree_tower::Run, node: usize, guaranteed: bool) -> Result<u32, String> {
     let slot = data.equipment.chr_asm.equipment.active_right_weapon_slot() as usize;
     let old = data.equipment.chr_asm.equipment_param_ids[slot];
     if old < 0 {return Err("请在右手装备词条武器".into());}
-    let (variant, level) = (old as u32 / 100 * 100, old as u32 % 100);
-    if erdtree_tower::affixes::tier(variant).is_none() {return Err("右手武器没有词条，未扣除卢恩".into());}
-    let target = erdtree_tower::affixes::reforge(run, node, variant, guaranteed).ok_or(if guaranteed {"传说品质的武器不能精炼，未扣除卢恩"} else {"这把武器没有其他词条组合，未扣除卢恩"})?;
+    let (target,level)=reforge_plan(run,node,old as u32,guaranteed)?;
     let params = unsafe { SoloParamRepository::instance() }.map_err(|_| "武器参数未就绪")?;
     let row = params.get::<EquipParamWeapon>(target).ok_or("重铸后的武器参数不存在")?;
     let next = target + level.min(super::smith::level_max(params, row.reinforce_type_id()) as u32);
@@ -237,6 +244,23 @@ fn next_id(id: u32, cap: u32, max: u32, upgradeable: bool) -> Result<u32, String
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reforge_recognizes_infused_affixes_and_preserves_affinity_and_level() {
+        let run=erdtree_tower::Run::new(42,erdtree_tower::Class::Samurai);
+        for variant in [100000000,160000000] {
+            assert_eq!(erdtree_tower::affixes::tier(variant),Some(0));
+            for affinity in 0..=12 {for level in [0,10,25,39,99] {
+                let (target,kept)=reforge_plan(&run,5,variant+affinity*100+level,true).unwrap();
+                assert_eq!(target%10000,affinity*100);assert_eq!(kept,level);
+                assert_eq!(erdtree_tower::affixes::tier(target/10000*10000),Some(1));
+                assert_eq!(erdtree_tower::affixes::base(target/10000*10000),erdtree_tower::affixes::base(variant));
+            }}
+            let (target,level)=reforge_plan(&run,5,variant+925,false).unwrap();
+            assert_eq!((target%10000,level),(900,25));assert_ne!(target/10000*10000,variant);
+        }
+        assert!(reforge_plan(&run,5,1000925,true).is_err());
+        assert!(reforge_plan(&run,5,160030925,true).unwrap_err().contains("传说"));
+    }
     #[test]
     fn reinforcement_preserves_affinity_and_checks_normal_and_somber_caps() {
         assert_eq!(next_id(901200, 25, 99, true).unwrap(), 901203);

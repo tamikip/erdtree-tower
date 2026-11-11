@@ -11,6 +11,24 @@ const EXECUTION:i32=FIRST;
 const EXECUTION_RELIEF:i32=FIRST+2;
 const BLOOD:i32=FIRST+10;
 const FROST:i32=FIRST+11;
+fn buildup_effect(ember:Ember)->Option<i32> {
+    match ember {Ember::Bloodlord=>Some(BLOOD),Ember::Frost=>Some(FROST),_=>None}
+}
+pub fn practice_held(held:&[Ember])->Vec<Ember> {
+    held.iter().copied().filter(|e|!matches!(e,Ember::Rise|Ember::Feast|Ember::SpiritFeast|Ember::Harvest|Ember::Chain|Ember::SoulEater|Ember::Godslayer)).collect()
+}
+pub fn clear_practice_critical(){CRITICAL_PENDING.store(false,Ordering::Release);}
+fn buildup_target(row:&mut SP_EFFECT_PARAM_ST) {
+    // ChrIns::apply_speffect uses the recipient as its own source, unlike a weapon hit.
+    row.set_effect_target_self_target(true);
+}
+fn apply_buildup(chr:&mut ChrIns,effect:i32) {
+    if !matches!(effect,BLOOD|FROST) {return;}
+    let Ok(params)=(unsafe {SoloParamRepository::instance_mut()}) else{return;};
+    let Some(row)=params.get_mut::<SpEffectParam>(effect as u32) else{return;};
+    buildup_target(row);
+    chr.apply_speffect(effect,false);
+}
 const REVENGE:i32=FIRST+20;
 /// 圣杯余响：喝圣杯瓶后的增益（造成的伤害提高、受到的伤害降低），持续时间由运行时控制
 const ECHO:i32=FIRST+15;
@@ -160,6 +178,10 @@ fn ready(ids:&[i32])->bool {unsafe {SoloParamRepository::instance()}.is_ok_and(|
 /// 低于敌人最大生命 0.3% 的掉血视为持续伤害，不算命中；同一敌人 0.3 秒内只算一次
 const HIT_PERMILLE:i64=3;
 const HIT_INTERVAL:Duration=Duration::from_millis(300);
+pub fn buildup_hit(damage:i32,max:i32,elapsed:Option<Duration>)->bool {
+    damage>0&&i64::from(damage)*1000>=i64::from(max.max(1))*HIT_PERMILLE
+        &&elapsed.is_none_or(|t|t>=HIT_INTERVAL)
+}
 
 /// 行商的无底囊：投掷道具的使用动作（EquipParamGoods.goodsUseAnim）。17 飞刀与飞镖、2 投掷弯刀、3 与 42 投掷壶和抛出的石块碎片、
 /// 20 附绳壶、50 辉石碎片、67 双手投出的重壶（各动作对应的道具见 README）
@@ -349,6 +371,11 @@ pub struct Fight {
     breaks:Vec<Break>,probes:u8,
 }
 impl Fight {
+    pub fn observe_practice_refill(&mut self,world:&WorldChrMan) {
+        for foe in &mut self.foes {
+            if let Some(chr)=world.chr_ins_by_handle(&foe.handle) {foe.hp=chr.modules.data.hp;}
+        }
+    }
     pub fn active(&self)->bool {self.key.is_some()}
     /// 鲜血骑士的破势（只由房主或单人执行，敌人由他们计算）：敌人身上新出现一次性发作时压低韧性，下一下就失衡；
     /// Boss 与普通敌人均无冷却。在 tick 之后调用（tick 换场时会清掉状态）。
@@ -468,7 +495,7 @@ impl Fight {
             let foe=&mut self.foes[index];
             let drop=foe.hp-foe_hp;let lost=(foe.hp-foe_hp.max(0)).max(0);
             let died=foe.alive&&!alive;
-            let hit=!died&&alive&&drop>0&&i64::from(drop)*1000>=i64::from(foe_max.max(1))*HIT_PERMILLE&&foe.hit_at.is_none_or(|t|now.duration_since(t)>=HIT_INTERVAL);
+            let hit=!died&&alive&&buildup_hit(drop,foe_max,foe.hit_at.map(|t|now.duration_since(t)));
             if hit {foe.hit_at=Some(now);}
             (foe.hp,foe.max,foe.pos,foe.alive)=(foe_hp,foe_max,pos,alive);
             // 联机：每场战斗记一次“算进自己的”与“不算的”命中或击倒，实测时据此确认 last_hit_by 的归属
@@ -588,7 +615,7 @@ impl Fight {
         if chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag() {return;}
         let max=chr.modules.data.max_hp;
         let damage=match strike {
-            Strike::Buildup{ember,..}=>{chr.apply_speffect(if ember==Ember::Bloodlord{BLOOD}else{FROST},false);return;},
+            Strike::Buildup{ember,..}=>{if let Some(effect)=buildup_effect(ember){apply_buildup(chr,effect);}return;},
             Strike::Wound{ember,..}=>embers::enemy_damage(max,embers::wound_percent(ember).unwrap_or(0),foe.boss),
             Strike::Thorns{taken,..}=>embers::thorns_damage(taken,max,foe.boss),
         };
@@ -757,6 +784,35 @@ mod tests {
         }
         assert!(!resonance_active(&held(None),true));
         assert!(!resonance_active(&[],true));
+    }
+    #[test]
+    fn practice_buildup_uses_only_the_two_combat_effects() {
+        let effects:Vec<_>=Ember::ALL.into_iter().filter_map(buildup_effect).collect();
+        assert_eq!(effects,vec![BLOOD,FROST]);
+        assert!(buildup_hit(15,5000,None));
+        assert!(!buildup_hit(0,5000,None));
+        assert!(!buildup_hit(14,5000,None));
+        assert!(!buildup_hit(100,5000,Some(Duration::from_millis(299))));
+        assert!(buildup_hit(100,5000,Some(Duration::from_millis(300))));
+    }
+    #[test]
+    fn practice_keeps_conditional_bonuses_without_battle_rewards() {
+        let held=practice_held(&Ember::ALL);
+        for e in [Ember::FullMoon,Ember::Frenzy,Ember::Echo,Ember::Revenge,Ember::Barrier,Ember::Meditation,Ember::Footwork,Ember::Bloodlord,Ember::Frost,Ember::SpiritKeeper] {assert!(held.contains(&e));}
+        for e in [Ember::Rise,Ember::Feast,Ember::SpiritFeast,Ember::Harvest,Ember::Chain,Ember::SoulEater,Ember::Godslayer] {assert!(!held.contains(&e));}
+    }
+    #[test]
+    fn buildup_target_allows_direct_application_without_changing_strength() {
+        let mut row:SP_EFFECT_PARAM_ST=unsafe{std::mem::zeroed()};
+        row.set_effect_target_oppose_target(true);
+        row.set_blood_attack_power(40);row.set_freeze_attack_power(40);
+        assert!(!row.effect_target_self_target());
+        buildup_target(&mut row);
+        assert!(row.effect_target_self_target()&&row.effect_target_oppose_target());
+        assert!(!row.effect_target_friendly_target());
+        assert_eq!((row.blood_attack_power(),row.freeze_attack_power()),(40,40));
+        buildup_target(&mut row);
+        assert!(row.effect_target_self_target());
     }
     #[test]
     fn breaker_counts_only_burst_ailments() {

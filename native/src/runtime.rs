@@ -303,10 +303,9 @@ fn tick_party_scarabs(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->
         scene.hunt=Some(super::map_scarabs::Hunt::new(base)?);
     }
     if let Some(killed)=link.event.done {
-        // 奖励给打死它的人（每个人按本机看到的最后一击各领各的），付钱的人只在没打到时退款；原来只发给付钱的人
-        let mine=killed&scene.hunt.as_ref().map_or(0,|h|h.own_kills());
+        let mine=link.event.scarab_rewards(link.config.player);
         let payer=job.player==link.config.player;
-        super::log(format!("Party scarabs settle: wave={} payer={payer} killed={killed:03b} mine={mine:03b} aborted={}",job.wave,link.event.aborted));
+        super::log(format!("Party scarabs settle: wave={} payer={payer} killed={killed:03b} mine={mine:03b} owners={:?} aborted={}",job.wave,link.event.scarab_owners,link.event.aborted));
         if payer||mine!=0&&!link.event.aborted {
             let run=state.view.run.as_mut().ok_or("个人事件未加载")?;
             if run.phase!=(Phase::Node{id})||!run.regional_event.scarabs||payer&&run.regional_event.attempts!=attempt{return Err("个人粪金龟次数与结算不匹配".into());}
@@ -339,8 +338,9 @@ fn tick_party_scarabs(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->
     if link.host()&&!link.event.hunting&&link.gate.event_bound(job.wave){link.event_hunt(job.wave)?;}
     if link.event.hunting {
         if !hunt.active(){hunt.start()?;}
-        hunt.poll(world)?;
-        if link.host(){if let Some(killed)=hunt.result(){link.event_result(job.wave,killed)?;}}
+        let members:Vec<_>=std::iter::once(link.config.player).chain(link.config.peers.iter().map(|p|p.player)).collect();
+        hunt.poll(world,link.config.player,&members)?;
+        if link.host(){if let Some(killed)=hunt.result(){link.event_result_owned(job.wave,killed,hunt.owners())?;}}
     }
     if scene.started.elapsed()>Duration::from_secs(90)&&link.host()&&link.event.done.is_none(){link.event_abort(job.wave)?;}
     if scene.started.elapsed()>Duration::from_secs(120)&&link.event.done.is_none(){return Err("未收到粪金龟结算，已暂停重发".into());}
@@ -361,6 +361,7 @@ struct Runtime {
     radahn_probe:Option<super::radahn_probe::Probe>,
     ember_notice:super::ember_notice::Notice,
     load_trace:super::diagnostics::LoadTrace,
+    landing_trace:super::landing_probe::Trace,
     drawing:erdtree_tower::map_drawing::Sync,
     drawing_owner:Option<(u32,i32)>,
     rest_end:super::rest_end::RestEnd,
@@ -402,6 +403,7 @@ struct Runtime {
     growth: super::scaling::Growth,
     law_fight: super::law::Fight,
     ember_fight: super::embers::Fight,
+    ember_practice: super::embers::Fight,
     bout: super::debug_menu::Bout,
     pending: Option<Pending>,
     spawn_used: bool,
@@ -482,12 +484,14 @@ fn fresh_runtime()->Runtime {
         growth: Default::default(),
         law_fight: Default::default(),
         ember_fight: Default::default(),
+        ember_practice: Default::default(),
         bout: Default::default(),
         pending: None,
         spawn_used: false,
         dummy: None,
         last_player_probe: None,
         load_trace:Default::default(),
+        landing_trace:Default::default(),
         pad_capture: Default::default(),
         travel: None,
         flasks: None,
@@ -1191,25 +1195,40 @@ fn tick_revival(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->Result
         state.party_death_wave=wave;state.party_death=Default::default();super::seamless_revival::cancel();
     }
     let trial_destination=link.filter(|p|p.event.trial_victory()).and_then(|p|trial_revival_destination(p.event.trial_decision));
-    let victory=link.is_some_and(|p|p.victory||p.event.victory()||p.event.merchant_phase==3||p.event.trial_victory());
+    let mausoleum_goal=epoch.and_then(|_|state.room.as_ref().filter(|room|room.mausoleum)).and_then(|room|{
+        let survivor=link.and_then(|p|p.roster()).is_some_and(|roster|world.player_chr_set.characters().any(|p|
+            i32::from(p.current_block_id)==room.block&&p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()
+            &&world.main_player.as_ref().is_none_or(|local|local.chr_ins.field_ins_handle!=p.chr_ins.field_ins_handle)
+            &&roster.members.contains(&p.player_session_holder.player_network_session.remote_identity)));
+        super::mausoleum::recovery_target(state.view.run.as_ref(),room.arrival_block_position,super::mausoleum::flow().ok(),survivor)
+    });
+    let mausoleum_destination=mausoleum_goal.and_then(|goal|world.main_player.as_ref().and_then(|p|{
+        let block=i32::from(p.current_block_id);let b=&p.block_position;let h=&p.chr_ins.modules.physics.position;
+        goal.in_physics_space(Position{block,xyz:[b.x,b.y,b.z]},Position{block,xyz:[h.0,h.1,h.2]})
+    }));
+    let destination=mausoleum_destination.or(trial_destination);
+    let victory=mausoleum_destination.is_some()||link.is_some_and(|p|p.victory||p.event.victory()||p.event.merchant_phase==3||p.event.trial_victory());
     if epoch.is_some()&&victory {super::seamless_revival::tick(world,game);}
     let player=world.main_player.as_ref().map(|p|{
         let pos=&p.chr_ins.modules.physics.position;
         (Position{block:i32::from(p.current_block_id),xyz:[pos.0,pos.1,pos.2]},p.chr_ins.modules.data.hp<=0||p.chr_ins.chr_flags1c5.death_flag())
     });
     let recovered=world.main_player.as_ref().is_some_and(|p|super::seamless_revival::finished(super::seamless_revival::owned_address(p)));
+    if let Some(destination)=mausoleum_destination {state.party_death.redirect(destination);}
     match state.party_death.observe_confirmed(epoch,player,victory,game.warp_requested,recovered) {
         Recovery::RequestRevival(origin)=>{
-            let origin=trial_destination.filter(|p|p.block==origin.block).unwrap_or(origin);
+            let destination=destination.filter(|p|p.block==origin.block);
+            let origin=destination.unwrap_or(origin);
             state.party_death.redirect(origin);
             if let Some(p)=world.main_player.as_ref().filter(|p|i32::from(p.current_block_id)==origin.block) {
-                if trial_destination.is_some(){super::seamless_revival::request_at_safe_goal(p,origin)?;}
+                if let Some(goal)=mausoleum_goal {super::seamless_revival::request_at_safe_block_goal(p,goal)?;}
+                else if destination.is_some(){super::seamless_revival::request_at_safe_goal(p,origin)?;}
                 else {super::seamless_revival::request(p,origin)?;}
-                super::log(format!("PARTY_REVIVE requested epoch={epoch:?} origin={origin:?}"));
+                super::log(format!("PARTY_REVIVE requested epoch={epoch:?} origin={origin:?} mausoleum={}",mausoleum_destination.is_some()));
             }
         },
         Recovery::FinishRevival=>{
-            super::log(format!("PARTY_REVIVE alive at death position epoch={epoch:?}"));
+            super::log(format!("PARTY_REVIVE alive at recovery goal epoch={epoch:?}"));
         },
         _=>{},
     }
@@ -1492,6 +1511,9 @@ fn tick_locked() {
             format!("player={player} target_block={:08x} entry={} grounded={grounded} position={pos} party={}",i32::from(game.move_map_target),game.initial_area_entity_id,party.as_deref().unwrap_or("-"))
         };
         if let Some(line)=state.load_trace.observe_state(now,trigger,stage,&signature,&detail){super::log(line);}
+        let landing=state.travel.as_ref().filter(|_|state.view.run.as_ref().is_some_and(|r|super::arenas::for_run(r,state.party.is_some()).uses_circle())).map(|(travel,start,_,_)|(travel.node,*start));
+        let host=state.party.as_ref().map(|p|p.host());
+        state.landing_trace.tick(now,landing,world,game,host);
         if state.diagnostics.due(key.clone(),now) {
             super::log(format!("{key} hp={:?}",world.main_player.as_ref().map(|p|p.chr_ins.modules.data.hp)));
         }
@@ -1675,6 +1697,24 @@ fn tick_locked() {
     // 篝火营地的测伤假人：营地布置好后生成，离开营地撤下。联机时每人一个、只在本机生成（不同步），只统计自己的伤害；
     // 营地的服务 NPC 用的是地图实体，不占用调试生成接口
     let camp=!game.warp_requested&&state.room.as_ref().is_some_and(|r|r.kind==erdtree_tower::NodeKind::Camp&&!r.view.loading);
+    let practice=!game.warp_requested&&!state.view.travelling&&state.pending.is_none()&&!member_fighting(&state)
+        &&state.hub.as_ref().is_none_or(|h|!h.active)
+        &&state.view.run.as_ref().is_some_and(|r|!matches!(r.phase,Phase::Combat{..}|Phase::Dead|Phase::Won));
+    if practice {
+        let run=state.view.run.as_ref().unwrap();
+        let held=super::embers::practice_held(&super::embers::held(Some(run)));
+        let node=if let Phase::Node{id}=run.phase {id}else{usize::MAX};
+        let key=(run.seed,run.act,node);
+        let keeper=run.ember_stacks.level(erdtree_tower::embers::Ember::SpiritKeeper);
+        let foes:Vec<_>=if camp {state.dummy.as_ref().and_then(|d|d.target(world)).map(|h|vec![(h,3,0)]).unwrap_or_default()}else{vec![]};
+        let flasks=state.flasks.as_ref().map(|f|f.total());
+        // Practice never forwards combat rewards or persistent stack gains.
+        let _=state.ember_practice.tick(world,key,&held,&foes,true,false,flasks,keeper);
+        super::embers::clear_practice_critical();
+    } else {
+        if state.ember_practice.active() {super::embers::clear_practice_critical();}
+        state.ember_practice=Default::default();
+    }
     if camp {
         let clock=super::weapon_glow::clock();
         let act=state.view.run.as_ref().map_or(1,|r|r.act);
@@ -1682,9 +1722,11 @@ fn tick_locked() {
         if let Err(error)=dummy.tick(world,clock,act){super::log_repeating(format!("Damage dummy: {error}"));}
         state.view.dummy=Some(dummy.view(clock));
     } else if let Some(dummy)=state.dummy.take() {dummy.retire(world);state.view.dummy=None;}
+    if practice {state.ember_practice.observe_practice_refill(world);}
     let contract_run=state.view.run.as_ref().filter(|_|state.hub.as_ref().is_some_and(|h|!h.active));
     let spirit_alive=super::embers::living_spirit(world);
-    if let Some(player)=world.main_player.as_mut(){let greatshield_guard=super::embers::bulwark_guard(player);let light=super::contracts::light_load(unsafe {player.player_game_data.as_ref()});super::contracts::sync(&mut player.chr_ins,contract_run,light);super::elite::sync(&mut player.chr_ins,contract_run);super::passives::sync(&mut player.chr_ins,contract_run);super::auras::sync(&mut player.chr_ins);super::law::sync(&mut player.chr_ins,contract_run,state.law_fight.overtime());super::embers::sync(&mut player.chr_ins,contract_run,&state.ember_fight,spirit_alive,greatshield_guard);let data=player.player_game_data.as_ptr();super::weapon_glow::sync(&mut player.chr_ins,unsafe {&*data},super::weapon_glow::clock());super::affix_stack::sync(&mut player.chr_ins,unsafe {&*data});}
+    let ember_state=if practice {&state.ember_practice}else{&state.ember_fight};
+    if let Some(player)=world.main_player.as_mut(){let greatshield_guard=super::embers::bulwark_guard(player);let light=super::contracts::light_load(unsafe {player.player_game_data.as_ref()});super::contracts::sync(&mut player.chr_ins,contract_run,light);super::elite::sync(&mut player.chr_ins,contract_run);super::passives::sync(&mut player.chr_ins,contract_run);super::auras::sync(&mut player.chr_ins);super::law::sync(&mut player.chr_ins,contract_run,state.law_fight.overtime());super::embers::sync(&mut player.chr_ins,contract_run,ember_state,spirit_alive,greatshield_guard);let data=player.player_game_data.as_ptr();super::weapon_glow::sync(&mut player.chr_ins,unsafe {&*data},super::weapon_glow::clock());super::affix_stack::sync(&mut player.chr_ins,unsafe {&*data});}
     // 处决期间敌人不再无敌，我方照旧无敌（旅程进行中）
     super::throw_guard::sync(world,contract_run.is_some_and(|run|!matches!(run.phase,Phase::Dead|Phase::Won)));
     if let Some(player)=world.main_player.as_mut(){super::auras::countdown(&mut player.chr_ins,false);}
@@ -3143,6 +3185,10 @@ fn tick_merchant(state:&mut Runtime,world:&WorldChrMan,room:&mut super::rooms::R
 fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, dead: bool) {
     if dead&&state.party.as_ref().is_some_and(|p|!p.defeated)&&!state.view.run.as_ref().is_some_and(|r|r.bells.challenge.is_some()) {
         state.command=None;state.view.ready=false;state.view.busy=true;
+        if let Some(room)=state.room.as_ref().filter(|room|room.mausoleum) {
+            let link=state.party.as_ref().unwrap();
+            super::log_repeating(format!("MAUSOLEUM_DEATH host={} epoch={} flow={:?} arrival_block={:?} recovering={}",link.host(),link.epoch,super::mausoleum::flow(),room.arrival_block_position,state.party_death.awaiting_revival()));
+        }
         report(state,"等待队友救援或全队结算");return;
     }
     let mut room = state.room.take().unwrap();

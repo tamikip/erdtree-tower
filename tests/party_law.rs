@@ -4,7 +4,7 @@ use erdtree_tower::{Class,Run,law::Law,party_game::{Gate,Report,Order}};
 fn host_law_must_be_applied_by_every_player_before_travel() {
     for count in 2..=8 {
         let mut host=Run::new(42,Class::Samurai);
-        host.set_law(Law::default().toggle(0).toggle(8).toggle(27).toggle(28).toggle(29).toggle(30)).unwrap();
+        host.set_law(Law::default().toggle(0).toggle(8).toggle(27).toggle(28).toggle(29).toggle(30).toggle(34)).unwrap();
         host.align_party_start(53).unwrap();
         let mut guest=Run::new(53,Class::Hero);
         let mut gate=Gate::new((1..=count).collect());
@@ -16,7 +16,7 @@ fn host_law_must_be_applied_by_every_player_before_travel() {
         guest.set_law(law).unwrap();
         for id in 2..=count {gate.report(id,Report::new(&guest,0,false,false,true)).unwrap();}
         assert!(gate.law_order(&host).unwrap().is_none());
-        assert!(gate.enter(&host,node).is_ok());assert_eq!(guest.flask_limit,host.flask_limit);
+        assert!(gate.enter(&host,node).is_ok());assert_eq!(guest.flask_limit,host.flask_limit);assert_eq!(guest.nodes,host.nodes);
     }
 }
 
@@ -41,6 +41,6 @@ fn every_law_node_survives_party_alignment_and_wire_roundtrip() {
         let decoded=erdtree_tower::party_handshake::Payload::decode(&payload.encode().unwrap()).unwrap();
         assert!(matches!(decoded,erdtree_tower::party_handshake::Payload::Order{order:Order::Law{law:actual,..},..} if actual==law));
     }
-    let run=Run::new(42,Class::Samurai);let mut report=Report::new(&run,0,false,false,true);report.law=Law(1<<31);
+    let run=Run::new(42,Class::Samurai);let mut report=Report::new(&run,0,false,false,true);report.law=Law(1u64<<erdtree_tower::law::NODES.len());
     assert!(Gate::new(vec![1,2]).report(2,report).is_err());
 }

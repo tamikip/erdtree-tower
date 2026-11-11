@@ -24,8 +24,8 @@ pub fn toolbar(ui:&Ui,scope:Scope,pos:[f32;2],size:[f32;2],scale:f32,ready:bool)
             }
         }
         let hint=match ink.mode {Mode::Select=>"拖动地图或滚轮翻页",Mode::Draw=>"按住左键划线，松开同步",Mode::Erase=>"按住左键擦除整条笔迹"};
-        ui.set_window_font_scale(14.0/20.0*scale);let tw=ui.calc_text_size(hint)[0];
-        ui.set_cursor_screen_pos([pos[0]+(size[0]-tw).max(0.0)*0.5,pos[1]+size[1]+10.0*scale]);ui.text_colored(crate::archive_style::MUTED,hint);
+        ui.set_window_font_scale(14.0/20.0*scale);let tw=ui.calc_text_size(crate::i18n::t(hint))[0];
+        ui.set_cursor_screen_pos([pos[0]+(size[0]-tw).max(0.0)*0.5,pos[1]+size[1]+10.0*scale]);ui.text_colored(crate::archive_style::MUTED,crate::i18n::t(hint));
         ui.set_window_font_scale(scale);
     });
 }

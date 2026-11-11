@@ -18,9 +18,9 @@ enum Badge {Icon(Option<TextureId>), Level(&'static str)}
 fn heading(ui: &Ui, s: f32, title: &str, count: Option<usize>) {
     let start = ui.cursor_screen_pos();
     let start = [start[0], start[1] + 10.0 * s];
-    ui.set_window_font_scale(1.02 * s);ui.set_cursor_screen_pos(start);ui.text_colored(GOLD, title);
+    ui.set_window_font_scale(1.02 * s);ui.set_cursor_screen_pos(start);ui.text_colored(GOLD,crate::i18n::t(title));
     let mut end = ui.item_rect_max();
-    if let Some(count) = count {ui.same_line();ui.set_window_font_scale(0.8 * s);ui.text_colored(MUTED, format!("×{count}"));end = ui.item_rect_max();}
+    if let Some(count) = count {ui.same_line();ui.set_window_font_scale(0.8 * s);ui.text_colored(MUTED,crate::i18n::t(format!("×{count}")));end = ui.item_rect_max();}
     let right = ui.window_pos()[0] + ui.window_size()[0] - 14.0 * s;let y = (start[1] + end[1]) * 0.5;
     ui.get_window_draw_list().add_rect_filled_multicolor([end[0] + 10.0 * s, y - 0.6 * s], [right, y + 0.6 * s],
         ImColor32::from_rgba(214, 180, 112, 150), ImColor32::from_rgba(214, 180, 112, 0), ImColor32::from_rgba(214, 180, 112, 0), ImColor32::from_rgba(214, 180, 112, 150));
@@ -46,8 +46,8 @@ fn entry(ui: &Ui, s: f32, badge: Badge, title: &str, title_color: [f32; 4], line
     draw.add_rect(start, [start[0] + side, start[1] + side], ImColor32::from_rgba(171, 143, 87, 90)).rounding(4.0 * s).build();
     drop(draw);
     if let Badge::Level(numeral) = badge && !numeral.is_empty() {
-        ui.set_window_font_scale(0.8 * s);let w = ui.calc_text_size(numeral);
-        ui.set_cursor_screen_pos([start[0] + (side - w[0]) * 0.5, start[1] + (side - w[1]) * 0.5]);ui.text_colored(WHITE, numeral);
+        ui.set_window_font_scale(0.8 * s);let w = ui.calc_text_size(crate::i18n::t(numeral));
+        ui.set_cursor_screen_pos([start[0] + (side - w[0]) * 0.5, start[1] + (side - w[1]) * 0.5]);ui.text_colored(WHITE,crate::i18n::t(numeral));
     }
     let x = start[0] + side + 12.0 * s;
     let mut y = wrapped(ui, [x, start[1]], right, title, title_color, 0.95 * s) + 2.0 * s;
@@ -68,14 +68,14 @@ fn stats(ui: &Ui, s: f32, summary: &crate::stats::Summary) {
         if line.group != group {
             if index % 2 == 1 {y += 22.0 * s;}
             group = line.group;index = 0;
-            ui.set_window_font_scale(0.78 * s);ui.set_cursor_screen_pos([left, y]);ui.text_colored(MUTED, group);
+            ui.set_window_font_scale(0.78 * s);ui.set_cursor_screen_pos([left, y]);ui.text_colored(MUTED,crate::i18n::t(group));
             y += 20.0 * s;
         }
         let x = left + if index % 2 == 0 {0.0} else {column + 18.0 * s};
         ui.set_window_font_scale(0.84 * s);
-        ui.set_cursor_screen_pos([x, y]);ui.text_colored(WHITE, line.label);
-        let w = ui.calc_text_size(&line.value)[0];
-        ui.set_cursor_screen_pos([x + column - w, y]);ui.text_colored(if line.good {BOON} else {RED}, &line.value);
+        ui.set_cursor_screen_pos([x, y]);ui.text_colored(WHITE,crate::i18n::t(line.label));
+        let w = ui.calc_text_size(crate::i18n::t(&line.value))[0];
+        ui.set_cursor_screen_pos([x + column - w, y]);ui.text_colored(if line.good {BOON} else {RED},crate::i18n::t(&line.value));
         if index % 2 == 1 {y += 22.0 * s;}
         index += 1;
     }
@@ -105,7 +105,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
         crate::law_ui::ornament(&draw, [pos[0] + width * 0.5, pos[1] + 70.0 * s], width * 0.42, s);
         drop(draw);
         ui.set_window_font_scale(1.3 * s);let title = "当 前 构 筑";
-        ui.set_cursor_screen_pos([pos[0] + (width - ui.calc_text_size(title)[0]) * 0.5, pos[1] + 20.0 * s]);ui.text_colored(GOLD, title);
+        ui.set_cursor_screen_pos([pos[0] + (width - ui.calc_text_size(crate::i18n::t(title))[0]) * 0.5, pos[1] + 20.0 * s]);ui.text_colored(GOLD,crate::i18n::t(title));
         // 右上角关闭（C 键同样可以关闭）
         let corner = [pos[0] + width - 46.0 * s, pos[1] + 18.0 * s];
         ui.set_cursor_screen_pos(corner);close = ui.invisible_button("close-build", [30.0 * s, 30.0 * s]);
@@ -121,8 +121,8 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
         let _grab = ui.push_style_color(StyleColor::ScrollbarGrab, [0.45, 0.37, 0.22, 0.8]);
         let _grab_hover = ui.push_style_color(StyleColor::ScrollbarGrabHovered, [0.62, 0.5, 0.3, 0.9]);
         ui.child_window("build-content").size([width - 36.0 * s, extent[1] - 104.0 * s]).build(|| {
-            ui.text_colored(BOON,format!("灵药储备：{} 瓶（喝完手中一瓶后自动补充）",run.physick_supply.reserve));
-            if run.physick_supply.issued {ui.text_colored(MUTED,"灵药补充待确认；未确认前不会重复发放。");}
+            ui.text_colored(BOON,crate::i18n::t(format!("灵药储备：{} 瓶（喝完手中一瓶后自动补充）",run.physick_supply.reserve)));
+            if run.physick_supply.issued {ui.text_colored(MUTED,crate::i18n::t("灵药补充待确认；未确认前不会重复发放。"));}
             // 手柄右摇杆与鼠标滚轮：指针不在面板上时也滚动面板
             let wheel = ui.io().mouse_wheel;
             if wheel != 0.0 && !ui.is_window_hovered() {ui.set_scroll_y((ui.scroll_y() - wheel * 48.0 * s).clamp(0.0, ui.scroll_max_y()));}
@@ -192,7 +192,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, icon: &mut dyn FnMut(u32) -> Option
                     draw.add_rect(min, max, ImColor32::from_rgba(0, 0, 0, 150)).filled(true).rounding(3.0 * s).build();
                     crate::law_art::draw_line(&draw, node.art, [min[0] + 5.0 * s, min[1] + 5.0 * s], [max[0] - 5.0 * s, max[1] - 5.0 * s], 240);
                     draw.add_rect(min, max, ImColor32::from_rgba(171, 143, 87, 110)).rounding(3.0 * s).build();drop(draw);
-                    if ui.is_mouse_hovering_rect(min, max) {ui.set_window_font_scale(s);ui.tooltip_text(format!("{}\n{}", node.name, node.effect));}
+                    if ui.is_mouse_hovering_rect(min, max) {ui.set_window_font_scale(s);ui.tooltip_text(crate::i18n::t(format!("{}\n{}", node.name, node.effect)));}
                 }
                 if !nodes.is_empty() {y += nodes.len().div_ceil(per_row) as f32 * (side + gap) + 2.0 * s;}
                 let names: Vec<_> = nodes.iter().map(|id| erdtree_tower::law::NODES[*id].name).collect();

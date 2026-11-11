@@ -131,17 +131,17 @@ fn render(ui:&Ui,current:&mut Screen,icon:&mut dyn FnMut(u32)->Option<TextureId>
         match current {
             Screen::Notice{message,opened}=>{
                 let opened=*opened.get_or_insert(ui.time());
-                ui.text("暂时无法开始联机旅程");ui.separator();ui.spacing();crate::fancy_text::text_wrapped(ui,message);
-                ui.spacing();ui.text("详细原因已记录到 tower-preview.log。");ui.spacing();
+                ui.text(crate::i18n::t("暂时无法开始联机旅程"));ui.separator();ui.spacing();crate::fancy_text::text_wrapped(ui,message);
+                ui.spacing();ui.text(crate::i18n::t("详细原因已记录到 tower-preview.log。"));ui.spacing();
                 if (crate::pad::button(ui,"notice-ok","确定",Some(crate::pad::CONFIRM),[0.0,0.0])||ui.is_key_pressed(Key::Enter)||ui.is_key_pressed(Key::GamepadFaceDown)||ui.is_key_pressed(Key::Escape)||ui.is_key_pressed(Key::GamepadFaceRight))&&ui.time()-opened>=0.35 {close=true;}
             },
             Screen::TrialRewards{items,opened}=>{
                 let opened=*opened.get_or_insert(ui.time());
-                ui.text("男生女生向前冲 · 挑战完成");ui.separator();ui.spacing();
-                ui.text("已获得以下护符赐福");ui.spacing();
+                ui.text(crate::i18n::t("男生女生向前冲 · 挑战完成"));ui.separator();ui.spacing();
+                ui.text(crate::i18n::t("已获得以下护符赐福"));ui.spacing();
                 for &id in items.iter() {
                     let (name,info)=crate::reward_ui::talisman_description(id);
-                    ui.text_colored([0.9,0.78,0.5,1.0],name);crate::fancy_text::text_wrapped(ui,info);ui.spacing();ui.separator();ui.spacing();
+                    ui.text_colored([0.9,0.78,0.5,1.0],crate::i18n::t(name));crate::fancy_text::text_wrapped(ui,info);ui.spacing();ui.separator();ui.spacing();
                 }
                 if items.is_empty(){crate::fancy_text::text_wrapped(ui,"已拥有全部可获得的护符赐福，本次没有新增赐福。");}
                 crate::fancy_text::text_wrapped(ui,"本局持续生效，不占护符栏位，无需装备。");ui.spacing();
@@ -222,7 +222,7 @@ fn seed_page(ui:&Ui,input:&mut String,error:&mut String,selected:&mut u8,ready:b
     ui.window("以种子开始##seed").position([0.0,0.0],Condition::Always).size(size,Condition::Always)
         .flags(hudhook::imgui::WindowFlags::NO_DECORATION|hudhook::imgui::WindowFlags::NO_BACKGROUND|hudhook::imgui::WindowFlags::NO_MOVE|hudhook::imgui::WindowFlags::NO_NAV).build(|| {
         let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32| {
-            ui.set_window_font_scale(scale*s);ui.set_cursor_pos([x-ui.calc_text_size(value)[0]*0.5,top+y*s]);ui.text_colored(color,value);
+            ui.set_window_font_scale(scale*s);ui.set_cursor_pos([x-ui.calc_text_size(crate::i18n::t(value))[0]*0.5,top+y*s]);ui.text_colored(color,crate::i18n::t(value));
         };
         text(mid,12.0,"开始新旅程",muted,1.0);
         text(mid,57.0,"以 种 子 开 启 旅 程",gold,2.1);
@@ -247,8 +247,8 @@ fn seed_page(ui:&Ui,input:&mut String,error:&mut String,selected:&mut u8,ready:b
             drop(draw);
             let label_scale=if label.len()>1 {0.95}else{1.25};
             ui.set_window_font_scale(label_scale*s);
-            ui.set_cursor_pos([x+extent[0]*0.5-ui.calc_text_size(label)[0]*0.5,pos[1]+(extent[1]-ui.text_line_height())*0.5]);
-            ui.text_colored(if focus{white}else{gold},label);
+            ui.set_cursor_pos([x+extent[0]*0.5-ui.calc_text_size(crate::i18n::t(label))[0]*0.5,pos[1]+(extent[1]-ui.text_line_height())*0.5]);
+            ui.text_colored(if focus{white}else{gold},crate::i18n::t(label));
         }
         {
             use crate::pad::{self,Input,Pad};
@@ -277,9 +277,9 @@ const ROMAN:[&str;4]=["","I","II","III"];
 /// 按中文规则换行（见 fancy_text::wrap_lines），逐行画出
 pub(crate) fn wrapped(ui:&Ui,pos:[f32;2],right:f32,value:&str,color:[f32;4],scale:f32)->f32 {
     ui.set_window_font_scale(scale);
-    let lines=crate::fancy_text::wrap_lines(value,(right-pos[0]).max(1.0),|t|ui.calc_text_size(t)[0]);
+    let lines=crate::fancy_text::wrap_lines(value,(right-pos[0]).max(1.0),|t|ui.calc_text_size(crate::i18n::t(t))[0]);
     let step=ui.text_line_height_with_spacing();let mut y=pos[1];let mut bottom=pos[1];
-    for line in lines {ui.set_cursor_screen_pos([pos[0],y]);ui.text_colored(color,&line);bottom=ui.item_rect_max()[1];y+=step;}
+    for line in lines {ui.set_cursor_screen_pos([pos[0],y]);ui.text_colored(color,crate::i18n::t(&line));bottom=ui.item_rect_max()[1];y+=step;}
     bottom
 }
 /// 结算页：标题与终局说明，下方三块面板（旅程 · 誓约 · 余烬），底部种子与按钮。
@@ -375,10 +375,10 @@ impl Big {
         match self.font {
             Some(font)=>{
                 let _font=ui.push_font(font);let k=h/(self.height*self.size);ui.set_window_font_scale(k);
-                let w=ui.calc_text_size(&piece)[0];let (x0,y0)=(x+(self.cell(h)-w)*0.5,top-self.top*self.size*k);
+                let w=ui.calc_text_size(crate::i18n::t(&piece))[0];let (x0,y0)=(x+(self.cell(h)-w)*0.5,top-self.top*self.size*k);
                 // 加粗：大字号时左右各多画一份、错开一点，笔画更厚（参考图那种粗黑体）
                 let spread=if h>60.0 {h*0.012}else{0.0};
-                for dx in if spread>0.0 {[-spread,0.0,spread]}else{[0.0,0.0,0.0]} {ui.set_cursor_screen_pos([x0+dx,y0]);ui.text_colored(color,&piece);if spread<=0.0 {break;}}
+                for dx in if spread>0.0 {[-spread,0.0,spread]}else{[0.0,0.0,0.0]} {ui.set_cursor_screen_pos([x0+dx,y0]);ui.text_colored(color,crate::i18n::t(&piece));if spread<=0.0 {break;}}
             },
             None=>{
                 let c=|v:f32|(v.clamp(0.0,1.0)*255.0) as u8;
@@ -465,10 +465,10 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
         let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,align:f32| {
             if color[3]<=0.01 {return;}
             let (_font,k)=font_for(value);
-            ui.set_window_font_scale(scale*k*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+            ui.set_window_font_scale(scale*k*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
         };
         // 量一段文字的宽度（设计单位），与 text 用同一种字体
-        let measure=|value:&str,scale:f32|->f32 {let (_font,k)=font_for(value);ui.set_window_font_scale(scale*k*s);ui.calc_text_size(value)[0]/s};
+        let measure=|value:&str,scale:f32|->f32 {let (_font,k)=font_for(value);ui.set_window_font_scale(scale*k*s);ui.calc_text_size(crate::i18n::t(value))[0]/s};
         // 逐字打出：已出现的字正常，正在出现的那个字淡入
         let typed=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,start:f64,rate:f64| {
             let shown=((elapsed-start)*rate).max(0.0);
@@ -477,8 +477,8 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
             // 每个字的位置按前面整段的宽度算（逐字累加会因取整越来越宽）
             for (i,(at,c)) in value.char_indices().enumerate() {
                 let k=(shown-i as f64).clamp(0.0,1.0) as f32;if k<=0.0 {break;}
-                let cx=x+ui.calc_text_size(&value[..at])[0]/s;
-                ui.set_cursor_screen_pos([ox+cx*s,oy+(y+(1.0-k)*6.0)*s]);ui.text_colored(fade(color,k*color[3]),&value[at..at+c.len_utf8()]);
+                let cx=x+ui.calc_text_size(crate::i18n::t(&value[..at]))[0]/s;
+                ui.set_cursor_screen_pos([ox+cx*s,oy+(y+(1.0-k)*6.0)*s]);ui.text_colored(fade(color,k*color[3]),crate::i18n::t(&value[at..at+c.len_utf8()]));
             }
         };
         // 从中间往两头长出来的细线，生长的两端带一点亮光
@@ -698,7 +698,7 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
                 let kn=ease(elapsed,start+0.2,0.25);let fit=(cell/measure(node.name,0.9)).min(1.0);
                 text(cx+tile*0.5,cy+tile+5.0,node.name,fade(muted,kn),0.9*fit,0.5);
             }
-            if ready&&ui.is_mouse_hovering_rect(min,max) {ui.tooltip_text(format!("{} · {}",node.name,node.effect));}
+            if ready&&ui.is_mouse_hovering_rect(min,max) {ui.tooltip_text(crate::i18n::t(format!("{} · {}",node.name,node.effect)));}
         }
         // 旅程统计：一行一行落下（落下时背后闪一道亮条、数字从 0 涨上去），最后一行落定时一响
         let lines=score.lines();let row_h=38.0;
@@ -741,9 +741,9 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
             let font=crate::fancy_text::button_font().map(|f|ui.push_font(f));
             let scale=if font.is_some(){0.78*30.0/crate::fancy_text::SANS_PIXELS}else{1.15};let gap=(7.0+2.0*hover_k)*s;
             ui.set_window_font_scale(scale*s);
-            let widths:Vec<f32>=label.chars().map(|c|ui.calc_text_size(c.to_string())[0]).collect();
+            let widths:Vec<f32>=label.chars().map(|c|ui.calc_text_size(crate::i18n::t(c.to_string()))[0]).collect();
             let width=widths.iter().sum::<f32>()+gap*(widths.len().saturating_sub(1)) as f32;
-            let height=ui.calc_text_size(label)[1];
+            let height=ui.calc_text_size(crate::i18n::t(label))[1];
             // 按键标签（crate::pad，手柄 / 键盘随最后用的设备切换）：主按钮深底金字，次按钮浅底深字，悬停时略放大
             let h=(25.0+3.0*hover_k)*s;let badge=crate::pad::width(ui,key,h);let badge_gap=if badge>0.0 {12.0*s}else{0.0};
             let mut x=(min[0]+max[0]-width-badge-badge_gap)*0.5;let mid=(min[1]+max[1])*0.5;
@@ -751,7 +751,7 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
             ui.set_window_font_scale(scale*s);
             x+=badge+badge_gap;let y=mid-height*0.5;
             ui.set_window_font_scale(scale*s);
-            for (c,w) in label.chars().zip(&widths) {ui.set_cursor_screen_pos([x,y]);ui.text_colored(ink,c.to_string());x+=w+gap;}
+            for (c,w) in label.chars().zip(&widths) {ui.set_cursor_screen_pos([x,y]);ui.text_colored(ink,crate::i18n::t(c.to_string()));x+=w+gap;}
             drop(font);
             (clicked,hover)
         };
@@ -786,8 +786,8 @@ pub(crate) fn oath_badge(ui:&Ui,c:[f32;2],h:f32,numeral:&str,lit:bool,s:f32) {
     let mut outline=diamond.clone();outline.push(diamond[0]);
     draw.add_polyline(outline,if lit{ImColor32::from_rgba(214,180,112,255)}else{ImColor32::from_rgba(90,80,62,200)}).thickness(1.6*s).build();drop(draw);
     if !numeral.is_empty() {
-        ui.set_window_font_scale(0.85*h/19.0);let w=ui.calc_text_size(numeral);
-        ui.set_cursor_screen_pos([c[0]-w[0]*0.5,c[1]-w[1]*0.5]);ui.text_colored(if lit{[0.93,0.9,0.81,1.0]}else{[0.45,0.43,0.38,1.0]},numeral);
+        ui.set_window_font_scale(0.85*h/19.0);let w=ui.calc_text_size(crate::i18n::t(numeral));
+        ui.set_cursor_screen_pos([c[0]-w[0]*0.5,c[1]-w[1]*0.5]);ui.text_colored(if lit{[0.93,0.9,0.81,1.0]}else{[0.45,0.43,0.38,1.0]},crate::i18n::t(numeral));
     }
 }
 #[cfg(test)]

@@ -255,6 +255,7 @@ foreach ($section in @(Get-TowerPluginSections $root)) {
 # The editable profile keeps user entries; tower-owned paths always follow this installation.
 $config = [regex]::Replace($config,"(?m)^(\s*path\s*=\s*)['""][^'""\r\n]*[\\/]erdtree_tower_\w+\.dll['""]",('${1}'''+$native.Replace('\','/').Replace('$','$$')+''''))
 $config = [regex]::Replace($config,"(?m)^(\s*path\s*=\s*)['""][^'""\r\n]*[\\/]scene-assets['""]",('${1}'''+$assets.Replace('\','/').Replace('$','$$')+''''))
+$config=Add-TowerLanguagePackage $config $root $GameDir
 [IO.File]::WriteAllText($configPath,$config,(New-Object Text.UTF8Encoding($false)))
 $private = Join-Path $runtime 'SeamlessCoop'
 New-Item -ItemType Directory -Path $private -Force | Out-Null

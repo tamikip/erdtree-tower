@@ -12,6 +12,35 @@ function Get-TowerLoaderPath([string]$Root,[string]$Loader) {
     if(!(Test-Path -LiteralPath $path -PathType Leaf)){throw "Missing loader: $path"}
     return $path
 }
+function Add-TowerLanguagePackage([string]$Text,[string]$Root,[string]$GameDirectory) {
+    $language='auto'
+    $options=Join-Path $Root 'tower-options.ini'
+    if(Test-Path -LiteralPath $options -PathType Leaf){
+        foreach($line in [IO.File]::ReadAllLines($options)){
+            if($line -match '^\s*language\s*=\s*([^#;\s]+)\s*(?:[#;].*)?$'){$language=$Matches[1].ToLowerInvariant()}
+        }
+    }
+    if($language -in @('auto','game')){
+        $steamApps=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $GameDirectory))
+        if($steamApps){
+            $manifest=Join-Path $steamApps 'appmanifest_1245620.acf'
+            if(Test-Path -LiteralPath $manifest -PathType Leaf){
+                $acf=[IO.File]::ReadAllText($manifest)
+                if($acf -match '(?is)"UserConfig"\s*\{[^}]*"language"\s*"([^"]+)"'){$language=$Matches[1].ToLowerInvariant()}
+            }
+        }
+    }
+    $sections='(?ms)^\s*\[\[packages\]\][^\r\n]*\r?\n.*?(?=^\s*\[\[|\z)'
+    $Text=[regex]::Replace($Text,$sections,{param($match)
+        if($match.Value -match '(?m)^\s*id\s*=\s*[''"]tower-language[''"]\s*$'){return ''}
+        return $match.Value
+    }).TrimEnd()
+    if($language -notin @('en','en-us','engus','english')){return $Text}
+    $overlay=[IO.Path]::GetFullPath((Join-Path $Root 'scene-assets/locales/en-US'))
+    if(!(Test-Path -LiteralPath (Join-Path $overlay 'menu') -PathType Container)){throw 'English menu resources are missing. Verify and repair the installation.'}
+    if($overlay.Contains("'")){throw 'Unsupported quote in language asset path.'}
+    return $Text+"`r`n[[packages]]`r`nid = 'tower-language'`r`npath = '$($overlay.Replace('\','/'))'`r`n"
+}
 function Read-TowerProfileString([string]$Value) {
     if($Value -match "^'([^'\r\n]*)'\s*(?:#.*)?$"){return $Matches[1]}
     if($Value -match '^("(?:[^"\\]|\\.)*")\s*(?:#.*)?$'){return ($Matches[1] | ConvertFrom-Json)}
@@ -60,7 +89,7 @@ function ConvertTo-TowerYafsmlConfig([string]$Text,[string]$BaseDirectory) {
         if(@($natives | Where-Object {$_.id -eq $id}).Count){throw "Duplicate native ID: $id"}
         [void]$natives.Add(@{id=$id;path=$path;values=$v;after=(New-Object System.Collections.ArrayList)})
     }
-    if($packages.Count -ne 1){throw 'YAFSML supports the standard single tower asset package; use ME3 for layered profiles.'}
+    if($packages.Count -eq 0){throw 'YAFSML requires at least one tower asset package.'}
     foreach($native in $natives){foreach($direction in 'load_after','load_before'){
         if(!$native.values.ContainsKey($direction)){continue}
         $dependencies=$native.values[$direction] -replace '\s+#.*$',''
@@ -93,7 +122,9 @@ function ConvertTo-TowerYafsmlConfig([string]$Text,[string]$BaseDirectory) {
         if($i -gt 0){$line+='|after,native'+($i-1)}
         $lines+=$line
     }
-    $lines+=@('','[mod]',('tower='+$packages[0]),'')
+    $lines+=@('','[mod]',('tower='+$packages[0]))
+    for($i=1;$i -lt $packages.Count;$i++){$lines+='overlay'+$i+'='+$packages[$i]}
+    $lines+=''
     return ($lines -join "`n")
 }
 function Invoke-TowerLoader([string]$Root,[string]$Loader,[string]$GameExe,[string]$Profile) {

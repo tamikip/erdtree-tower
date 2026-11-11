@@ -76,11 +76,11 @@ pub fn draw(ui:&Ui,screen:&mut ClassScreen)->Option<ClassAction> {
             if color[3]<=0.01 {return;}
             let font=title_font.filter(|_|px>=22.0).map(|f|ui.push_font(f));
             ui.set_window_font_scale(px/if font.is_some(){32.0}else{20.0}*s);
-            ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(value)[0]*align,oy+y*s]);ui.text_colored(color,value);
+            ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
         };
         let measure=|value:&str,px:f32|->f32 {
             let _font=title_font.filter(|_|px>=22.0).map(|f|ui.push_font(f));
-            ui.set_window_font_scale(px/if title_font.is_some()&&px>=22.0{32.0}else{20.0}*s);ui.calc_text_size(value)[0]/s
+            ui.set_window_font_scale(px/if title_font.is_some()&&px>=22.0{32.0}else{20.0}*s);ui.calc_text_size(crate::i18n::t(value))[0]/s
         };
         let (gold,white,muted,boon)=([0.86,0.74,0.48,1.0],[0.93,0.9,0.81,1.0],[0.62,0.59,0.51,1.0],[0.86,0.8,0.64,1.0]);
         // ── 标题：落下淡入，装饰线从中间展开 ──

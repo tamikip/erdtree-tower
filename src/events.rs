@@ -8,6 +8,7 @@ pub struct Story {
 }
 pub const DICE:usize=0;pub const MYSTERY:usize=1;pub const REFORGE:usize=2;pub const FURNACE:usize=3;
 pub const DICE_STAKES:[u32;2]=[1000,3000];
+pub const DICE_PROFITS:[u32;2]=[2000,6000];
 pub const BOX_PRICES:[u32;2]=[1000,2500];
 pub const REFORGE_PRICES:[u32;2]=[1000,3000];
 /// 重练炉：第一次重练的价格，之后同一座炉子每重练一次翻倍；最多重练 FURNACE_MAX_USES 次
@@ -86,7 +87,7 @@ impl Run {
     }
 }
 /// 骰子赌徒：本节点的结果由种子决定，与押注多少无关
-pub fn dice_wins(run:&Run,node:usize)->bool {crate::mix(run.reward_seed()^(node as u64).wrapping_mul(7919)^0xd1ce)%2==0}
+pub fn dice_wins(run:&Run,node:usize)->bool {crate::mix(run.reward_seed()^(node as u64).wrapping_mul(7919)^0xd1ce)%100<40}
 /// 事件结算后的提示（赌运事件需要读取结果）
 pub fn story_outcome(run:&Run,choice:usize)->String {
     let (Ok(index),Ok(node))=(run.story_index(),run.active_node(NodeKind::Event)) else {return String::new();};
@@ -143,7 +144,7 @@ impl Run {
             DICE => {
                 let stake=DICE_STAKES[choice];
                 if next.gold<stake {return Err("卢恩不足，事件未消耗".into());}
-                if dice_wins(self,id) {next.gold=next.gold.saturating_add(stake);}else{price=stake;}
+                if dice_wins(self,id) {next.gold=next.gold.saturating_add(DICE_PROFITS[choice]);}else{price=stake;}
             }
             MYSTERY => {
                 price=BOX_PRICES[choice];
@@ -233,7 +234,7 @@ mod gamble_tests {
         assert_eq!(Run::decode(&json.to_string()).unwrap().event_rules,0);
     }
     #[test]
-    fn dice_doubles_or_loses_the_stake_and_is_fixed_per_node() {
+    fn dice_pays_bonus_or_loses_the_stake_and_is_fixed_per_node() {
         let (mut wins,mut losses)=(0,0);
         for seed in 0..400 {
             let mut run=Run::new(seed,Class::Samurai);
@@ -243,12 +244,25 @@ mod gamble_tests {
             run.gold=5000;
             for choice in 0..2 {
                 let mut r=run.clone();let message=story_outcome(&r,choice);r.resolve_story(choice).unwrap();
-                if dice_wins(&run,id) {assert_eq!(r.gold,5000+DICE_STAKES[choice]);assert!(message.contains("赢"));wins+=1;}
+                if dice_wins(&run,id) {assert_eq!(r.gold,[7000,11000][choice]);assert!(message.contains("赢"));wins+=1;}
                 else {assert_eq!(r.gold,5000-DICE_STAKES[choice]);assert!(message.contains("输"));losses+=1;}
             }
             let mut poor=run.clone();poor.gold=999;assert!(poor.resolve_story(0).is_err());
         }
         assert!(wins>0&&losses>0);
+    }
+    #[test]
+    fn dice_win_rate_is_about_forty_percent_and_survives_reload() {
+        let mut wins=0;
+        for seed in 0..2000 {
+            let run=Run::new(seed,Class::Samurai);
+            for node in 0..10 {wins+=usize::from(dice_wins(&run,node));}
+            if seed<20 {
+                let restored=Run::decode(&run.encode().unwrap()).unwrap();
+                for node in 0..10 {assert_eq!(dice_wins(&run,node),dice_wins(&restored,node));}
+            }
+        }
+        assert!((7600..=8400).contains(&wins),"unexpected wins: {wins}/20000");
     }
     #[test]
     fn mystery_boxes_pay_out_equipment_and_reforge_picks_a_sibling() {

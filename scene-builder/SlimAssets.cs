@@ -9,6 +9,8 @@ static class SlimAssets
         Directory.CreateDirectory(output);
         var manifest = new AssetManifest { Version = 1, OodleHash = AssetHash.FileHash(Path.Combine(game, "oo2core_6_win64.dll")) };
         var pending = new List<string> { "menu/hi/01_common.tpf.dcx", "sfx/sfxbnd_commoneffects.ffxbnd.dcx" };
+        const string englishTheme="locales/en-US/menu/hi/01_common.tpf.dcx";
+        if(File.Exists(Path.Combine(assets,englishTheme)))pending.Add(englishTheme);
         var recipes = new List<AssetRecipe>();
         foreach (var archive in new[] { "DLC", "Data0", "Data1", "Data2", "Data3" })
         {
@@ -17,7 +19,8 @@ static class SlimAssets
             using var data = File.OpenRead(Path.Combine(game, archive + ".bdt"));
             foreach (var path in pending.ToArray())
             {
-                ulong hash = 0; foreach (char c in "/" + path) hash = unchecked(hash * 0x85 + c);
+                string sourcePath=path==englishTheme?"menu/hi/01_common.tpf.dcx":path;
+                ulong hash = 0; foreach (char c in "/" + sourcePath) hash = unchecked(hash * 0x85 + c);
                 if (!entries.TryGetValue(hash, out var entry)) continue;
                 var original = entry.ReadFile(data);
                 var raw = new byte[entry.PaddedFileSize]; data.Position = entry.FileOffset; data.ReadExactly(raw);

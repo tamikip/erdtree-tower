@@ -25,7 +25,19 @@ fn uv(index:u8)->([f32;2],[f32;2]) {
     ([x/COLUMNS as f32,y/ROWS as f32],[(x+1.0)/COLUMNS as f32,(y+1.0)/ROWS as f32])
 }
 /// 画律法图标（简约线条版；线条版没加载时退回原来的插画图标）；都没加载时返回 false（调用方不画图标）
-pub fn draw_line(draw:&DrawListMut<'_>,index:u8,min:[f32;2],max:[f32;2],light:u8)->bool {draw_from(&LINE_ATLAS,draw,index,min,max,light)||draw_from(&ATLAS,draw,index,min,max,light)}
+pub fn draw_line(draw:&DrawListMut<'_>,index:u8,min:[f32;2],max:[f32;2],light:u8)->bool {
+    // 精英横行复用精英徽记，并加上升箭头，不增加纹理依赖。
+    let base=if index==18 {2}else{index};
+    let shown=draw_from(&LINE_ATLAS,draw,base,min,max,light)||draw_from(&ATLAS,draw,base,min,max,light);
+    if shown&&index==18 {
+        let w=max[0]-min[0];let h=max[1]-min[1];let x=min[0]+w*0.85;let y=min[1]+h*0.12;
+        let color=ImColor32::from_rgba(light,light,light,255);let stroke=(w*0.06).max(1.0);
+        for (a,b) in [([x,y+h*0.45],[x,y]),([x-w*0.12,y+h*0.15],[x,y]),([x,y],[x+w*0.12,y+h*0.15])] {
+            draw.add_line(a,b,color).thickness(stroke).build();
+        }
+    }
+    shown
+}
 fn draw_from(atlas:&AtomicUsize,draw:&DrawListMut<'_>,index:u8,min:[f32;2],max:[f32;2],light:u8)->bool {
     let Some(id)=Some(atlas.load(Ordering::Relaxed)).filter(|&id|id!=usize::MAX).map(TextureId::new) else{return false;};
     let (a,b)=uv(index);

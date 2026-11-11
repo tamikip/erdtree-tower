@@ -62,6 +62,7 @@ pub struct RoomView {
 
 pub struct Room {
     pub mausoleum:bool,
+    pub arrival_block_position:Option<super::party_death::Position>,
     pub copy_requested:bool,
     merchant_hit_logged:bool,
     pub merchant_down:bool,
@@ -205,7 +206,7 @@ impl Room {
         }
         super::log(format!("Native room {node}: {title}, block={block:x}"));
         Ok(Self {
-            mausoleum:false,copy_requested:false,
+            mausoleum:false,arrival_block_position:None,copy_requested:false,
             merchant_down:false,shop_refresh_pending:false,shop_counters:None,hunter:None,merchant_hit_logged:false,
             scarabs:Default::default(),
             chest_attempt:None,
@@ -259,6 +260,11 @@ impl Room {
         }
         if !self.restored {
             let player = world.main_player.as_mut().unwrap();
+            if self.mausoleum {
+                let p=&player.block_position;
+                self.arrival_block_position=Some(super::party_death::Position{block:self.block,xyz:[p.x,p.y,p.z]});
+                super::log(format!("MAUSOLEUM arrival recorded node={} block_position={:?}",self.node,self.arrival_block_position));
+            }
             super::ailments::clear(&mut player.chr_ins)?;
             super::travel::restore_arrival_hp(&mut player.chr_ins,self.saved_hp,"service room arrival");
             player.chr_ins.modules.data.fp = player.chr_ins.modules.data.fp.min(self.saved_fp);

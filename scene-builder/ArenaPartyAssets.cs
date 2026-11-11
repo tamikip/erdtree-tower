@@ -19,7 +19,7 @@ static class ArenaPartyAssets {
             var original=source.Regions.GetEntries().Single(r=>r.EntityID==PartyEnemyEvents.Region(first,slot));
             var region=original.DeepCopy();region.Name=$"tower_party_position_{act}_{slot}";region.ActivationPartName=null;
             region.Position=place(original.Position);region.Rotation=new(original.Rotation.X,original.Rotation.Y+yaw,original.Rotation.Z);
-            target.Regions.Add(region);
+            if(!target.Regions.GetEntries().Any(r=>r.EntityID==region.EntityID))target.Regions.Add(region);
         }
         foreach(var original in enemies) {
             var enemy=(MSBE.Part.Enemy)original.DeepCopy();
@@ -37,6 +37,9 @@ static class ArenaPartyAssets {
         }
         init.Instructions.InsertRange(0,bootstrap);
         PartyModels.Prepare(target);Verify(target,events,source,act);
+        if(act==1)FirstActEliteAssets.Add(input,target,events);
+        if(act==2)SecondActEliteAssets.Add(input,target,events);
+        if(act==3)ThirdActEliteAssets.Add(input,target,events);
     }
     public static void Verify(MSBE target,EMEVD events,MSBE source,int act) {
         uint first=(uint)(48000000+act*10000);
@@ -51,7 +54,7 @@ static class ArenaPartyAssets {
                 if(start<=disabled||start>=branch)throw new Exception($"Party actor event {id} is not initialized before constructor control flow");
             }
         }
-        if(target.Parts.Enemies.Count(e=>e.EntityID>=first&&e.EntityID<first+300)!=expected.Length)throw new Exception("Party roster count mismatch");
+        if(target.Parts.Enemies.Count(e=>e.EntityID>=first&&e.EntityID<first+300&&!FirstActEliteAssets.Slot(e.EntityID))!=expected.Length)throw new Exception("Party roster count mismatch");
         foreach(var original in expected) {
             var actual=target.Parts.Enemies.Single(e=>e.EntityID==original.EntityID);
             if(actual.ModelName!=original.ModelName||actual.NPCParamID!=original.NPCParamID||actual.ThinkParamID!=original.ThinkParamID)throw new Exception("Party actor data mismatch");

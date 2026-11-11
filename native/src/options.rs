@@ -9,6 +9,7 @@ static DIR:OnceLock<PathBuf>=OnceLock::new();
 pub fn init(dll:Option<PathBuf>) {
     if let Some(dir)=dll.and_then(|p|p.parent().map(PathBuf::from)) {let _=DIR.set(dir);}
     let options=&*OPTIONS;
+    erdtree_tower::localization::set(options.language);
     // 单人按本机设置；联机时由房主在握手里定下整队模式（都有 DLC 才按有 DLC，见 sync_dlc）
     let dlc=options.dlc;
     erdtree_tower::dlc::set(dlc);

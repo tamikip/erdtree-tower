@@ -1,0 +1,23 @@
+{
+  "title": "Erdtree Tower",
+  "title_size": 62,
+  "subtitle": "ERDTREE TOWER",
+  "tagline": "Choose a path. Take an oath. Ascend.",
+  "footer": "Every ascent brings new choices.",
+  "loading_title": "The next journey unfolds",
+  "palette": {"background":"101918","mountain":"263a35","stone":"41554a","paper":"d1bd87","gold":"c4a45b","ink":"18231f"},
+  "tips": [
+    ["Paths and Choices", "Check your supplies before choosing a route. Elites and shops each have their value."],
+    ["Take an Oath", "Every oath has benefits and a price. Read both before choosing."],
+    ["Weapon Preferences", "Upgrade preferences in the Journey Archive for up to five times the selection weight."],
+    ["Your Build", "Check ember stacks and bonuses in the build panel to plan your growth."],
+    ["Class Legacy", "View class mastery and starting talismans at Roundtable Hold."],
+    ["Armor Transmog", "Mix and match appearances freely. Defense still comes from your equipped armor."],
+    ["Affixes and Skills", "Rarity is only part of a weapon. Choose affixes and skills that suit your playstyle."],
+    ["Challenge the Merchant", "Defeating a merchant has a 30% chance to summon a Bell Bearing Hunter."],
+    ["Moonlight Spring", "Choose one: restore HP, restore FP, or take 800 runes."],
+    ["Scarab Hunt", "Each attempt costs 500 runes. You can try up to three times at each event."],
+    ["Mystery Boxes and Reforging", "Find new equipment in mystery boxes, or reforge your right-hand weapon's affixes."],
+    ["Fellow Travelers", "Before co-op, make sure everyone uses the same mod, resource, and Seamless versions."]
+  ]
+}

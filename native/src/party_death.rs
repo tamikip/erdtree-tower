@@ -1,5 +1,12 @@
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Position {pub block:i32,pub xyz:[f32;3]}
+impl Position {
+    pub fn in_physics_space(self,current_block:Self,current_physics:Self)->Option<Self> {
+        let xyz=std::array::from_fn(|i|self.xyz[i]+current_physics.xyz[i]-current_block.xyz[i]);
+        (self.block==current_block.block&&self.block==current_physics.block&&self.block>=0
+            &&self.xyz.iter().chain(&current_block.xyz).chain(&current_physics.xyz).chain(&xyz).all(|v|v.is_finite())).then_some(Self{block:self.block,xyz})
+    }
+}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Action {None,Waiting,RequestRevival(Position),FinishRevival}
 #[derive(Default)]
@@ -16,7 +23,7 @@ impl Death {
         self.observe_confirmed(epoch,player,victory,warping,true)
     }
     pub fn observe_confirmed(&mut self,epoch:Option<u64>,player:Option<(Position,bool)>,victory:bool,warping:bool,recovered:bool)->Action {
-        if self.epoch!=epoch { *self=Self{epoch,..Default::default()}; }
+        if self.epoch!=epoch||self.finished&&player.is_some_and(|(_,dead)|dead) { *self=Self{epoch,..Default::default()}; }
         if epoch.is_none(){return Action::None;}
         if let Some((pos,true))=player {
             if self.position.is_none()&&pos.xyz.iter().all(|n|n.is_finite()) {
@@ -39,6 +46,32 @@ impl Death {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn another_death_in_the_same_mausoleum_visit_can_recover_again() {
+        let mut death=Death::default();let epoch=Some(7);
+        let entrance=Position{block:0x0d000000,xyz:[5.86,1.50,4.43]};
+        assert_eq!(death.observe_confirmed(epoch,Some((entrance,true)),true,false,false),Action::RequestRevival(entrance));
+        assert_eq!(death.observe_confirmed(epoch,Some((entrance,false)),true,false,true),Action::FinishRevival);
+        assert_eq!(death.observe_confirmed(epoch,Some((entrance,false)),true,false,true),Action::None);
+        let fallen=Position{xyz:[0.0,-20.0,30.0],..entrance};
+        assert_eq!(death.observe_confirmed(epoch,Some((fallen,true)),true,false,true),Action::RequestRevival(fallen));
+        death.redirect(entrance);
+        assert_eq!(death.observe_confirmed(epoch,Some((entrance,false)),true,false,false),Action::Waiting);
+        assert_eq!(death.observe_confirmed(epoch,Some((entrance,false)),true,false,true),Action::FinishRevival);
+    }
+    #[test]
+    fn safe_entry_tracks_world_origin_changes_instead_of_reusing_havok_coordinates() {
+        let block=0x0d000000;
+        let entrance=Position{block,xyz:[21.856926,1009.5039,300.43274]};
+        let current=Position{block,xyz:[15.329869,1009.58844,329.86993]};
+        let physics=Position{block,xyz:[-0.670131,1.58844,1.86993]};
+        let goal=entrance.in_physics_space(current,physics).unwrap();
+        assert!((goal.xyz[2]+27.56726).abs()<0.001,"the captured entry's old Havok Z=4.43 belongs to a different origin");
+        let shifted=entrance.in_physics_space(current,Position{xyz:[physics.xyz[0],physics.xyz[1],physics.xyz[2]+32.0],..physics}).unwrap();
+        assert!((shifted.xyz[2]-goal.xyz[2]-32.0).abs()<0.001);
+        assert!(entrance.in_physics_space(Position{block:45,..current},physics).is_none());
+        assert!(entrance.in_physics_space(current,Position{xyz:[f32::NAN,0.0,0.0],..physics}).is_none());
+    }
     #[test]
     fn trial_death_uses_safe_goal_and_waits_for_native_confirmation() {
         let mut d=Death::default();let fall=Position{block:35,xyz:[0.0,-500.0,0.0]};
