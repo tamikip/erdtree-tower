@@ -35,6 +35,7 @@ window.HOYO_CONFIG = {
     { icon: 'social-bilibili', label: '作者 B 站', href: 'https://space.bilibili.com/472900263' },
     { icon: 'social-home', label: '项目主页', href: 'https://github.com/tamikip/erdtree-tower' },
     { icon: 'social-lobby', label: '联机大厅', action: 'lobby' },
+    { icon: 'social-wiki', label: 'Wiki 百科', action: 'openWiki' },
     { icon: 'social-feedback', label: '问题反馈', href: 'https://github.com/tamikip/erdtree-tower/issues' },
     { icon: 'social-history', label: '更新日志与历史', action: 'releaseHistory' },
     { icon: 'social-folder', label: 'Mod 日志目录', action: 'openModLogs' },

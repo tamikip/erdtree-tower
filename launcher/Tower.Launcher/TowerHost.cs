@@ -360,6 +360,7 @@ namespace Tower.Launcher
                 case "verify": _ = UpdateAsync(true); break;
                 case "chooseGameDir": ChooseGameDir(); break;
                 case "openGuide": OpenDocument(PackageDocument("安装教程.md", "安装教程.txt"), Repo + "#readme"); break;
+                case "openWiki": OpenWiki(); break;
                 case "openLicenses": OpenDocument(PackageDocument("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"), Repo + "/tree/main/licenses"); break;
                 case "openLogs": OpenLogs(); break;
                 case "openModLogs": OpenModLogs(); break;
@@ -968,6 +969,14 @@ namespace Tower.Launcher
         }
 
         // ---------------- 本地功能 ----------------
+
+        void OpenWiki()
+        {
+            var path = Path.Combine(paths.InstallDir, "launcher", "ui", "wiki", "index.html");
+            if (!File.Exists(path)) { Toast("百科文件缺失，请校验并修复启动器文件", "warn"); return; }
+            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose(); }
+            catch (Exception e) { Toast("打开百科失败：" + e.Message, "error"); }
+        }
 
         public static void OpenUrl(string url)
         {

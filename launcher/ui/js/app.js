@@ -256,6 +256,7 @@
      官方几何：容器 x=1228，每项 44x44，pitch 56，图标 36x36。
   ------------------------------------------------ */
   var SOCIAL_ICONS = {
+    'social-wiki': '<path d="M12 5v16M12 5C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 1Z"/>',
     'social-home': '<path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/>',
     'social-lobby': '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5.65"/>',
     'social-feedback': '<path d="M5 3h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8l-5 3V5a2 2 0 0 1 2-2Z"/><path d="M12 7v5M12 15h.01"/>',
