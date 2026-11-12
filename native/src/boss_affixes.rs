@@ -22,21 +22,23 @@ struct Tuning {
     /// 黄金律法：护盾间隔（秒）；不屈：回复到最大生命的百分比；傲慢：多久没挨打后触发（秒）
     shield_every:u64,reborn_percent:i64,proud_after:u64,
 }
-const NORMAL:Tuning=Tuning{rot_per_hit:1,leech_permille:15,thorn_percent:8,swift_speed:1.2,shield_every:20,reborn_percent:40,proud_after:8};
+const NORMAL:Tuning=Tuning{rot_per_hit:1,leech_permille:15,thorn_percent:10,swift_speed:1.1,shield_every:20,reborn_percent:40,proud_after:8};
 const STRONG:Tuning=Tuning{rot_per_hit:2,leech_permille:25,thorn_percent:12,swift_speed:1.3,shield_every:15,reborn_percent:60,proud_after:6};
 /// 荆棘：一次反弹最多扣这么多生命（同一帧打出的伤害合算一次）
-const THORN_CAP:i64=100;
+const THORN_CAP:i64=200;
 const BAR_MARKER:i32=FIRST+99;
 /// text-update 为新增词条的组合也写好血条名称后加入的第二个标记
 const BAR_MARKER_V2:i32=FIRST+98;
 /// text-update 为之后追加的 Boss（名称序号 140 起）写好全部带词条名称后加入的第三个标记
 const BAR_MARKER_V3:i32=FIRST+97;
+const BAR_MARKER_V4:i32=FIRST+100;
 static BAR_NAMES:std::sync::atomic::AtomicU8=std::sync::atomic::AtomicU8::new(0);
-/// 已生成的血条名称覆盖到哪一版：0 没有，1 最早的组合，2 全部组合，3 另含之后追加的 Boss
+/// 名称资源版本：1 最早组合，2 全部组合，3 追加 Boss，4 精英与普通敌人
 fn bar_names_version()->u8 {
     let known=BAR_NAMES.load(std::sync::atomic::Ordering::Relaxed);
-    if known==3 {return 3;}
-    let version=unsafe {SoloParamRepository::instance()}.map_or(0,|p|if p.get::<SpEffectParam>(BAR_MARKER_V3 as u32).is_some(){3}
+    if known==4 {return 4;}
+    let version=unsafe {SoloParamRepository::instance()}.map_or(0,|p|if p.get::<SpEffectParam>(BAR_MARKER_V4 as u32).is_some(){4}
+        else if p.get::<SpEffectParam>(BAR_MARKER_V3 as u32).is_some(){3}
         else if p.get::<SpEffectParam>(BAR_MARKER_V2 as u32).is_some(){2}else if p.get::<SpEffectParam>(BAR_MARKER as u32).is_some(){1}else{0});
     BAR_NAMES.store(version,std::sync::atomic::Ordering::Relaxed);version
 }
@@ -53,9 +55,14 @@ pub fn bar_name(affixes:&[Affix],name:i32)->i32 {
     let version=bar_names_version();
     let index=erdtree_tower::boss_affixes::combos().iter().position(|c|c==affixes);
     let late=name-super::enemies::BOSS_NAME_FIRST>=erdtree_tower::boss_affixes::LATE_BOSS_FIRST;
-    let covered=if late {version>=3}else{match version {2|3=>true,1=>index.is_some_and(|i|i<erdtree_tower::boss_affixes::legacy_combos()),_=>false}};
+    let covered=if late {version>=3}else{match version {2..=4=>true,1=>index.is_some_and(|i|i<erdtree_tower::boss_affixes::legacy_combos()),_=>false}};
     if !covered {return name;}
     erdtree_tower::boss_affixes::bar_name(affixes,name,super::enemies::BOSS_NAME_FIRST).unwrap_or(name)
+}
+pub fn elite_bar_name(affixes:&[Affix],name:i32)->i32 {
+    if affixes.is_empty()||bar_names_version()<4 {return name;}
+    erdtree_tower::boss_affixes::pool_bar_name(affixes,name,super::enemies::POOL_NAME_FIRST)
+        .or_else(||erdtree_tower::boss_affixes::bar_name(affixes,name,super::enemies::BOSS_NAME_FIRST)).unwrap_or(name)
 }
 /// 整场挂着的效果；强化版的编号是原编号 +1
 fn resident(affix:Affix,empowered:bool)->Option<i32> {
@@ -137,7 +144,7 @@ impl Fight {
             }
             let hp=chr.modules.data.hp;
             foe.hp=hp;
-            // 迅猛：持续把动作播放速度保持在 1.2 倍（强化 1.3 倍）
+            // 迅猛：持续把动作播放速度保持在 1.1 倍（强化 1.3 倍）
             if self.affixes.contains(&Affix::Swift)&&chr.modules.behavior.animation_speed<tuning.swift_speed {chr.modules.behavior.animation_speed=tuning.swift_speed;}
             if self.affixes.contains(&Affix::Proud)&&!foe.proud&&now.duration_since(foe.hurt)>=Duration::from_secs(tuning.proud_after) {chr.apply_speffect(pride,false);foe.proud=true;}
             if self.affixes.contains(&Affix::Envious)&&drank>0 {chr.apply_speffect(envy,false);}
@@ -148,7 +155,7 @@ impl Fight {
             }
         }
         let Some(player)=world.main_player.as_mut().filter(|p|p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()) else{return};
-        // 荆棘：反弹给本机玩家，一次最多 100，不会致死
+        // 荆棘：反弹给本机玩家，一次最多 200，不会致死
         let reflected=reflected.min(THORN_CAP);
         if reflected>0 {
             let data=&mut player.chr_ins.modules.data;

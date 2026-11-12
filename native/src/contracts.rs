@@ -96,6 +96,7 @@ pub fn gift_entries(state:&State,index:usize,data:&PlayerGameData)->Result<[(u32
     let base=*state.gear.get(index).ok_or("装备选择不存在")?;
     let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"装备参数尚未就绪")?;
     let id=super::smith::reward_id(data,base)?;
+    let base=erdtree_tower::affixes::base(base);
     let extra=match state.chosen {
         Some(Kind::Mystic|Kind::Ascetic) if base/1_000_000==34=>(0x40000000|6000,1),
         Some(Kind::Mystic|Kind::Ascetic) if base/1_000_000==33=>(0x40000000|4000,1),

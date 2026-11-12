@@ -91,6 +91,18 @@ pub fn offers(run:&Run,node:usize)->Vec<Reward> {
     let mut limited=run.clone();limited.claimed_items.extend(CATALOG.iter().filter(|i|i.kind==ItemKind::Tool).map(|i|i.id));
     before_tool_rate(&limited,node)
 }
+pub(crate) fn ensure_summoner_spirit(run:&Run,node:usize,offers:&mut [Reward]) {
+    if !run.summoner()||run.law.lone_wolf()||offers.is_empty()||offers.iter().any(|r|matches!(r,Reward::Item(id) if spirit_level(*id).is_some())) {return;}
+    let cap=spirit_cap(run);
+    let entropy=run.reward_seed()^(node as u64).wrapping_mul(7919);
+    let pool:Vec<_>=CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit&&i.random_eligible()).filter_map(|i| {
+        let start=random_spirit_level(i.id,entropy,cap)-i.id;
+        (0..=cap).map(|offset|i.id+(start+offset)%(cap+1)).find(|id|!run.claimed_items.contains(id))
+    }).collect();
+    if pool.is_empty(){return;}
+    let slot=if offers.len()>2||run.nodes[node].kind==crate::NodeKind::Boss {1.min(offers.len()-1)}else{0};
+    offers[slot]=Reward::Item(pool[crate::mix(entropy^0x5a11_0a5) as usize%pool.len()]);
+}
 pub(crate) fn before_tool_rate(run:&Run,node:usize)->Vec<Reward> {
     let mut owned:Vec<_>=run.claimed_items.iter().map(|id|crate::affixes::base(*id)).filter(|id|!run.claimed_items.contains(id)).collect();
     // 职业传承选用的开局护符已经在身上，不再作为奖励出现
@@ -234,7 +246,7 @@ fn ranked_pool(run:&Run,node:usize,spirits:bool,catalog:&[Item],base_only:bool)-
         let mut pool:Vec<_>=catalog.iter().filter(|item|item.kind==kind&&kind.allowed(run.class)&&!run.claimed_items.contains(&item.id)&&crate::dlc::item_allowed(item.id)&&(!base_only||item.random_eligible())).collect();
         // 职业规则 1：武器约七成从职业擅长的类型里出
         if kind==ItemKind::Weapon&&run.preferences().is_empty()&&crate::mix(run.reward_seed()^(node as u64*131)^0xc1a5_5e5)%10<7 {
-            let favored:Vec<_>=pool.iter().copied().filter(|i|run.class.weapon_types().contains(&((i.id&0x0fffffff)/1_000_000))).collect();
+            let favored:Vec<_>=pool.iter().copied().filter(|i|run.class.weapon_types().contains(&crate::weapon_training::kind(i.id))).collect();
             if !favored.is_empty() {pool=favored;}
         }
         if !pool.is_empty() {
@@ -261,6 +273,37 @@ fn favored_kind(class:Class)->Option<(ItemKind,bool)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn summoner_final_cards_keep_a_spirit() {
+        use super::*;
+        use crate::NodeKind;
+        for seed in 0..40 {for act in 1..=3 {for stingy in [false,true] {
+            let mut run=Run::new(seed,Class::Confessor);run.act=act;
+            if stingy {run.law=run.law.toggle(23);}
+            for kind in [NodeKind::Monster,NodeKind::Elite,NodeKind::Boss,NodeKind::Chest] {
+                let node=run.nodes.iter().position(|n|n.kind.combat()).unwrap();run.nodes[node].kind=kind;
+                let cards=run.offers_for_test(node);
+                assert!(cards.iter().any(|r|matches!(r,Reward::Item(id) if spirit_level(*id).is_some())),"seed={seed}, act={act}, kind={kind:?}, stingy={stingy}: {cards:?}");
+                assert_eq!(cards,run.offers_for_test(node));
+                if kind==NodeKind::Boss {assert!(matches!(cards[0],Reward::Item(id) if lookup(id).unwrap().kind==ItemKind::Weapon));}
+            }
+        }}}
+    }
+    #[test]
+    fn summoner_guarantee_respects_owned_levels_and_disabled_summons() {
+        use super::*;
+        let mut run=Run::new(0,Class::Confessor);run.spirit_peak=Some(3);
+        let node=run.available()[0];
+        run.claimed_items.extend(CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit).flat_map(|i|(0..=2).map(move|level|i.id+level)));
+        let mut cards=vec![Reward::Gold(1500);3];ensure_summoner_spirit(&run,node,&mut cards);
+        assert!(cards.iter().any(|r|matches!(r,Reward::Item(id) if spirit_level(*id)==Some(3)&&!run.claimed_items.contains(id))));
+        run.claimed_items.extend(CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit).map(|i|i.id+3));
+        cards=vec![Reward::Gold(1500);3];ensure_summoner_spirit(&run,node,&mut cards);assert!(cards.iter().all(|r|*r==Reward::Gold(1500)));
+        run.claimed_items.clear();run.law=crate::law::Law(1<<14);
+        ensure_summoner_spirit(&run,node,&mut cards);assert!(cards.iter().all(|r|*r==Reward::Gold(1500)));
+        run.law=Default::default();run.class=Class::Hero;
+        ensure_summoner_spirit(&run,node,&mut cards);assert!(cards.iter().all(|r|*r==Reward::Gold(1500)));
+    }
     use super::*;
     #[test]
     fn pre_custom_spirit_reward_pages_remain_valid_without_rerolling() {

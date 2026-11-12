@@ -1,8 +1,10 @@
 using SoulsFormats;
 
 static class MerchantAssets {
-    const int First=9500000,Base=37,Count=359,Bell=1130392;
-    public static void ExpandPots(string input,string output) {
+    const int First=9500000,Base=37,Count=363,Bell=1130392;
+    public static void ExpandPots(string input,string output)=>ExpandSlots(input,output,357,359,45003968);
+    public static void ExpandSupplies(string input,string output)=>ExpandSlots(input,output,359,363,45013800);
+    static void ExpandSlots(string input,string output,int first,int end,int flagStart) {
         if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging required");
         var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
         var before=reg.Files.ToDictionary(f=>f.Name,f=>f.Bytes.ToArray());
@@ -12,17 +14,18 @@ static class MerchantAssets {
             foreach(var ins in EMEVD.Read(eventPath).Events.SelectMany(e=>e.Instructions).Where(i=>i.Bank==2003||i.Bank==3&&i.ID==0))
                 for(int at=0;at+4<=ins.ArgData.Length;at+=4) {
                     var flag=BitConverter.ToUInt32(ins.ArgData,at);
-                    if(flag>=45003968&&flag<45003984)throw new Exception($"New pot stock flag collision: {flag}");
+                    if(flag>=flagStart&&flag<flagStart+(end-first)*8)throw new Exception($"New stock flag collision: {flag}");
                 }
         foreach(var name in new[]{"ShopLineupParam","EquipParamCustomWeapon"}) {
             var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))==name);
             var p=PARAM.Read(file.Bytes);p.ApplyParamdef(PARAMDEF.XmlDeserialize(Path.Combine(defs,name+".xml")));
             var template=p.Rows.Single(r=>r.ID==First+356);
-            for(int i=357;i<Count;i++) {
+            if(name=="ShopLineupParam"&&p.Rows.Any(r=>Convert.ToInt64(r["eventFlag_forStock"].Value)>=flagStart&&Convert.ToInt64(r["eventFlag_forStock"].Value)<flagStart+(end-first)*8))throw new Exception("New stock flag already in use");
+            for(int i=first;i<end;i++) {
                 if(p.Rows.Any(r=>r.ID==First+i))throw new Exception("Shop capacity rows already exist");
                 var row=new PARAM.Row(template){ID=First+i,Name=name=="ShopLineupParam"?"Tower bell stock":"Tower bell ash slot"};
                 if(name=="ShopLineupParam") {
-                    row["eventFlag_forStock"].Value=Convert.ChangeType(45003968+(i-357)*8,row["eventFlag_forStock"].Value.GetType());
+                    row["eventFlag_forStock"].Value=Convert.ChangeType(flagStart+(i-first)*8,row["eventFlag_forStock"].Value.GetType());
                     row["equipId"].Value=Convert.ChangeType(-1,row["equipId"].Value.GetType());
                 }
                 p.Rows.Add(row);
@@ -41,13 +44,13 @@ static class MerchantAssets {
             var def=PARAMDEF.XmlDeserialize(Path.Combine(defs,name+".xml"));
             var old=PARAM.Read(before[file.Name]);old.ApplyParamdef(def);
             var actual=PARAM.Read(file.Bytes);actual.ApplyParamdef(def);
-            if(actual.Rows.Count!=old.Rows.Count+2)throw new Exception("Shop capacity mismatch");
+            if(actual.Rows.Count!=old.Rows.Count+end-first)throw new Exception("Shop capacity mismatch");
             var rows=actual.Rows.ToDictionary(r=>r.ID);
             foreach(var row in old.Rows)foreach(var cell in row.Cells)
                 if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(cell.Value,rows[row.ID][cell.Def.InternalName].Value))
                     throw new Exception($"Existing shop field changed: {row.ID}");
         }
-        Console.WriteLine("Verified 359 shop/custom weapon rows; only two spare slots added, existing parameters unchanged.");
+        Console.WriteLine($"Verified {end} shop/custom weapon slots; {end-first} spare slots added, existing parameters unchanged.");
     }
     public static void Patch(string input,string output) {
         if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging required");
@@ -62,7 +65,7 @@ static class MerchantAssets {
         PARAM Read(string name){var p=PARAM.Read(File_(name).Bytes);p.ApplyParamdef(PARAMDEF.XmlDeserialize($"work/SoulsRandomizers/diste/Defs/{name}.xml"));return p;}
         void Set(PARAM.Row row,string field,int value)=>row[field].Value=Convert.ChangeType(value,row[field].Value.GetType());
         var shops=Read("ShopLineupParam");var custom=Read("EquipParamCustomWeapon");var goods=Read("EquipParamGoods");
-        bool Reserved(uint flag)=>flag>=45005200&&flag<45006000||flag>=45015200&&flag<45016000||flag>=45025200&&flag<45026000||flag>=45002904&&flag<45003000||flag>=45003904&&flag<45003984;
+        bool Reserved(uint flag)=>flag>=45005200&&flag<45006000||flag>=45015200&&flag<45016000||flag>=45025200&&flag<45026000||flag>=45002904&&flag<45003000||flag>=45003904&&flag<45003984||flag>=45013800&&flag<45013832;
         foreach(var eventPath in Directory.GetFiles(Path.Combine(input,"event"),"*.emevd.dcx")) {
             foreach(var ins in EMEVD.Read(eventPath).Events.SelectMany(e=>e.Instructions).Where(i=>i.Bank==2003||i.Bank==3&&i.ID==0))for(int at=0;at+4<=ins.ArgData.Length;at+=4)
                 if(Reserved(BitConverter.ToUInt32(ins.ArgData,at)))throw new Exception($"Shop stock flag {BitConverter.ToUInt32(ins.ArgData,at)} collides with {ins.Bank}[{ins.ID}] in {eventPath}");
@@ -72,7 +75,7 @@ static class MerchantAssets {
             var row=shops.Rows.SingleOrDefault(r=>r.ID==First+i);
             if(row!=null&&row.Name!="Tower bell stock")throw new Exception("Shop slot collision");
             if(row==null){row=new PARAM.Row(shops.Rows.Single(r=>r.ID==First)){ID=First+i,Name="Tower bell stock"};shops.Rows.Add(row);}
-            int slot=i-Base;int flag=slot<100?45005200+slot*8:slot<200?45015200+(slot-100)*8:slot<300?45025200+(slot-200)*8:slot<312?45002904+(slot-300)*8:45003904+(slot-312)*8;
+            int slot=i-Base;int flag=i>=359?45013800+(i-359)*8:slot<100?45005200+slot*8:slot<200?45015200+(slot-100)*8:slot<300?45025200+(slot-200)*8:slot<312?45002904+(slot-300)*8:45003904+(slot-312)*8;
             Set(row,"equipId",-1);Set(row,"sellQuantity",1);Set(row,"eventFlag_forStock",flag);
             var weapon=custom.Rows.SingleOrDefault(r=>r.ID==First+i);
             if(weapon!=null&&weapon.Name!="Tower bell ash slot")throw new Exception("Ash slot collision");

@@ -3,14 +3,14 @@ import hashlib
 import shutil
 from pathlib import Path
 
-SHA256 = '0a093d8490967bf19c62f895fdf1fda21840282d2b2b371b9b4fc24a0cfe146e'
+SHA256 = '2ebde62be864ba3d759728aac44c459f0f813e8b6d7a342304ce68f6513f280c'
 
 
 def stage_component(source, destination, template):
     source, destination = Path(source), Path(destination)
     dll = source / 'ersc.dll'
     if hashlib.sha256(dll.read_bytes()).hexdigest() != SHA256:
-        raise ValueError('Expected verified Seamless Co-op 2.0.2; component hash mismatch')
+        raise ValueError('Expected pinned Seamless Co-op 2.0.3; component hash mismatch')
     files = [dll]
     for directory in ('locale', 'crashpad'):
         folder = source / directory

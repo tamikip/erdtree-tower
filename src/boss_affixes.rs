@@ -16,16 +16,16 @@ impl Affix {
         match self {
             Affix::Stalwart=>"韧性翻倍；用重攻击和跳劈更快打出硬直",
             Affix::Bulwark=>"受到的伤害 -25%",
-            Affix::Frenzied=>"攻击 +25%，但受到的伤害 +10%",
+            Affix::Frenzied=>"攻击 +30%，但受到的伤害 +10%",
             Affix::Regenerating=>"每秒回复 0.3% 最大生命；持续压制可以抵消",
             Affix::Rot=>"攻击附带猩红腐败：每次打中你都会积累腐败；备好药",
-            Affix::Envious=>"你喝圣杯瓶后，攻击 +30%，持续 10 秒",
+            Affix::Envious=>"你喝圣杯瓶后，攻击 +30%，持续 15 秒",
             Affix::Proud=>"8 秒没挨打时攻击 +20%，被打中后清除",
             Affix::Golden=>"每 20 秒展开 5 秒金色护盾，受到的伤害 -70%",
             Affix::Reborn=>"生命首次降到 10% 以下时回复至 40%，仅一次",
             Affix::Leeching=>"每次打中你，回复其最大生命 1.5%",
-            Affix::Thorned=>"受到伤害的 8% 反弹给你，一次最多 100（不会致死）",
-            Affix::Swift=>"动作速度 +20%：出招、收招、移动都更快，压得更紧",
+            Affix::Thorned=>"受到伤害的 10% 反弹给你，一次最多 200（不会致死）",
+            Affix::Swift=>"动作速度 +10%：出招、收招、移动都更快，压得更紧",
         }
     }
     /// 最早出现的幕：再生的第二幕起，吸血的第三幕起
@@ -57,6 +57,14 @@ pub const LATE_BOSS_FIRST:i32=140;
 /// 新增词条后的组合里，名称序号 144 起的 Boss 放在第三段，每个组合 64 个编号（序号 144–207）
 pub const BAR_NAME_THIRD:i32=9740000;
 pub const BAR_NAME_THIRD_STRIDE:i32=64;
+pub const POOL_BAR_NAME_FIRST:i32=98000000;
+pub const POOL_BAR_NAME_STRIDE:i32=256;
+pub fn pool_bar_name(affixes:&[Affix],name:i32,first:i32)->Option<i32> {
+    let offset=name.checked_sub(first)?;
+    if !(0..POOL_BAR_NAME_STRIDE).contains(&offset) {return None;}
+    let index=combos().iter().position(|c|c==affixes)?;
+    Some(POOL_BAR_NAME_FIRST+index as i32*POOL_BAR_NAME_STRIDE+offset)
+}
 fn allowed(affixes:&[Affix],group:fn(Affix)->u8)->bool {
     affixes.len()<=MAX_AFFIXES&&points(affixes)<=budget(3)&&affixes.iter().filter(|a|group(**a)!=0).all(|a|affixes.iter().filter(|b|group(**b)==group(*a)).count()==1)
 }
@@ -127,6 +135,23 @@ mod tests {
     use super::*;
     use crate::Class;
     fn boss(run:&Run)->usize {run.nodes.iter().position(|n|n.kind==NodeKind::Boss).unwrap()}
+    #[test]
+    fn elite_pool_titles_are_unique_and_do_not_overlap_boss_titles() {
+        let builder=include_str!("../scene-builder/AffixTextFix.cs");
+        assert!(builder.contains(&format!("PoolBarNameFirst={POOL_BAR_NAME_FIRST}")));
+        assert!(builder.contains(&format!("PoolBarNameStride={POOL_BAR_NAME_STRIDE}")));
+        let pool:std::collections::HashSet<_>=include_str!("../scene-assets/enemy-pools.txt").lines().map(|l|l.split('|').nth(4).unwrap()).collect();
+        assert!(pool.len()<=POOL_BAR_NAME_STRIDE as usize);
+        let mut names=std::collections::HashSet::new();
+        for combo in combos() {for offset in 0..POOL_BAR_NAME_STRIDE {
+            let id=pool_bar_name(combo,9610000+offset,9610000).unwrap();
+            assert!(!bar_name_range().contains(&id));
+            assert!(names.insert(id));
+        }}
+        assert_eq!(pool_bar_name(&[],9610000,9610000),None);
+        assert_eq!(pool_bar_name(&[Affix::Swift],9609999,9610000),None);
+        assert_eq!(pool_bar_name(&[Affix::Swift],9610256,9610000),None);
+    }
     #[test]
     fn rolls_respect_budget_groups_and_are_stable() {
         let mut seen=std::collections::HashSet::new();

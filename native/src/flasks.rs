@@ -214,8 +214,11 @@ fn current_flasks(data: &PlayerGameData) -> Result<[(ItemId, u32); 2], String> {
     ])
 }
 
-pub fn restoration_upgrade(data:&PlayerGameData)->Result<[(i32,i32,i32);2],String> {
-    restoration_plan(current_flasks(data)?,[data.max_hp_flask,data.max_fp_flask])
+#[derive(Clone,Copy)]
+pub struct RestorationUpgrade {pub flasks:[(i32,i32,i32);2],pub cost:u32}
+pub fn restoration_upgrade(data:&PlayerGameData)->Result<RestorationUpgrade,String> {
+    let counts=super::loot::goods_lists(data,erdtree_tower::elite::TEAR);
+    restoration_batch(current_flasks(data)?,[data.max_hp_flask,data.max_fp_flask],counts[0]+counts[1].max(counts[2]))
 }
 pub fn apply_restoration_upgrade(data:&mut PlayerGameData,plan:[(i32,i32,i32);2])->Result<(),String> {
     let capacity=[data.max_hp_flask.min(9),data.max_fp_flask.min(9)];
@@ -226,13 +229,30 @@ pub fn apply_restoration_upgrade(data:&mut PlayerGameData,plan:[(i32,i32,i32);2]
     super::log(format!("Flask restoration upgraded: replacements={plan:?} capacity={capacity:?}"));
     Ok(())
 }
+#[cfg(test)]
 fn restoration_plan(current:[(ItemId,u32);2],capacity:[u8;2])->Result<[(i32,i32,i32);2],String> {
+    restoration_batch(current,capacity,1).map(|p|p.flasks)
+}
+fn restoration_batch(current:[(ItemId,u32);2],capacity:[u8;2],available:u64)->Result<RestorationUpgrade,String> {
     let level=current.iter().zip([1000,1050]).map(|((id,_),start)|(id.param_id()-start)/2).max().unwrap();
     if level>=12{return Err("圣杯瓶恢复量已达到 +12 上限".into());}
-    Ok(std::array::from_fn(|i| {
+    let cost=available.min(u64::from(12-level)) as u32;
+    if cost==0{return Err("需要圣杯滴露".into());}
+    Ok(RestorationUpgrade{cost,flasks:std::array::from_fn(|i| {
         let (id,qty)=current[i];let qty=qty.min(u32::from(capacity[i].min(9)));let start=if i==0{1000}else{1050};
-        (id.param_id() as i32,(start+(level+1)*2+u32::from(qty>0)) as i32,qty.max(1) as i32)
-    }))
+        (id.param_id() as i32,(start+(level+cost)*2+u32::from(qty>0)) as i32,qty.max(1) as i32)
+    })})
+}
+#[test]
+fn restoration_batch_uses_only_tears_needed_and_keeps_charges() {
+    let goods=|id|ItemId::new(ItemCategory::Goods,id).unwrap();
+    for level in 0..=12 {for available in 0..=20 {
+        let result=restoration_batch([(goods(1001+level*2),3),(goods(1050+level*2),0)],[5,7],available);
+        if level==12||available==0 {assert!(result.is_err());continue;}
+        let plan=result.unwrap();let cost=available.min(u64::from(12-level)) as u32;
+        assert_eq!(plan.cost,cost);
+        assert_eq!(plan.flasks,[(1001+level as i32*2,1001+(level+cost) as i32*2,3),(1050+level as i32*2,1050+(level+cost) as i32*2,1)]);
+    }}
 }
 #[test]
 fn restoration_upgrades_both_colors_without_refilling_or_exceeding_twelve() {

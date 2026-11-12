@@ -16,6 +16,7 @@
     <Compile Include="../../distribution/AssetRestore/AssetPatch.cs" Link="AssetPatch.cs" />
     <Compile Include="../../distribution/AssetRestore/IconCodec.cs" Link="IconCodec.cs" />
     <Compile Include="../Tower.Launcher/LaunchResult.cs" Link="LaunchResult.cs" />
+    <Compile Include="../Tower.Launcher/LaunchProgress.cs" Link="LaunchProgress.cs" />
     <Compile Include="../Tower.Launcher/ReleaseHistory.cs" Link="ReleaseHistory.cs" />
     <Compile Include="../Tower.Launcher/ModLogs.cs" Link="ModLogs.cs" />
     <Compile Include="../Tower.Launcher/DlcLaunchCheck.cs" Link="DlcLaunchCheck.cs" />

@@ -1,4 +1,4 @@
-function Get-TowerLoaderPath([string]$Root,[string]$Loader) {
+﻿function Get-TowerLoaderPath([string]$Root,[string]$Loader) {
     if($Loader -eq 'ME3'){$path=Join-Path $Root 'loader/bin/me3.exe'}
     elseif($Loader -eq 'YAFSML'){
         $path=Join-Path $Root 'loader/yafsml/YAFSML.exe'
@@ -130,6 +130,7 @@ function ConvertTo-TowerYafsmlConfig([string]$Text,[string]$BaseDirectory) {
 function Invoke-TowerLoader([string]$Root,[string]$Loader,[string]$GameExe,[string]$Profile) {
     $exe=Get-TowerLoaderPath $Root $Loader
     Write-Host "Tower loader: $Loader"
+    Write-Output "TOWER_PROGRESS|starting|0|0|正在启动游戏|$Loader 加载器正在准备游戏进程"
     if($Loader -eq 'ME3'){
         & $exe launch --exe $GameExe --profile $Profile --auto-detect --online false --skip-steam-init true
     }else{

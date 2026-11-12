@@ -1,5 +1,38 @@
 using SoulsFormats;
 using System.Numerics;
+if(args.Length==4&&args[3] is "affix-reinforcement-fix" or "affix-reinforcement-verify") {
+    AffixReinforcementFix.Patch(args[2],args[1],args[3]=="affix-reinforcement-verify");return;
+}
+if(args.Length==4&&args[3]=="affix-scaling-inspect") {
+    var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(args[2],"regulation.bin"));
+    PARAM Read(string name){var p=PARAM.Read(reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))==name).Bytes);p.ApplyParamdef(PARAMDEF.XmlDeserialize($"work/SoulsRandomizers/diste/Defs/{name}.xml"));return p;}
+    var weapons=Read("EquipParamWeapon");var reinforce=Read("ReinforceParamWeapon");
+    foreach(int id in new[]{43500000,196310000,196310007}) {
+        var row=weapons.Rows.SingleOrDefault(r=>r.ID==id);if(row==null)continue;
+        Console.WriteLine($"WEAPON {id}");
+        foreach(var c in row.Cells.Where(c=>c.Def.InternalName.Contains("correct",StringComparison.OrdinalIgnoreCase)||c.Def.InternalName.Contains("reinforce",StringComparison.OrdinalIgnoreCase)))Console.WriteLine($"{c.Def.InternalName}={c.Value}");
+        var type=Convert.ToInt32(row["reinforceTypeId"].Value);
+        foreach(var r in reinforce.Rows.Where(r=>r.ID==type||r.ID==type+7))Console.WriteLine($"REINFORCE {r.ID}: "+string.Join(" ",r.Cells.Where(c=>c.Def.InternalName.Contains("correct",StringComparison.OrdinalIgnoreCase)).Select(c=>$"{c.Def.InternalName}={c.Value}")));
+    }
+    return;
+}
+if(args.Length==4&&args[3]=="weapon-type-inspect") {
+    var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(args[2],"regulation.bin"));
+    var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="EquipParamWeapon");
+    var table=PARAM.Read(file.Bytes);table.ApplyParamdef(PARAMDEF.XmlDeserialize("work/SoulsRandomizers/diste/Defs/EquipParamWeapon.xml"));
+    foreach(int id in new[]{12000000,12510000,12520000,12530000,23000000,192560000}) {
+        var row=table.Rows.Single(r=>r.ID==id);Console.WriteLine($"{id}: wepType={row["wepType"].Value}");
+    }
+    return;
+}
+if(args.Length==4&&args[3]=="flask-batch-text") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    FlaskBatchText.Patch(args[2],args[1]);return;
+}
+if(args.Length==4&&args[3]=="shop-supplies-patch") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    MerchantAssets.ExpandSupplies(args[2],args[1]);return;
+}
 if(args.Length==5&&args[3]=="english-theme") {
     Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
     LocalizationAssets.BuildTheme(args[2],args[1],args[4]);return;

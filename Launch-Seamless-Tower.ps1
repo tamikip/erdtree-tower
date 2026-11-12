@@ -144,6 +144,7 @@ foreach ($file in @($launcher,$ersc)) {
 $verifiedSeamless = @(
     'FCD11A1849FD37851BB449BE30F1525CF498F63FD1FA568C4E15030EBE7CB251' # 2.0.1 (revival fix supported)
     '0A093D8490967BF19C62F895FDF1FDA21840282D2B2B371B9B4FC24A0CFE146E' # 2.0.2 (version-specific revival interface)
+    '2EBDE62BE864BA3D759728AAC44C459F0F813E8B6D7A342304CE68F6513F280C' # 2.0.3 (pinned component; offline interface checks passed)
 )
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 try {

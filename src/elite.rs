@@ -13,7 +13,7 @@ fn boss_weapon(run:&Run,node:usize)->u32 {
     let roll=crate::mix(run.reward_seed()^(node as u64).wrapping_mul(7919)^0xb055_7e9a);
     if !run.preferences().is_empty() {return pool[crate::weapon_training::pick_many(&pool,roll,run.preferences(),Some(run.class))];}
     if crate::mix(roll^0xc1a5)%10<7 {
-        let favored:Vec<_>=pool.iter().copied().filter(|id|run.class.weapon_types().contains(&((id&0x0fffffff)/1_000_000))).collect();
+        let favored:Vec<_>=pool.iter().copied().filter(|id|run.class.weapon_types().contains(&crate::weapon_training::kind(*id))).collect();
         if !favored.is_empty() {pool=favored;}
     }
     pool[(roll>>8) as usize%pool.len()]

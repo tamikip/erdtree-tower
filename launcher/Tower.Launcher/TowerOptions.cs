@@ -30,7 +30,6 @@ namespace Tower.Launcher
         {
             ("full", "有 DLC"),
             ("none", "没有 DLC"),
-            ("weapons", "没有 DLC，保留 DLC 武器（实验）"),
         };
 
         /// <summary>界面按键提示：设置页显示的文字 ↔ 文件里的 prompts= 值（src/options.rs 的 Prompts）</summary>
@@ -53,6 +52,7 @@ namespace Tower.Launcher
             PromptModes.FirstOrDefault(m => values.TryGetValue("prompts", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? PromptModes[0].Label;
 
         public static string DlcLabel(Dictionary<string, string> values) =>
+            values.TryGetValue("dlc", out var old) && old.Equals("weapons", StringComparison.OrdinalIgnoreCase) ? "没有 DLC" :
             DlcModes.FirstOrDefault(m => values.TryGetValue("dlc", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? DlcModes[0].Label;
 
         static readonly string Header = "# 黄金树爬塔启动参数：启动器会改写这个文件，也可以手动改，下次启动游戏生效。说明见 src/options.rs";

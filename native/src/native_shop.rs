@@ -5,7 +5,8 @@ use eldenring::cs::{
 use erdtree_tower::{Blessing, BlessingKind, NodeKind, Run};
 use fromsoftware_shared::FromStatic;
 pub const GOODS: u32 = 9500000;
-pub const STOCK_COUNT: u32 = 39;
+pub const STOCK_COUNT: u32 = 43;
+fn base_stock(class:erdtree_tower::Class)->usize {STOCK_COUNT as usize-usize::from(class==erdtree_tower::Class::Confessor)}
 pub const MAX_STOCK:u32=erdtree_tower::merchant::MAX_STOCK as u32;
 #[test]
 fn merchant_bells_append_five_matching_items_and_keep_base_stock() {
@@ -22,12 +23,31 @@ fn merchant_bells_append_five_matching_items_and_keep_base_stock() {
     assert_eq!(flags.len(),flags.iter().collect::<std::collections::HashSet<_>>().len());
     for slot in STOCK_COUNT..MAX_STOCK {
         let flag=stock_flag(slot);
-        assert!([45005,45015,45025,45002,45003].contains(&(flag/1000)),"only existing enemy-control groups may be used");
+        assert!([45005,45015,45025,45002,45003,45013].contains(&(flag/1000)),"only existing enemy-control groups may be used");
         assert_eq!(flag/1000,(flag+7)/1000,"stock counters cannot cross a flag block");
-        if matches!(flag/1000,45002|45003){assert!(flag%1000>=904);}else{assert!(flag%1000>=200);}
+        if matches!(flag/1000,45002|45003){assert!(flag%1000>=904);}else if flag/1000==45013 {assert!(flag%1000>=800);}else{assert!(flag%1000>=200);}
     }
 }
 fn key_offer(roll:u64)->bool {roll%100<20}
+#[test]
+fn class_supplies_and_three_distinct_greases_are_guaranteed() {
+    use erdtree_tower::Class;
+    for class in Class::PLAYABLE {for seed in 0..80 {
+        let mut run=Run::new(seed,class);
+        for visit in 0..2 {
+            if visit==1 {run.visited.push(run.nodes.iter().position(|n|n.kind==NodeKind::Shop).unwrap());}
+            let rows=stock(&run);
+            let starlight=rows.iter().find(|s|s.kind==3&&s.id==1290);
+            let warming=rows.iter().find(|s|s.kind==3&&s.id==3310);
+            if matches!(class,Class::Astrologer|Class::Prophet) {assert_eq!(starlight.map(|s|s.quantity),Some(5));assert!(warming.is_none());}
+            else if class==Class::Confessor {assert!(starlight.is_none()&&warming.is_none());}
+            else {assert_eq!(warming.map(|s|s.quantity),Some(3));assert!(starlight.is_none());}
+            let greases:Vec<_>=rows.iter().filter(|s|extras("grease").iter().any(|g|g.kind==s.kind&&g.id==s.id)).collect();
+            assert_eq!(greases.len(),3);assert_eq!(greases.iter().map(|s|s.id).collect::<std::collections::HashSet<_>>().len(),3);
+            assert!(greases.iter().all(|s|s.quantity==1&&s.price==350));assert_eq!(rows.len(),base_stock(class));
+        }
+    }}
+}
 fn tear_offer(roll:u64)->bool {roll%100<50}
 fn whetblade_offer(roll:u64,claimed:&[u32])->Option<i32> {
     if roll%100>=30{return None;}
@@ -266,6 +286,7 @@ fn crystal_shop_roll_is_fifty_percent_stable_and_costs_3000() {
     assert!((450..=550).contains(&count));
 }
 fn stock_flag(index:u32)->u32 {
+    if index>=359 {return 45013800+(index-359)*8;}
     if index<21 {STOCK_FLAGS+index*8}else if index<26 {45020700+(index-21)*8}else if index<37 {45020600+(index-26)*8}
     else {let slot=index-37;match slot {0..=99=>45005200+slot*8,100..=199=>45015200+(slot-100)*8,200..=299=>45025200+(slot-200)*8,300..=311=>45002904+(slot-300)*8,_=>45003904+(slot-312)*8}}
 }
@@ -397,6 +418,12 @@ fn stock_capped(run:&Run,spirit_cap:u32)->Vec<Stock> {
     result.push(Stock{kind:0,id:53000000,price:100,quantity:10});
     result.push(Stock{kind:0,id:pick(&SPECIAL_GREATBOLTS,0x6b17),price:200,quantity:10});
     result.extend(select(extras("pot"),2,run.reward_seed()^0x706f7473,visit));
+    if matches!(run.class,Class::Astrologer|Class::Prophet) {
+        result.push(Stock{kind:3,id:1290,price:1000,quantity:5});
+    }else if run.class!=Class::Confessor {
+        result.push(Stock{kind:3,id:3310,price:500,quantity:3});
+    }
+    result.extend(select(extras("grease"),3,run.reward_seed()^0x677265617365,visit));
     for (kind,count) in run.bells.counts.iter().enumerate() {
         let pool:Vec<Stock>=match kind {
             0=>catalog.iter().filter(|s|s.kind==0).cloned().collect(),
@@ -811,7 +838,7 @@ mod tests {
         for class in Class::PLAYABLE {
             for seed in 0..64 {
                 let run=Run::new(seed,class);let rows=stock(&run);
-                assert_eq!(rows.len(),STOCK_COUNT as usize);
+                assert_eq!(rows.len(),base_stock(class));
                 assert_eq!(rows.iter().map(|s|(s.kind,s.id)).collect::<std::collections::HashSet<_>>().len(),rows.len());
                 for kind in [ItemKind::Sorcery,ItemKind::Incantation,ItemKind::Armor] {
                     assert_eq!(rows.iter().filter(|s|CATALOG.iter().any(|c|c.kind==kind&&c.id==erdtree_tower::affixes::base(if s.kind==1{0x10000000|s.id as u32}else{0x40000000|s.id as u32})&&s.kind==if kind==ItemKind::Armor {1}else{3})).count(),3);

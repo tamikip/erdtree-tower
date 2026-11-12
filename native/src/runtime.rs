@@ -270,11 +270,13 @@ fn tick_party_scene(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->Re
         let healed=heal_victory(world,&scene.run);if !healed.is_empty(){super::log(&healed);state.view.status=healed;state.view.prompt=state.view.prompt.wrapping_add(1);}
         // 召唤师「群灵」：与单人的守卫战相同，胜利时召唤物还活着就补回这次用掉的骨灰
         if let Some(plan)=keep_summoned_ash(world,&scene.run) {state.ash_refunds=plan;state.ash_guard=Some(Instant::now());}
+        world.summon_buddy_manager.disappear_requested=true;
+        super::log("ASH_GROUP event guard victory: native summon dismissal requested");
         link.event.applied=Some(job.wave);state.view.shared_event=false;return Ok(());
     }
     if game.warp_requested||world.main_player.as_ref().is_none_or(|p|i32::from(p.current_block_id)!=scene.block){return Ok(());}
     let altar=scene.run.altar(id);
-    let roster=super::enemies::roster(if altar {erdtree_tower::NodeKind::Elite}else{erdtree_tower::NodeKind::Monster},scene.run.seed,id,scene.run.nodes[id].layer*11/(scene.run.floors()-1),scene.run.act);
+    let roster=super::enemies::event_roster(scene.run.seed,id,scene.run.nodes[id].layer*11/(scene.run.floors()-1),scene.run.act,altar);
     if roster.is_empty()||roster.len()>16{return Err("事件守卫数量无效".into());}
     if scene.guards.is_none(){scene.guards=Some(super::map_guards::Guards::new(roster)?);}
     let guards=scene.guards.as_mut().unwrap();
@@ -340,7 +342,13 @@ fn tick_party_scarabs(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->
         if !hunt.active(){hunt.start()?;}
         let members:Vec<_>=std::iter::once(link.config.player).chain(link.config.peers.iter().map(|p|p.player)).collect();
         hunt.poll(world,link.config.player,&members)?;
-        if link.host(){if let Some(killed)=hunt.result(){link.event_result_owned(job.wave,killed,hunt.owners())?;}}
+        link.event.scarab_claim=Some(hunt.claim(job.wave,link.config.player));
+        if link.host(){if let Some(killed)=hunt.result(){
+            if let Some(owners)=link.gate.scarab_owners(job.wave,killed,hunt.owners()) {
+                super::log(format!("SCARAB_OWNERS reconciled wave={} killed={killed:03b} host={:?} final={owners:?}",job.wave,hunt.owners()));
+                link.event_result_owned(job.wave,killed,owners)?;
+            }
+        }}
     }
     if scene.started.elapsed()>Duration::from_secs(90)&&link.host()&&link.event.done.is_none(){link.event_abort(job.wave)?;}
     if scene.started.elapsed()>Duration::from_secs(120)&&link.event.done.is_none(){return Err("未收到粪金龟结算，已暂停重发".into());}
@@ -437,6 +445,7 @@ struct Runtime {
     event_start: Option<Instant>,
     descent: Option<(Instant,i32,i32,bool)>,
     stormveil: Option<(Instant,i32,i32,bool)>,
+    stormveil_probe:Option<Instant>,
     stormveil_barrier:super::parkour_barrier::Barrier,
     chariot_clock:Option<ChariotClock>,
     chariot_chase:super::chariot::Chase,
@@ -512,6 +521,7 @@ fn fresh_runtime()->Runtime {
         event_start: None,
         descent: None,
         stormveil: None,
+        stormveil_probe:None,
         stormveil_barrier:Default::default(),
         chariot_clock:None,
         chariot_chase:Default::default(),
@@ -675,7 +685,11 @@ fn stop_map_combat(state:&Runtime,world:&mut WorldChrMan) {
 }
 fn apply_party_order(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan,order:erdtree_tower::party_game::Order)->Result<(),String> {
     use erdtree_tower::party_game::Order;
-    if matches!(order,Order::Enter{epoch,..}|Order::BossTest{epoch,..} if epoch==state.party.as_ref().unwrap().epoch){return Ok(());}
+    if matches!(order,Order::Enter{epoch,..}|Order::BossTest{epoch,..}|Order::EventTest{epoch,..} if epoch==state.party.as_ref().unwrap().epoch){return Ok(());}
+    if let Order::EventTest{seed,act,visited,draw,..}=&order {
+        if !super::debug_menu::enabled()||!state.view.run.as_ref().is_some_and(|r|r.seed==*seed&&r.act==*act&&r.visited==*visited){return Err("事件测试未获本机调试授权或旅程不同步".into());}
+        prepare_event_test(state,world,game,*draw)?;
+    }
     if let Order::BossTest{seed,test,..}=&order {
         if !super::debug_menu::enabled()||!state.view.run.as_ref().is_some_and(|r|r.seed==*seed){return Err("Boss 测试未获本机调试授权或旅程不同步".into());}
         prepare_boss_test(state,world,game,*test)?;
@@ -688,6 +702,16 @@ fn apply_party_order(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan
     match order {
         Order::SkipNode{target,..}=>{state.skip_target=Some(target);state.command=None;Ok(())},
         Order::BossTest{test,..}=>begin_boss_test(state,world,game,test),
+        Order::EventTest{draw,..}=>begin_event_test(state,world,game,draw),
+        Order::MausoleumOpen{..}=>{
+            if super::mausoleum::active(state.view.run.as_ref()) {
+                let mut next=state.view.run.clone().unwrap();
+                let copy=next.regional_event.mausoleum.as_mut().unwrap();
+                copy.observe_flow(true,true);super::mausoleum::restore_flow(copy)?;
+                record_checked(&next)?;state.view.run=Some(next);
+            }
+            Ok(())
+        },
         Order::Law{seed,law,..}=>{
             let run=state.view.run.as_ref().ok_or("律法同步时旅程尚未开启")?;
             if run.seed!=seed{return Err("律法同步路线不一致".into());}
@@ -1211,37 +1235,38 @@ fn tick_revival(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->Result
     if state.party_death_wave!=wave {
         state.party_death_wave=wave;state.party_death=Default::default();super::seamless_revival::cancel();
     }
-    let trial_destination=link.filter(|p|p.event.trial_victory()).and_then(|p|trial_revival_destination(p.event.trial_decision));
+    let trial_goal=link.filter(|p|p.event.trial_victory()).and_then(|p|trial_revival_destination(p.event.trial_decision));
     let mausoleum_goal=epoch.and_then(|_|state.room.as_ref().filter(|room|room.mausoleum)).and_then(|room|{
         let survivor=link.and_then(|p|p.roster()).is_some_and(|roster|world.player_chr_set.characters().any(|p|
             i32::from(p.current_block_id)==room.block&&p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()
             &&world.main_player.as_ref().is_none_or(|local|local.chr_ins.field_ins_handle!=p.chr_ins.field_ins_handle)
             &&roster.members.contains(&p.player_session_holder.player_network_session.remote_identity)));
-        super::mausoleum::recovery_target(state.view.run.as_ref(),room.arrival_block_position,super::mausoleum::flow().ok(),survivor)
+        let shared=link.is_some_and(|p|p.event.mausoleum_open);
+        let flow=if shared{Some((true,true))}else{super::mausoleum::flow().ok()};
+        super::mausoleum::recovery_target(state.view.run.as_ref(),room.arrival_block_position,flow,survivor||shared)
     });
-    let mausoleum_destination=mausoleum_goal.and_then(|goal|world.main_player.as_ref().and_then(|p|{
+    let block_goal=mausoleum_goal.or(trial_goal);
+    let destination=block_goal.and_then(|goal|world.main_player.as_ref().and_then(|p|{
         let block=i32::from(p.current_block_id);let b=&p.block_position;let h=&p.chr_ins.modules.physics.position;
         goal.in_physics_space(Position{block,xyz:[b.x,b.y,b.z]},Position{block,xyz:[h.0,h.1,h.2]})
     }));
-    let destination=mausoleum_destination.or(trial_destination);
-    let victory=mausoleum_destination.is_some()||link.is_some_and(|p|p.victory||p.event.victory()||p.event.merchant_phase==3||p.event.trial_victory());
+    let victory=mausoleum_goal.is_some()&&destination.is_some()||link.is_some_and(|p|p.victory||p.event.victory()||p.event.merchant_phase==3||p.event.trial_victory());
     if epoch.is_some()&&victory {super::seamless_revival::tick(world,game);}
     let player=world.main_player.as_ref().map(|p|{
         let pos=&p.chr_ins.modules.physics.position;
         (Position{block:i32::from(p.current_block_id),xyz:[pos.0,pos.1,pos.2]},p.chr_ins.modules.data.hp<=0||p.chr_ins.chr_flags1c5.death_flag())
     });
     let recovered=world.main_player.as_ref().is_some_and(|p|super::seamless_revival::finished(super::seamless_revival::owned_address(p)));
-    if let Some(destination)=mausoleum_destination {state.party_death.redirect(destination);}
+    if let Some(destination)=destination {state.party_death.redirect(destination);}
     match state.party_death.observe_confirmed(epoch,player,victory,game.warp_requested,recovered) {
         Recovery::RequestRevival(origin)=>{
             let destination=destination.filter(|p|p.block==origin.block);
             let origin=destination.unwrap_or(origin);
             state.party_death.redirect(origin);
             if let Some(p)=world.main_player.as_ref().filter(|p|i32::from(p.current_block_id)==origin.block) {
-                if let Some(goal)=mausoleum_goal {super::seamless_revival::request_at_safe_block_goal(p,goal)?;}
-                else if destination.is_some(){super::seamless_revival::request_at_safe_goal(p,origin)?;}
+                if let Some(goal)=block_goal.filter(|_|destination.is_some()) {super::seamless_revival::request_at_safe_block_goal(p,goal)?;}
                 else {super::seamless_revival::request(p,origin)?;}
-                super::log(format!("PARTY_REVIVE requested epoch={epoch:?} origin={origin:?} mausoleum={}",mausoleum_destination.is_some()));
+                super::log(format!("PARTY_REVIVE requested epoch={epoch:?} physics_origin={origin:?} block_goal={block_goal:?} mausoleum={}",mausoleum_goal.is_some()));
             }
         },
         Recovery::FinishRevival=>{
@@ -1637,7 +1662,7 @@ fn tick_locked() {
         let handle=foe.fight.handle()?;let chr=world.chr_ins_by_handle(&handle)?;
         if foe.entity_address!=Some(std::ptr::from_ref(chr) as usize)||chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(){return None;}
         let rank=super::enemies::bar_rank(&foe.spec);let name=super::enemies::bar_text(&foe.spec)?;
-        Some((rank,if rank==0 {super::boss_affixes::bar_name(&bar_affixes,name)}else{name},handle))
+        Some((rank,if rank==0 {super::boss_affixes::bar_name(&bar_affixes,name)}else{super::boss_affixes::elite_bar_name(&bar_affixes,name)},handle))
     }).collect()).unwrap_or_default()}else{Vec::new()};
     if state.party.as_ref().is_some_and(|p|!p.host()&&p.bound&&!p.victory)&&!game.warp_requested {
         if let Some(run)=state.view.run.as_ref() {if let Phase::Combat{id}=run.phase {
@@ -1650,7 +1675,7 @@ fn tick_locked() {
                     if let Some(chr)=world.chr_sets.iter().flatten().flat_map(|set|set.characters())
                         .find(|chr|ids.get(slot)==Some(&chr.event_entity_id)&&chr.npc_id==spec.model&&chr.npc_param_id==spec.npc&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&enemy_loaded(unsafe {chr.chr_set_entry.as_ref()}.chr_load_status)) {
                         let rank=super::enemies::bar_rank(spec);
-                        bars.push((rank,if rank==0 {super::boss_affixes::bar_name(&bar_affixes,name)}else{name},chr.field_ins_handle));
+                        bars.push((rank,if rank==0 {super::boss_affixes::bar_name(&bar_affixes,name)}else{super::boss_affixes::elite_bar_name(&bar_affixes,name)},chr.field_ins_handle));
                     }
                 }
             }
@@ -1815,7 +1840,11 @@ fn tick_locked() {
     let room_challenge=state.room.as_ref().is_some_and(|room|room.hunter.is_some()||room.scarabs.active())
         ||state.view.run.as_ref().is_some_and(|run|run.regional_event.stormveil==Some(erdtree_tower::stormveil::Progress::Running));
     let ash_fighting=ash_tracking_active(state.travel.is_some(),state.pending.as_ref().is_some_and(|pending|!pending.completed)||client_fighting||state.party.as_ref().is_some_and(|p|p.event.combat_active())||room_challenge);
-    if ash_fighting&&!state.ash_tracking {
+    let service_preparing=state.room.as_ref().is_some_and(|room|!room.view.loading)
+        &&state.view.run.as_ref().is_some_and(|run|!matches!(run.phase,Phase::Dead|Phase::Won));
+    let ash_context=ash_fighting||service_preparing;
+    if ash_tracking_start(ash_context,state.ash_tracking&&super::spirits::refund::tracking(),
+        state.ash_guard.is_some(),world.summon_buddy_manager.disappear_requested) {
         match super::loadout::ash_snapshot(player_data) {
             Ok(before)=>{
                 super::spirits::refund::begin(&before);state.ash_before=before;state.ash_refunds.clear();state.ash_tracking=true;super::log(format!("Spirit ash preparation snapshot: {:?}",state.ash_before));
@@ -1829,8 +1858,11 @@ fn tick_locked() {
             },
             Err(error)=>super::log_repeating(format!("Spirit ash snapshot failed: {error}")),
         }
-    } else if !ash_fighting {state.ash_tracking=false;}
-    if ash_fighting {super::spirits::refund::observe(world);}
+    } else if !ash_context {
+        if state.ash_tracking {super::spirits::refund::close();}
+        state.ash_tracking=false;
+    }
+    if ash_context {super::spirits::refund::observe(world);}
     // 双生的灵唤铃：第二只的召唤被原版拒绝时，补回白扣的骨灰（扣除可能稍晚于请求，5 秒内重试）
     if let Some(id)=super::spirits::take_twin_refund() {state.twin_refund=Some((id,Instant::now()));}
     if let Some((id,since))=state.twin_refund {
@@ -1840,7 +1872,7 @@ fn tick_locked() {
             Err(error)=>{super::log(format!("TOWER_TWIN ash refund failed: {error}"));state.twin_refund=None;},
         }
     }
-    // 新的一场战斗开始，上一场的保护就不再适用
+    // 已冻结的返还不因快速进入下一场而丢失；战斗中暂缓发放。
     let ash_ready=ash_refund_ready(ash_fighting.then_some(false),world.summon_buddy_manager.player_has_alive_summon,&mut state.ash_guard);
     if ash_ready && state.ashes_checked.is_none_or(|t|t.elapsed()>=Duration::from_millis(500)) {
         state.ashes_checked=Some(Instant::now());
@@ -2303,6 +2335,7 @@ fn tick_locked() {
                 return;
             }
             ResultState::Ready => {
+                settle_portal_ashes(&mut state,world);
                 state.skip_portal=false;
                 if let Some(link)=state.party.as_mut(){if let Err(error)=link.open_rewards(){link.stop(error.clone());report(&mut state,error);return;}}
                 let _ = super::native_talk::set_flag(45020970, false);
@@ -2705,20 +2738,42 @@ fn configure_chain_test(run:&mut Run,level:u32)->Result<(),String> {
     if !run.embers.contains(&ember){run.embers.push(ember);}
     run.ember_stacks.chain=level;run.validate()
 }
+fn prepare_event_test(state:&Runtime,world:&WorldChrMan,game:&GameMan,draw:erdtree_tower::events::Draw)->Result<(Run,usize),String> {
+    if state.party_pending.is_some()||game.event_world_type==EventWorldType::Remote&&state.party.is_none(){return Err("等待队伍同步建立后再测试事件".into());}
+    if game.warp_requested||state.view.busy||state.view.travelling||state.travel.is_some()||state.reward_wait.is_some()||state.pending.as_ref().is_some_and(|p|!p.completed){return Err("请等战斗、传送或领奖结束".into());}
+    let player=world.main_player.as_ref().ok_or("角色尚未就绪")?;
+    if player.chr_ins.modules.data.hp<=0||!player.chr_ins.modules.physics.standing_on_solid_ground||player.chr_ins.chr_flags1c5.is_invincible(){return Err("请站稳并退出原版菜单后再测试".into());}
+    let mut next=state.view.run.clone().ok_or("请先开始旅程")?;
+    let node=next.debug_event_test(draw)?;
+    Ok((next,node))
+}
+fn begin_event_test(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan,draw:erdtree_tower::events::Draw)->Result<(),String> {
+    let (next,node)=prepare_event_test(state,world,game,draw)?;
+    record_checked(&next)?;
+    if let Some(room)=state.room.take(){room.retire(world);}
+    if let Some(room)=state.attendant.take(){room.retire(world);}
+    if let Some(fight)=state.pending.take(){retire_group(&fight,world);}
+    if let Some(scene)=state.party_scene.take(){scene.retire(world);}
+    state.view.run=Some(next);state.view.room=None;state.view.shared_event=false;
+    state.spawn_used=false;state.command=None;state.reward_portal=Default::default();state.event_start=None;
+    super::debug_menu::clear_roster();
+    request_travel(state,world,game,node)?;
+    if let Some(run)=state.view.run.as_ref(){record_checked(run)?;}
+    super::debug_menu::close();
+    super::log(format!("EVENT_TEST entered node={node} draw={draw:?} party={}",state.party.is_some()));
+    report(state,"已进入指定事件测试，请与事件 NPC 或场景物件交互。");Ok(())
+}
 fn debug_boss_command(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan,command:super::debug_menu::Command)->Result<(),String> {
     if !super::debug_menu::enabled(){return Err("请先开启调试模式".into());}
     if matches!(command,super::debug_menu::Command::MausoleumTest|super::debug_menu::Command::EventTest(_)) {
-        if state.party.is_some()||state.party_pending.is_some()||game.event_world_type==EventWorldType::Remote{return Err("事件快捷测试仅限独自游玩".into());}
-        if game.warp_requested||state.view.busy||state.travel.is_some()||state.reward_wait.is_some()||state.pending.as_ref().is_some_and(|p|!p.completed){return Err("请等战斗、传送或领奖结束".into());}
-        let mut next=state.view.run.clone().ok_or("请先开始旅程")?;
         let draw=if let super::debug_menu::Command::EventTest(draw)=command {draw}else{erdtree_tower::events::Draw::Mausoleum};
-        let node=next.debug_event_test(draw)?;
-        let previous=state.view.run.replace(next);
-        if let Err(error)=request_travel(state,world,game,node){state.view.run=previous;return Err(error);}
-        if let Some(run)=state.view.run.as_ref(){record_checked(run)?;}
-        super::debug_menu::close();
-        super::log(format!("EVENT_TEST entered node={node} draw={draw:?}"));
-        report(state,"已进入指定事件测试，请与事件 NPC 或场景物件交互。");return Ok(());
+        prepare_event_test(state,world,game,draw)?;
+        return if let Some(link)=state.party.as_mut(){
+            let order=link.event_test(state.view.run.as_ref().ok_or("旅程未开启")?,draw)?;
+            let result=apply_party_order(state,world,game,order);
+            if let Err(error)=&result {if let Some(link)=state.party.as_mut(){link.stop(error.clone());}}
+            result
+        }else{begin_event_test(state,world,game,draw)};
     }
     if let super::debug_menu::Command::ChainTest(level)=command {
         if game.warp_requested||state.travel.is_some()||state.reward_wait.is_some(){return Err("请等待传送或结算结束再开启测试".into());}
@@ -3247,9 +3302,6 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
                 link.arrived=arrived;
             }
             if !arrived{return Ok(false);}
-            if let Some(run)=state.view.run.as_mut() {
-                if run.physick_supply.queue(run.act,room.node){record(run);}
-            }
             if room.shop_refresh_pending {
                 let count=state.view.run.as_ref().and_then(|r|r.shop_stock.as_ref()).filter(|s|s.node==room.node).ok_or("新商店货单未准备完成")?.items.len();
                 super::native_shop::reset_arrived_stock(count)?;room.shop_refresh_pending=false;
@@ -3358,6 +3410,11 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
             tick_regional_event(state,world,&mut room)?;
         }
         if room.kind == erdtree_tower::NodeKind::Camp {
+            let arrived=!game.warp_requested&&world.main_player.as_ref().is_some_and(|p|
+                i32::from(p.current_block_id)==room.block&&p.chr_ins.modules.physics.standing_on_solid_ground);
+            if arrived&&let Some(run)=state.view.run.as_mut() {
+                if run.physick_drop(room.node,false)&&run.physick_supply.queue(run.act,room.node){record(run);}
+            }
             // 战斗法师：铁匠菜单里选了智力或信仰，给右手武器附加 S 补正（免费，记进存档；参数下一帧由 embers::sync 写进内存）
             if let Some(stat)=super::native_talk::take_battlemage() {
                 match battlemage_convert(state,world,stat) {
@@ -3429,6 +3486,7 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
     })();
     if transferred {room.retire(world);return;}
     if matches!(result, Ok(true)) {
+        settle_portal_ashes(state,world);
         state.event_start=None;
         room.retire(world);
         state.view.room = None;
@@ -3658,7 +3716,7 @@ fn tick_regional_event(state:&mut Runtime,world:&mut WorldChrMan,room:&mut super
                 room.view.message=format!("守卫将在 {} 秒后出现，击败后才能离开。",super::travel::PREPARATION.saturating_sub(at.elapsed()).as_secs_f64().ceil() as u64);
                 return Ok(());
             }
-            let roster=super::enemies::roster(if altar {erdtree_tower::NodeKind::Elite}else{erdtree_tower::NodeKind::Monster},run.seed,room.node,run.nodes[room.node].layer*11/(run.floors()-1),run.act);
+            let roster=super::enemies::event_roster(run.seed,room.node,run.nodes[room.node].layer*11/(run.floors()-1),run.act,altar);
             let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"怪物参数未加载")?;
             if roster.iter().any(|e|params.get::<NpcParam>(e.npc as u32).is_none()||params.get::<NpcThinkParam>(e.think).is_none()) {return Err("事件守卫参数缺失".into());}
             state.pending=Some(Pending {
@@ -3675,6 +3733,8 @@ fn tick_regional_event(state:&mut Runtime,world:&mut WorldChrMan,room:&mut super
             Outcome::Victory => {
                 let healed=heal_victory(world,run);if !healed.is_empty(){super::log(&healed);state.view.status=healed;state.view.prompt=state.view.prompt.wrapping_add(1);}
                 if let Some(plan)=keep_summoned_ash(world,run) {state.ash_refunds=plan;state.ash_guard=Some(Instant::now());}
+                world.summon_buddy_manager.disappear_requested=true;
+                super::log("ASH_GROUP event guard victory: native summon dismissal requested");
                 state.pending=None;state.event_start=None;state.view.enemy_hp=None;
                 let run=state.view.run.as_mut().unwrap();run.regional_event.guards=false;run.regional_event.guard_slot=None;record(run);
                 set_flag(45010942,false)?;set_flag(45010995,true)?;
@@ -3888,6 +3948,7 @@ fn request_spawn(state: &mut Runtime, world: &mut WorldChrMan, id: usize) -> Res
         if let Some(setup)=super::debug_menu::take_bout() {state.bout.begin(setup);for e in &mut roster {e.kind=erdtree_tower::NodeKind::Boss;}}
     }}
     if state.party.is_none()&&!state.bout.active()&&run.nodes[id].kind==erdtree_tower::NodeKind::Monster {roster.sort_by_key(|e|super::enemies::role(e)!=erdtree_tower::encounter::Role::Weak);}
+    if !erdtree_tower::dlc::enemies_allowed()&&roster.iter().any(|e|e.dlc){return Err("需要启用 DLC 敌人资源".into());}
     let params = unsafe { SoloParamRepository::instance() }.map_err(|_| "游戏参数未就绪")?;
     for spec in &roster {
         if params.get::<NpcParam>(spec.npc as u32).is_none() || params.get::<NpcThinkParam>(spec.think).is_none() {
@@ -4089,10 +4150,35 @@ fn poll_group(pending: &mut Pending, world: &mut WorldChrMan, dead: bool, block:
     (super::enemies::group_outcome(&outcomes, false), bound.then_some((hp,max_hp)),bound)
 }
 fn ash_tracking_active(preparing:bool,fighting:bool)->bool {preparing||fighting}
+fn settle_portal_ashes(state:&mut Runtime,world:&mut WorldChrMan) {
+    if !world.main_player.as_ref().is_some_and(|p|p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()){return;}
+    if state.ash_guard.is_none() {
+        if let Some(run)=state.view.run.as_ref() {
+            if let Some(plan)=keep_summoned_ash(world,run) {
+                state.ash_refunds=plan;state.ash_guard=Some(Instant::now());
+                super::log("ASH_GROUP portal settlement: surviving local summons queued for refund");
+            }
+        }
+    }
+    if world.summon_buddy_manager.player_has_alive_summon {
+        world.summon_buddy_manager.disappear_requested=true;
+    }
+}
+fn ash_tracking_start(context:bool,tracking:bool,refund_pending:bool,dismissing:bool)->bool {
+    context&&!tracking&&!refund_pending&&!dismissing
+}
+#[test]
+fn event_preparation_starts_tracking_without_resetting_it_at_spawn_or_dismissal() {
+    assert!(ash_tracking_start(true,false,false,false));
+    assert!(!ash_tracking_start(true,true,false,false));
+    assert!(!ash_tracking_start(true,false,true,false));
+    assert!(!ash_tracking_start(true,false,false,true));
+    assert!(!ash_tracking_start(false,false,false,false));
+    assert!(ash_tracking_start(true,false,false,false),"next wave may start after refunds finish");
+}
 fn ash_refund_ready(pending_completed:Option<bool>,summon_alive:bool,guard:&mut Option<Instant>)->bool {
     let fighting=pending_completed==Some(false);
-    if fighting {*guard=None;}
-    !fighting&&!summon_alive
+    !fighting&&(!summon_alive||guard.is_some())
 }
 /// 本局的骨灰最高等级：只升不降；旧存档没有记录时从原来的上限（武器换算）接着算
 fn spirit_peak(run:&Run,inventory:u8)->u8 {
@@ -4147,6 +4233,24 @@ fn hidden_road_routes_require_matching_scene_and_grounded_finish() {
         assert!(!route.reached(0,route.goal,true));
         assert_eq!(trial_revival_destination(Some(choice)).unwrap().xyz,route.goal);
     }
+}
+#[test]
+fn stormveil_revival_uses_map_coordinates_across_origin_shifts() {
+    use super::party_death::{Position,Death,Action};
+    let goal=trial_revival_destination(Some(erdtree_tower::regional_events::Trial::Stormveil)).unwrap();
+    let block=Position{block:0x0a000000,xyz:[-93.97,21.54,19.71]};
+    let physics=Position{xyz:[-5.97,5.54,3.71],..block};
+    let target=goal.in_physics_space(block,physics).unwrap();
+    for (actual,expected) in target.xyz.into_iter().zip([-114.71,65.864,298.077]) {assert!((actual-expected).abs()<0.001);}
+    let mut death=Death::default();let epoch=Some(3);
+    assert_eq!(death.observe_confirmed(epoch,Some((physics,true)),false,false,false),Action::Waiting);
+    death.redirect(target);
+    assert_eq!(death.observe_confirmed(epoch,Some((physics,true)),true,false,false),Action::RequestRevival(target));
+    let shifted=Position{xyz:[goal.xyz[0]+160.0,goal.xyz[1]-48.0,goal.xyz[2]-304.0],..goal};
+    let current_target=goal.in_physics_space(goal,shifted).unwrap();
+    death.redirect(current_target);
+    assert_eq!(death.observe_confirmed(epoch,Some((shifted,false)),true,false,false),Action::Waiting);
+    assert_eq!(death.observe_confirmed(epoch,Some((shifted,false)),true,false,true),Action::FinishRevival);
 }
 fn parkour_route(chariot:bool)->ParkourRoute {
     if chariot {ParkourRoute{block:0x2d010000,entry:45012880,flag:45007880,name:"泥头车生存",goal:[0.0,0.0,0.0]}}
@@ -4268,6 +4372,19 @@ fn tick_stormveil(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->Resu
     use erdtree_tower::stormveil::{Progress,Decision};
     if state.view.run.as_ref().is_some_and(|r|r.regional_event.chariot){return tick_chariot(state,world,game);}
     let route=run_parkour_route(state.view.run.as_ref().ok_or("旅程未加载")?);
+    if state.party.is_some()&&state.stormveil_probe.is_none_or(|at|at.elapsed()>=Duration::from_secs(5)) {
+        state.stormveil_probe=Some(Instant::now());
+        let local=world.main_player.as_ref().map(|p|{
+            let b=&p.block_position;let h=&p.chr_ins.modules.physics;
+            (i32::from(p.current_block_id),p.chr_ins.modules.data.hp,[b.x,b.y,b.z],[h.position.0,h.position.1,h.position.2],h.standing_on_solid_ground,h.is_falling)
+        });
+        let peers:Vec<_>=world.player_chr_set.characters().map(|p|{
+            let b=&p.block_position;
+            (i32::from(p.current_block_id),p.chr_ins.modules.data.hp,[b.x,b.y,b.z],p.chr_ins.modules.physics.standing_on_solid_ground)
+        }).collect();
+        super::log(format!("PARKOUR_LOAD host={:?} warp={} local=(block,hp,map,physics,grounded,falling){local:?} peers=(block,hp,map,grounded){peers:?} goal={:?} recovery={} decision={:?}",
+            state.party.as_ref().map(|p|p.host()),game.warp_requested,route.goal,state.party_death.awaiting_revival(),state.party.as_ref().and_then(|p|p.event.storm_decision)));
+    }
     let player=world.main_player.as_mut().ok_or("角色正在加载")?;
     let (started,hp,fp,restored)=state.stormveil.as_mut().unwrap();
     let block=i32::from(player.current_block_id);
@@ -4569,14 +4686,16 @@ mod tests {
     fn victorious_ash_refund_survives_completed_pending_and_long_settlement() {
         let earned=std::time::Instant::now()-std::time::Duration::from_secs(120);
         let mut guard=Some(earned);
-        assert!(!super::ash_refund_ready(Some(true),true,&mut guard));
+        assert!(super::ash_refund_ready(Some(true),true,&mut guard));
         assert_eq!(guard,Some(earned));
         assert!(super::ash_refund_ready(Some(true),false,&mut guard));
         assert_eq!(guard,Some(earned));
         assert!(super::ash_refund_ready(None,false,&mut guard));
         assert_eq!(guard,Some(earned));
         assert!(!super::ash_refund_ready(Some(false),false,&mut guard));
-        assert!(guard.is_none());
+        assert_eq!(guard,Some(earned));
+        guard=None;
+        assert!(!super::ash_refund_ready(None,true,&mut guard),"living summons alone do not authorize a refund");
     }
     #[test]
     fn ash_tracking_includes_preparation_and_does_not_restart_at_combat() {
@@ -4608,15 +4727,15 @@ mod tests {
         let mut member=super::fresh_runtime();member.view.run=Some(run);
         super::record_ember_gains(&mut host,vec![Gain::Critical;9],(42,0,3));
         super::record_ember_gains(&mut member,vec![Gain::Critical;2],(42,0,3));
-        assert_eq!(host.view.run.as_ref().unwrap().ember_stacks.chain,5);
-        assert_eq!(host.reward_wait.as_ref().unwrap().1.ember_stacks.chain,5);
+        assert_eq!(host.view.run.as_ref().unwrap().ember_stacks.chain,3);
+        assert_eq!(host.reward_wait.as_ref().unwrap().1.ember_stacks.chain,3);
         assert_eq!(member.view.run.as_ref().unwrap().ember_stacks.chain,2);
         let restored=Run::decode(&host.view.run.as_ref().unwrap().encode().unwrap()).unwrap();
         host.view.run=Some(restored);
         super::record_ember_gains(&mut host,vec![Gain::Critical],(42,0,3));
-        assert_eq!(host.view.run.as_ref().unwrap().ember_stacks.chain,5);
+        assert_eq!(host.view.run.as_ref().unwrap().ember_stacks.chain,3);
         super::record_ember_gains(&mut host,vec![Gain::Critical],(42,0,4));
-        assert_eq!(host.view.run.as_ref().unwrap().ember_stacks.chain,6);
+        assert_eq!(host.view.run.as_ref().unwrap().ember_stacks.chain,4);
     }
     #[test]
     fn chain_test_only_changes_the_selected_ember_and_marks_debug() {

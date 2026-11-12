@@ -89,7 +89,8 @@ fn three_distinct_oaths_can_be_held_and_the_deepen_card_prefers_the_strongest() 
 }
 
 #[test]
-fn new_gifts_are_epic_and_old_saves_keep_the_old_rules() {
+fn new_gifts_have_common_random_affixes_and_old_saves_keep_the_old_rules() {
+    let mut profiles=std::collections::HashSet::new();
     let tiers:std::collections::HashMap<u32,u8>=include_str!("../scene-assets/reward-rarities.tsv").lines().map(|l| {
         let (id,tier)=l.split_once('\t').unwrap();(id.parse().unwrap(),tier.trim().parse().unwrap())
     }).collect();
@@ -97,9 +98,11 @@ fn new_gifts_are_epic_and_old_saves_keep_the_old_rules() {
         let mut s=State::start(seed,Class::Prophet,1,vec![],0);s.offers[0]=kind;s.offers[1]=*Kind::ALL.iter().find(|k|**k!=kind).unwrap();
         s.offers[2]=*Kind::ALL.iter().find(|k|!s.offers[..2].contains(k)).unwrap();
         s.choose(0,seed,Class::Prophet).unwrap();assert!(s.valid(1));
-        assert!(s.gear.iter().all(|id|tiers[id]==2),"{kind:?} gift must be epic");
-        if kind==Kind::Guard {assert!(matches!(s.gear[0]/1_000_000,31|32));}
+        assert!(s.gear.iter().all(|id|erdtree_tower::affixes::tier(*id)==Some(0)&&erdtree_tower::affixes::profile(*id).is_some()),"{kind:?} gift must have common affixes");
+        profiles.extend(s.gear.iter().filter_map(|id|erdtree_tower::affixes::profile(*id)));
+        if kind==Kind::Guard {assert!(matches!(erdtree_tower::affixes::base(s.gear[0])/1_000_000,31|32));}
     }}
+    assert!(profiles.len()>1,"scaling profiles must vary");
     // 旧存档：没有 rules 字段，下一幕照旧换一份新契约
     let mut run=Run::new(12,Class::Samurai);
     run.contract=Some(State::new(run.reward_seed(),run.class,1,None,0));

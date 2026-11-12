@@ -128,10 +128,12 @@ static class AdvancedAffixAssets {
         }
         foreach(var file in messages.Files){text[file.ID].Entries.Sort((a,b)=>a.ID.CompareTo(b.ID));file.Bytes=text[file.ID].Write();}
         File.WriteAllLines(Path.Combine(output,"affix-v2-catalog.txt"),catalog);File.WriteAllLines(Path.Combine(output,"affix-v2-details.tsv"),detailLines);File.WriteAllLines(Path.Combine(output,"affix-v2-rarities.tsv"),rarities);File.WriteAllLines(Path.Combine(output,"affix-v2-audit.tsv"),audit);
+        AffixReinforcementFix.Apply(read,save,output);
         Verify(read,output);
         Console.WriteLine($"Built {catalog.Count} advanced variants and 31 scaling correction masks");
     }
     public static void Verify(Func<string,PARAM> read,string output) {
+        AffixReinforcementFix.Verify(read,output);
         var weapons=read("EquipParamWeapon").Rows.ToDictionary(r=>r.ID);
         var armor=read("EquipParamProtector").Rows.ToDictionary(r=>r.ID);
         var corrections=read("AttackElementCorrectParam").Rows.ToDictionary(r=>r.ID);

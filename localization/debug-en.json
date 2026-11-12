@@ -1,4 +1,7 @@
 {
+  "进入引路人问号房，再选择前往龙王平台灵庙或领取 800 卢恩。联机由房主发起，全员需开启调试并回到路线图，不计正式解锁。": "Enter the guide's event room, then visit the mausoleum on Placidusax's platform or take 800 runes. In co-op, the host starts the test; everyone must enable debug mode and return to the route map. No progression unlocks.",
+  "先开始旅程并停在路线图。联机由房主选择事件，全员需更新版本、开启调试并完成领奖。隐形道路在试炼 NPC 菜单里选择；测试旅程不计正式解锁。": "Start a run and return to the route map. In co-op, the host chooses the event; everyone must update, enable debug mode, and finish claiming rewards. Select the invisible path at the trial NPC. Test runs do not grant progression unlocks.",
+  "进入灵庙事件测试": "Start Mausoleum Event Test",
   "选择职业": "Choose Class",
   "战利品": "Loot",
   "旅程结算": "Run Summary",
@@ -115,6 +118,6 @@
   "参数检查通过（不代表已完成实战伤害验证）": "Parameter Check Passed (Actual Combat Damage Not Yet Verified)",
   "参数未就绪或与层数不符": "Parameters not ready or do not match the stack count",
   "已挂载倍率效果数：{}   限定致命一击：{}": "Applied Multiplier Effects: {0}   Critical Hits Only: {1}",
-  "进入战斗后背刺或处决一次，再打开此页：真实触发次数应 +1，层数应 +1，倍率应增加 0.06。普通攻击不应加层。营地假人不走战斗叠层检测，请使用战斗或 Boss 测试入口。": "Perform a backstab or critical in battle, then reopen this page. Trigger count and stacks should each increase by 1, and the multiplier by 0.06. Normal attacks should not add stacks. Camp dummies do not use battle stack detection; use a battle or boss test.",
+  "进入战斗后背刺或处决一次，再打开此页：真实触发次数应 +1，层数应 +1，倍率应增加 0.05。普通攻击不应加层。营地假人不走战斗叠层检测，请使用战斗或 Boss 测试入口。": "Perform a backstab or critical in battle, then reopen this page. Trigger count and stacks should each increase by 1, and the multiplier by 0.05. Normal attacks should not add stacks. Camp dummies do not use battle stack detection; use a battle or boss test.",
   "10 层按钮仅用于手动对照参数，不计入真实触发次数。比较伤害请保持同一把武器、同一敌人及其他增益不变，并关闭秒杀。": "The 10-stack button is for manual parameter comparison and does not count as an actual trigger. Compare damage using the same weapon, enemy, and buffs, with instant kill disabled."
 }

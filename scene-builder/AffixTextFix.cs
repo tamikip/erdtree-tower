@@ -68,6 +68,7 @@ static class AffixTextFix {
     public const int LegacyCombos=111,BarNameSecond=9722200,BarNameSecondStride=144,BarMarkerV2=9620098,BarTagTest=9799999;
     // 之后追加的 Boss（名称序号 140 起，追忆与 DLC）：序号 144 起的新组合名称放在第三段，写好后加入第三个标记（见 src/boss_affixes.rs）
     public const int LateBossFirst=140,BarNameThird=9740000,BarNameThirdStride=64,BarMarkerV3=9620097;
+    public const int PoolBarNameFirst=98000000,PoolBarNameStride=256,BarMarkerV4=9620100;
     // 物品名颜色标签测试：把爬塔里用不到的原版道具“饶舌头颅”（2207）的名字换成带颜色标签的文字，调试菜单可以发放，用来确认原版菜单是否支持标签
     public const int TagTestGoods=2207;
     public const string TagTestGoodsName="<font color=\"#F2C85C\">传说</font>·<font color=\"#68CC92\">灵巧</font>/<font color=\"#EECE6C\">信仰</font>·颜色标签测试";
@@ -75,7 +76,7 @@ static class AffixTextFix {
     // 名称序号 144 起放在第三段 9740000 + (组合序号 − 111) × 64 + (Boss 名称序号 − 144)
     static IEnumerable<(int id,string text)> AffixBarNames(string input,Dictionary<int,string> names) {
         var combos=File.ReadAllLines(Path.Combine(input,"boss-affix-combos.txt")).Select(l=>l.Split('|')).ToArray();
-        var majors=File.ReadAllLines(Path.Combine(input,"boss-pool.txt")).Select(l=>l.Split('|')).Where(p=>p[9]=="1").Select(p=>int.Parse(p[2])).Distinct();
+        var majors=File.ReadAllLines(Path.Combine(input,"boss-pool.txt")).Select(l=>l.Split('|')).Select(p=>int.Parse(p[2])).Distinct();
         foreach(var index in majors) {
             if(index>=BarNameSecondStride+BarNameThirdStride||index>=BarNameStride)throw new Exception("Boss name index exceeds affix bar stride");
             var boss=names.GetValueOrDefault(BossNameFirst+index)??throw new Exception($"Missing boss name {BossNameFirst+index}");
@@ -87,6 +88,10 @@ static class AffixTextFix {
                 yield return (id,$"{combo[1]} {boss}");
             }
         }
+        var pool=PoolNames(input);
+        if(pool.Count>PoolBarNameStride)throw new Exception("Enemy name index exceeds affix bar stride");
+        for(int index=0;index<pool.Count;index++)foreach(var combo in combos)
+            yield return (PoolBarNameFirst+int.Parse(combo[0])*PoolBarNameStride+index,$"{combo[1]} {pool[index]}");
         // 调试菜单“血条颜色标签测试”用的文字：确认 Boss 血条是否支持 <font color> 标签（与 native boss_affixes::BAR_TAG_TEST_NAME 相同）
         yield return (BarTagTest,"<font color=\"#E04A3A\">狂暴的</font>·<font color=\"#F2C85C\">黄金律法的</font>·<font color=\"#5CDECC\">迅猛的</font> 颜色标签测试");
     }
@@ -95,7 +100,7 @@ static class AffixTextFix {
         var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="SpEffectParam");
         var def=PARAMDEF.XmlDeserialize("work/SoulsRandomizers/diste/Defs/SpEffect.xml");var effects=PARAM.Read(file.Bytes);effects.ApplyParamdef(def);
         // 第一个标记：最早的组合已有名称；第二个标记：新增词条后的全部组合都已有名称
-        var missing=new[]{(BarMarker,"Tower boss affix bar names marker"),(BarMarkerV2,"Tower boss affix bar names marker v2"),(BarMarkerV3,"Tower boss affix bar names marker v3")}.Where(m=>!effects.Rows.Any(r=>r.ID==m.Item1)).ToList();
+        var missing=new[]{(BarMarker,"Tower boss affix bar names marker"),(BarMarkerV2,"Tower boss affix bar names marker v2"),(BarMarkerV3,"Tower boss affix bar names marker v3"),(BarMarkerV4,"Tower elite affix bar names marker v4")}.Where(m=>!effects.Rows.Any(r=>r.ID==m.Item1)).ToList();
         if(missing.Count==0)return false;
         foreach(var (id,name) in missing) {
             var marker=new PARAM.Row(effects.Rows.Single(r=>r.ID==BossAffixAssets.First+95)){ID=id,Name=name};
@@ -107,7 +112,7 @@ static class AffixTextFix {
         var check=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(path);
         foreach(var f in check.Files.Where(f=>f.Name!=file.Name))if(!f.Bytes.SequenceEqual(others[f.Name]))throw new Exception($"Unrelated param changed: {f.Name}");
         var actual=PARAM.Read(check.Files.Single(f=>f.Name==file.Name).Bytes);actual.ApplyParamdef(def);
-        if(actual.Rows.Count!=effects.Rows.Count||!actual.Rows.Any(r=>r.ID==BarMarker)||!actual.Rows.Any(r=>r.ID==BarMarkerV2))throw new Exception("Bar name marker not written");
+        if(actual.Rows.Count!=effects.Rows.Count||new[]{BarMarker,BarMarkerV2,BarMarkerV3,BarMarkerV4}.Any(id=>!actual.Rows.Any(r=>r.ID==id)))throw new Exception("Bar name marker not written");
         return true;
     }
     // 侍从的敌人预览（menu_dlc02 第 33 表，9510000+序号×16+数量）：与 melina-patch 写入的内容相同，新增敌人时补上；
@@ -119,6 +124,7 @@ static class AffixTextFix {
         var expected=MelinaAssets.PreviewTexts(MelinaAssets.PreviewNames(input)).ToDictionary(t=>t.id,t=>t.text);
         // 同一张表里还有问号房赌运事件的对话菜单文字，一并补上
         foreach(var (id,text) in RecoveryText.GambleEntries)expected[id]=text;
+        foreach(var (id,text) in FlaskBatchText.Chinese)expected[id]=text;
         int changed=0;
         foreach(var (id,text) in expected) {
             var entry=fmg.Entries.FirstOrDefault(e=>e.ID==id);

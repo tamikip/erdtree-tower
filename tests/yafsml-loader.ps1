@@ -1,4 +1,10 @@
 $ErrorActionPreference='Stop'
+$loaderScript=[IO.Path]::GetFullPath("$PSScriptRoot/../distribution/Tower-Loader.ps1")
+$loaderBytes=[IO.File]::ReadAllBytes($loaderScript)
+if($loaderBytes[0] -ne 239 -or $loaderBytes[1] -ne 187 -or $loaderBytes[2] -ne 191){throw 'Loader requires UTF-8 BOM for Windows PowerShell 5.1'}
+$parseCommand='$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseFile('''+$loaderScript.Replace("'","''")+''',[ref]$tokens,[ref]$errors)>$null;if($errors.Count){$errors | ForEach-Object {$_.Message};exit 1}'
+& powershell.exe -NoProfile -NonInteractive -Command $parseCommand
+if($LASTEXITCODE -ne 0){throw 'Loader failed Windows PowerShell 5.1 parsing'}
 . "$PSScriptRoot/../distribution/Tower-Loader.ps1"
 $root=Join-Path ([IO.Path]::GetTempPath()) ('tower-loader-test-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$root/assets","$root/SeamlessCoop" -Force | Out-Null

@@ -23,6 +23,7 @@ namespace Tower.Update
         {
             ("fcd11a1849fd37851bb449be30f1525cf498f63fd1fa568c4e15030ebe7cb251", "2.0.1", true),
             ("0a093d8490967bf19c62f895fdf1fda21840282d2b2b371b9b4fc24a0cfe146e", "2.0.2", true),
+            ("2ebde62be864ba3d759728aac44c459f0f813e8b6d7a342304ce68f6513f280c", "2.0.3", true),
         };
         public const string BackupSuffix = ".tower-backup";
 
@@ -77,7 +78,7 @@ namespace Tower.Update
             using (var stream = File.OpenRead(Dll)) sha = Hashes.Of(stream);
             foreach (var known in Known)
                 if (sha == known.Sha256)
-                    return (true, true, known.Revival ? $"{known.Version}（本包验证过的版本）" : $"{known.Version}（已放行；联机复活修复尚未适配，会自动关闭）");
+                    return (true, true, known.Version == "2.0.3" ? "2.0.3（包内配套版本，复活接口已适配）" : known.Revival ? $"{known.Version}（本包验证过的版本）" : $"{known.Version}（已放行；联机复活修复尚未适配，会自动关闭）");
             var info = FileVersionInfo.GetVersionInfo(Dll);
             var version = string.IsNullOrWhiteSpace(info.ProductVersion) ? info.FileVersion : info.ProductVersion;
             var shown = string.IsNullOrWhiteSpace(version) ? "未知版本" : version!.Trim();

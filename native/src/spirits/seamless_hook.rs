@@ -8,9 +8,20 @@ const HOOKS:[Hook;2]=[
     Hook{rva:0x4b73d0,dispatcher:0x96ed0,length:0x63,hash:0x6407c0604523c26a},
     Hook{rva:0x4b8690,dispatcher:0x96480,length:0x65,hash:0x2a0354428ec85f58},
 ];
+const HOOKS_203:[Hook;2]=[
+    Hook{rva:0x4b73d0,dispatcher:0x983b0,length:0x63,hash:0x829e43a0c10f9dfd},
+    Hook{rva:0x4b8690,dispatcher:0x97960,length:0x65,hash:0xeb454f899352a64a},
+];
+fn hooks(module:Module)->Option<(&'static str,&'static [Hook;2])> {
+    match (module.timestamp,module.size) {
+        (0x6ae0ad1a,0xd65000)=>Some(("2.0.2",&HOOKS)),
+        (0x6af4b20a,0xd67000)=>Some(("2.0.3",&HOOKS_203)),
+        _=>None,
+    }
+}
 trait Memory {fn read(&self,address:usize,length:usize)->Option<Vec<u8>>;}
 #[derive(Debug,PartialEq)]
-enum Entry {Native,Seamless202}
+enum Entry {Native,Seamless}
 fn hash(bytes:&[u8])->u64 {bytes.iter().fold(0xcbf29ce484222325,|h,b|(h^u64::from(*b)).wrapping_mul(0x100000001b3))}
 fn pointer(bytes:&[u8])->Option<usize>{usize::try_from(u64::from_le_bytes(bytes.try_into().ok()?)).ok()}
 fn classify(memory:&impl Memory,address:usize,expected:&[u8],module:Option<Module>,hook:Hook)->Option<Entry> {
@@ -18,7 +29,8 @@ fn classify(memory:&impl Memory,address:usize,expected:&[u8],module:Option<Modul
     let entry=memory.read(address,expected.len())?;
     if entry==expected{return Some(Entry::Native);}
     let module=module?;
-    if module.timestamp!=0x6ae0ad1a||module.size!=0xd65000||entry[0]!=0xe9||entry[5..]!=expected[5..]{return None;}
+    let (_,known)=hooks(module)?;
+    if !known.iter().any(|h|h.rva==hook.rva&&h.dispatcher==hook.dispatcher)||entry[0]!=0xe9||entry[5..]!=expected[5..]{return None;}
     let target=module.base.checked_add(hook.dispatcher)?;
     if hook.dispatcher.checked_add(hook.length)? > module.size as usize||hash(&memory.read(target,hook.length)?)!=hook.hash{return None;}
     let delta=i32::from_le_bytes(entry[1..5].try_into().ok()?) as isize;
@@ -32,7 +44,7 @@ fn classify(memory:&impl Memory,address:usize,expected:&[u8],module:Option<Modul
             let context=pointer(&bytes[2..10])?;
             if pointer(&bytes[17..25])?!=target||!(0x10000..=0x7fffffff0000).contains(&context)||context%8!=0{return None;}
             memory.read(context,8)?;
-            return Some(Entry::Seamless202);
+            return Some(Entry::Seamless);
         }
         next=if bytes[..6]==[0xff,0x25,0,0,0,0] {pointer(&bytes[6..14])?}
             else if bytes[..2]==[0x48,0xb8]&&bytes[10..12]==[0xff,0xe0] {pointer(&bytes[2..10])?}
@@ -64,17 +76,19 @@ fn module(memory:&impl Memory,base:usize)->Option<Module> {
     if nt[..4]!=[b'P',b'E',0,0]{return None;}
     Some(Module{base,timestamp:u32::from_le_bytes(nt[8..12].try_into().ok()?),size:u32::from_le_bytes(nt[0x50..0x54].try_into().ok()?)})
 }
-// Only these two verified Seamless 2.0.2 detours are eligible. MinHook chains to
+// Only the pinned version's two verified detours are eligible. MinHook chains to
 // the existing jump through its trampoline, retaining Seamless's callback.
 pub(super) unsafe fn checked_function(rva:usize,expected:&[u8])->Result<usize,String> {
-    let hook=*HOOKS.iter().find(|h|h.rva==rva).ok_or_else(||format!("Unsupported spirit hook {rva:x}"))?;
     let base=unsafe {GetModuleHandleW(std::ptr::null())} as usize;
     let address=base.checked_add(rva).ok_or("Spirit hook address overflow")?;
     let name:Vec<u16>="ersc.dll\0".encode_utf16().collect();
     let ersc=unsafe {GetModuleHandleW(name.as_ptr())} as usize;
-    match classify(&Local,address,expected,module(&Local,ersc),hook) {
+    let module=module(&Local,ersc);
+    let (version,selected)=module.and_then(hooks).unwrap_or(("unknown",&HOOKS));
+    let hook=*selected.iter().find(|h|h.rva==rva).ok_or_else(||format!("Unsupported spirit hook {rva:x}"))?;
+    match classify(&Local,address,expected,module,hook) {
         Some(Entry::Native)=>Ok(address),
-        Some(Entry::Seamless202)=>{super::super::log(format!("Spirit hook compatibility: retaining Seamless 2.0.2 chain at {rva:x} -> ersc+{:x}",hook.dispatcher));Ok(address)},
+        Some(Entry::Seamless)=>{super::super::log(format!("Spirit hook compatibility: retaining Seamless {version} chain at {rva:x} -> ersc+{:x}",hook.dispatcher));Ok(address)},
         None=>Err(format!("Spirit hook {rva:x}: unrecognized entry or Seamless build; original chain left intact (bytes={:02x?})",Local.read(address,15).unwrap_or_default())),
     }
 }
@@ -105,7 +119,20 @@ mod tests {
         m.put(STUB,&stub);m.put(CONTEXT,&[0;8]);m.put(module.base+hook.dispatcher,&[0xf3,0x0f,0x1e,0xfa]);(m,module,hook)
     }
     #[test]fn vanilla_stays_strict_and_needs_no_seamless(){let mut m=Fake::default();m.put(GAME,&EXPECTED);assert_eq!(classify(&m,GAME,&EXPECTED,None,HOOKS[0]),Some(Entry::Native));m.put(GAME+8,&[0xcc]);assert_eq!(classify(&m,GAME,&EXPECTED,None,HOOKS[0]),None);}
-    #[test]fn both_observed_seamless_jump_shapes_are_accepted(){for indirect in [false,true]{let(m,module,hook)=fixture(indirect);assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),Some(Entry::Seamless202));}}
+    #[test]fn both_observed_seamless_jump_shapes_are_accepted(){for indirect in [false,true]{let(m,module,hook)=fixture(indirect);assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),Some(Entry::Seamless));}}
+    #[test]fn new_build_uses_new_dispatchers_and_rejects_old_chain(){
+        for indirect in [false,true] {
+            let(mut m,mut module,old)=fixture(indirect);
+            module.timestamp=0x6af4b20a;module.size=0xd67000;
+            assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),old),None);
+            let mut hook=HOOKS_203[usize::from(indirect)];hook.length=old.length;hook.hash=old.hash;
+            m.put(STUB+17,&((module.base+hook.dispatcher) as u64).to_le_bytes());
+            m.put(module.base+hook.dispatcher,&[0xf3,0x0f,0x1e,0xfa]);
+            assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),Some(Entry::Seamless));
+            m.put(module.base+hook.dispatcher,&[0xcc]);
+            assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);
+        }
+    }
     #[test]fn unknown_build_or_modified_dispatcher_is_rejected(){let(m,mut module,hook)=fixture(false);module.timestamp+=1;assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);module.timestamp-=1;let mut changed=m.clone();changed.put(module.base+hook.dispatcher,&[0xcc]);assert_eq!(classify(&changed,GAME,&EXPECTED,Some(module),hook),None);module.size+=1;assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);}
     #[test]fn altered_game_tail_context_and_dispatch_target_are_rejected(){for address in [GAME+6,STUB+10,STUB+17]{let(mut m,module,hook)=fixture(false);m.put(address,&[0xcc]);assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);}let(mut m,module,hook)=fixture(false);m.0.remove(&CONTEXT);assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);}
     #[test]fn unreadable_or_cyclic_relays_fail_closed(){let(mut m,module,hook)=fixture(false);m.put(RELAY+2,&(RELAY as u64).to_le_bytes());assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);m.0.remove(&RELAY);assert_eq!(classify(&m,GAME,&EXPECTED,Some(module),hook),None);}

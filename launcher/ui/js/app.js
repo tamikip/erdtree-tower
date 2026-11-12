@@ -8,6 +8,29 @@
   var CFG = window.HOYO_CONFIG;
   var bridge = window.hoyoBridge;
   var UI = window.hoyoUI;
+  var launchStates = {};
+
+  function renderLaunchProgress() {
+    var box = document.getElementById('launch-status');
+    if (!box) return;
+    var p = launchStates[state.game];
+    var button = document.querySelector('.cta .btn-primary');
+    if (button && button.getAttribute('data-action') === 'launch') button.disabled = !!(p && p.active);
+    box.hidden = !p || p.phase === 'cancelled';
+    if (!p || box.hidden) return;
+    var known = typeof p.percent === 'number' && isFinite(p.percent);
+    var percent = known ? Math.max(0, Math.min(100, p.percent)) : null;
+    var seconds = Math.max(0, Math.floor(p.elapsed || 0));
+    box.className = 'launch-status' + (p.phase === 'failed' ? ' failed' : '') + (!known && p.active ? ' indeterminate' : '');
+    box.innerHTML = '<div class="launch-status-head"><strong>' + esc(p.text || '正在启动') + '</strong><span>' +
+      Math.floor(seconds / 60) + ':' + ('0' + seconds % 60).slice(-2) + '</span></div>' +
+      '<div class="launch-status-detail">' + esc(p.detail || '请稍候，无需重复启动') + '</div>' +
+      '<div class="launch-status-track" role="progressbar" aria-label="当前启动阶段" aria-valuemin="0" aria-valuemax="100"' +
+      (known ? ' aria-valuenow="' + Math.round(percent) + '"' : '') + '><span style="width:' +
+      (known ? percent : p.active ? 32 : p.phase === 'finished' ? 100 : 0) + '%"></span></div>' +
+      '<div class="launch-status-meta">' + (known ? '当前阶段已完成 ' + esc(p.done) + ' / ' + esc(p.total) + ' · ' + Math.round(percent) + '%' :
+        p.active ? '正在处理 · 耗时持续更新' : p.phase === 'failed' ? '请打开启动日志查看详情' : '启动状态已更新') + '</div>';
+  }
 
   var state = {
     route: 'launcher', // 'launcher' | 'hub'
@@ -289,6 +312,7 @@
         }
         if (item.action) {
           if (item.action === 'lobby') { openLobby(); return; }
+          if (item.action === 'troubleshoot') { openSettings('troubleshoot'); return; }
           bridge.settings.action(item.action);
           return;
         }
@@ -564,6 +588,9 @@
     var tasksBox = el('div', 'tasks hide');
     tasksBox.id = 'tasks';
     page.appendChild(tasksBox);
+    var launchBox = el('section', 'launch-status');
+    launchBox.id = 'launch-status'; launchBox.hidden = true;
+    page.appendChild(launchBox);
 
     /* --- 底部进度 --- */
     if (game.progress) {
@@ -575,6 +602,7 @@
     renderBgSwitcher(game);
 
     mount(page);
+    renderLaunchProgress();
     /* 轮播要在挂载之后才启动：mount() 会先停掉旧的计时器（原外壳先启动再挂载，轮播从来不会自动切换）。
        宿主推送状态会重绘页面：轮播停在原来那张，不跳回第一张 */
     if (slides.length) {
@@ -881,11 +909,11 @@
   /* ================= 联机大厅 =================
      房间列表由宿主用 Steam 大厅查询（TowerHost.LobbyListAsync），开房 / 加入时宿主写好无缝联机密码再启动游戏。
      lobbyState.view：'list' 房间列表 | 'host' 开房表单 */
-  var lobbyState = { view: 'list', loading: false, error: '', rooms: [], version: '', joining: null, mine: null };
+  var lobbyState = { view: 'list', loading: false, error: '', rooms: [], version: '', joining: null, mine: null, query: '' };
 
   function openLobby() {
     closeModal();
-    lobbyState = { view: 'list', loading: true, error: '', rooms: [], version: '', joining: null };
+    lobbyState = { view: 'list', loading: true, error: '', rooms: [], version: '', joining: null, query: '' };
     var mask = el('div', 'modal-mask');
     mask.id = 'modalMask';
     var dlg = el('div', 'set-dialog lobby-dialog');
@@ -897,9 +925,40 @@
     bridge.lobby.list();
   }
 
+  function filterLobby() {
+    var dlg = document.getElementById('lobbyDialog');
+    if (!dlg) return;
+    var query = (lobbyState.query || '').trim().toLowerCase();
+    var count = 0;
+    dlg.querySelectorAll('.lobby-room').forEach(function (row, index) {
+      var room = lobbyState.rooms[index];
+      var match = !query || [room.name, room.host, room.id].some(function (value) {
+        return String(value || '').toLowerCase().indexOf(query) !== -1;
+      });
+      row.hidden = !match;
+      if (match) count++;
+    });
+    var total = dlg.querySelector('#lobbyResults');
+    if (total) total.textContent = query ? count + ' / ' + lobbyState.rooms.length + ' 个房间' : lobbyState.rooms.length + ' 个房间';
+    var empty = dlg.querySelector('#lobbyNoMatch');
+    if (empty) empty.hidden = count > 0;
+    var list = dlg.querySelector('.lobby-list');
+    if (list) list.hidden = count === 0;
+  }
+
+  document.addEventListener('input', function (e) {
+    if (e.target.id !== 'lobbySearch') return;
+    lobbyState.query = e.target.value;
+    filterLobby();
+    var list = document.querySelector('.lobby-list');
+    if (list) list.scrollTop = 0;
+  });
+
   function renderLobby() {
     var dlg = document.getElementById('lobbyDialog');
     if (!dlg) return;
+    var searchFocused = document.activeElement && document.activeElement.id === 'lobbySearch';
+    var searchSelection = searchFocused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
     var L = lobbyState;
     var html = '<button class="set-close" data-lobby="close" aria-label="关闭">' +
       '<svg viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>' +
@@ -918,7 +977,9 @@
       html += '<div class="lobby-toolbar"><span class="lobby-hint">' +
         (L.version ? '你的版本 ' + esc(L.version) + ' · 版本不同的房间不能加入' : '同一版本的队友开的房间会显示在这里') + '</span>' +
         '<span><button class="btn-ghost" data-lobby="refresh"' + (L.loading ? ' disabled' : '') + '>' + (L.loading ? '刷新中…' : '刷新') + '</button> ' +
-        '<button class="btn-ghost primary" data-lobby="host">开房</button></span></div>';
+        '<button class="btn-ghost primary" data-lobby="host">开房</button></span></div>' +
+        '<div class="lobby-search"><input class="inp" id="lobbySearch" maxlength="80" aria-label="搜索房间" placeholder="搜索房间名、房主或房间 ID" value="' + esc(L.query || '') + '">' +
+        '<button class="btn-ghost" data-lobby="clearSearch">清空</button><span id="lobbyResults" class="lobby-hint" aria-live="polite"></span></div>';
       if (L.mine) {
         html += '<div class="lobby-mine lobby-mine-' + esc(L.mine.state) + (L.mine.state === 'open' && !L.mine.ready ? ' lobby-mine-wait' : '') + '">你开的房间「' + esc(L.mine.name) + '」：' + esc(L.mine.detail) +
           (L.mine.state === 'open' ? '<span class="lobby-hint">（自己的房间在下面的列表里可能看不到，请让队友刷新确认）</span>' : '') + '</div>';
@@ -944,13 +1005,15 @@
               : '<button class="btn-ghost' + (blocked ? '' : ' primary') + '" data-lobby="join" data-id="' + esc(r.id) + '"' +
                 (blocked ? ' disabled' : '') + '>' + (blocked || '加入') + '</button>') +
             '</li>';
-        }).join('') + '</ul>';
+        }).join('') + '</ul><div class="lobby-empty" id="lobbyNoMatch" hidden>没有匹配的房间，试试其他关键词或刷新列表</div>';
       }
     }
     html += '</div>';
     dlg.innerHTML = html;
-    var focus = dlg.querySelector('#lobbyJoinPass') || dlg.querySelector('#lobbyName');
+    filterLobby();
+    var focus = (searchFocused && dlg.querySelector('#lobbySearch')) || dlg.querySelector('#lobbyJoinPass') || dlg.querySelector('#lobbyName');
     if (focus) focus.focus();
+    if (focus && focus.id === 'lobbySearch' && searchSelection) focus.setSelectionRange(searchSelection[0], searchSelection[1]);
   }
 
   document.addEventListener('click', function (e) {
@@ -959,6 +1022,7 @@
     var act = b.getAttribute('data-lobby');
     var L = lobbyState;
     if (act === 'close') { closeModal(); return; }
+    if (act === 'clearSearch') { L.query = ''; var search = document.getElementById('lobbySearch'); search.value = ''; filterLobby(); search.focus(); return; }
     if (act === 'refresh') { L.loading = true; L.error = ''; renderLobby(); bridge.lobby.list(); return; }
     if (act === 'host') { L.view = 'host'; renderLobby(); return; }
     if (act === 'back') { L.view = 'list'; renderLobby(); return; }
@@ -990,7 +1054,7 @@
     }
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter' || !document.getElementById('lobbyDialog')) return;
+    if (e.key !== 'Enter' || e.isComposing || e.target.id === 'lobbySearch' || !document.getElementById('lobbyDialog')) return;
     var confirm = document.querySelector('[data-lobby="joinConfirm"]') || document.querySelector('[data-lobby="create"]');
     if (confirm) confirm.click();
   });
@@ -1291,6 +1355,10 @@
       var grp = el('div', 'set-group');
       if (g.title) grp.appendChild(el('div', 'set-group-title', esc(g.title)));
       (g.rows || []).forEach(function (r) {
+        if (r.type === 'troubleshoot') {
+          grp.appendChild(troubleshootBlock());
+          return;
+        }
         if (r.type === 'about') {
           grp.appendChild(aboutBlock());
           return;
@@ -1318,8 +1386,38 @@
     dlg.appendChild(cl);
   }
 
-  function openSettings() {
-    setTab = null;
+  function troubleshootBlock() {
+    var box = el('div', 'repair-page');
+    box.appendChild(el('p', 'repair-intro', '按遇到的现象查看解决办法。涉及替换文件时，先保存并退出游戏。'));
+    var cases = [
+      ['提示 Existing dinput8.dll detected', '这表示游戏 Game 文件夹里已有 dinput8.dll，加载器为避免覆盖现有文件而停止。先退出游戏，备份该文件并暂时移到 Game 文件夹外，再从启动器重试。它可能来自其他模组加载器，移走后相关模组可能暂时失效；如需恢复，把备份放回原处。只处理所选游戏 Game 目录中的文件，不要删除 Windows 系统目录里的同名文件。', [['启动器日志', 'openLogs']]],
+      ['启动失败 / 文件缺失', '先打开启动器日志，查看最近一次启动的错误。确认游戏目录指向包含 eldenring.exe 的 Game 文件夹。文件缺失或损坏可使用校验修复；此操作会按线上版本重新下载文件，本地测试补丁可能被覆盖。', [['启动器日志', 'openLogs'], ['校验并修复文件', 'verify']]],
+      ['首次加载慢 / 启动后黑屏', '查看主页的实时加载进度。首次生成本地资源可能需要数分钟，不要连续点击启动。如果长时间停在同一阶段，保存启动器日志后反馈；进度显示的百分比属于当前阶段。', [['启动器日志', 'openLogs']]],
+      ['联机大厅找不到房间 / 无法加入', '双方确认整合包和补丁版本一致。房主进入游戏后使用无缝联机道具开启联机，再让队友刷新大厅。房间密码变更后重新开房，不要同时使用旧大厅配置和手动密码。', [['Mod 日志', 'openModLogs']]],
+      ['没有 DLC / 出现无法加载的敌人', '在「游戏」设置里选择「没有 DLC」，退出游戏后重新启动。联机队伍里有人没有 DLC 时应使用兼容的同版本补丁。若仍刷出 DLC 敌人，请记录敌人名称，并提供主客机同一次运行的日志。', [['Mod 日志', 'openModLogs']]],
+      ['职业选择 / 地图无法操作', '先尝试切出再切回游戏，检查是否有原生菜单或弹窗未关闭。Home 默认是快速结算，会结束本局返回大赐福，不是确认或开局键；检查按键映射是否误触。仍无响应时记录所在页面和操作过程。', [['Mod 日志', 'openModLogs']]],
+      ['传送卡加载 / 复活掉虚空 / 商店异常', '请保留发生问题的日志，说明场地、房主或客机、双方版本和触发操作。此类问题需要对应日志定位，校验文件不保证修复。不要反复触发结算或传送来尝试恢复。', [['Mod 日志', 'openModLogs']]]
+    ];
+    cases.forEach(function (item) {
+      var card = el('details', 'repair-card');
+      card.appendChild(el('summary', '', esc(item[0])));
+      card.appendChild(el('p', '', esc(item[1])));
+      var actions = el('div', 'repair-actions');
+      item[2].forEach(function (action) {
+        var button = el('button', 'btn-ghost', esc(action[0]));
+        button.addEventListener('click', function () { bridge.settings.action(action[1]); });
+        actions.appendChild(button);
+      });
+      card.appendChild(actions); box.appendChild(card);
+    });
+    var link = el('a', 'repair-feedback', '仍未解决？提交问题反馈 ↗');
+    link.href = 'https://github.com/tamikip/erdtree-tower/issues';
+    box.appendChild(link);
+    return box;
+  }
+
+  function openSettings(tab) {
+    setTab = typeof tab === 'string' ? tab : null;
     closeModal();
     var mask = el('div', 'modal-mask');
     mask.id = 'modalMask';
@@ -1967,6 +2065,9 @@
     bridge.onMessage(function (msg) {
       if (!msg || typeof msg !== 'object') return;
       var p = msg.payload || {};
+      if (msg.type === 'game' && msg.action === 'launchProgress' && p.game) {
+        launchStates[p.game] = p; renderLaunchProgress(); return;
+      }
 
       if (msg.type === 'app' && msg.action === 'releaseHistory') {
         showReleaseHistory(p);

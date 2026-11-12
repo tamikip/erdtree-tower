@@ -13,7 +13,7 @@ struct Build {
     request:usize,callbacks:[usize;3],signatures:&'static [(usize,usize,u64)],
     root_locator:usize,root_bytes:[u8;14],
 }
-const BUILDS:[Build;2]=[
+const BUILDS:[Build;3]=[
     Build{version:"2.0.1",timestamp:0x6a98a913,image_size:0xd31000,root:0x222030,
         object_delta:0xad0,component_delta:0x1848,service_delta:0xa88,forward_delta:0x480,
         request:0xd7ec0,callbacks:[0xd7fd0,0xd8180,0xd81f0],
@@ -28,6 +28,14 @@ const BUILDS:[Build;2]=[
             (0xda7e0,0x1aa,0xa72e59a70f316a03),(0xda990,0x69,0xe759d135c29ca357),(0xdaa00,0x123,0x65be19c77b1bafad),
             (0x36185,0x74,0xb7e4c3391be820e8)],
         root_locator:0x33049,root_bytes:[0x48,0x8d,0x85,0x90,0x36,0,0,0x48,0x89,0x05,0xd9,0x0f,0x1f,0]},
+    // ersc.dll SHA256 2ebde62be864ba3d759728aac44c459f0f813e8b6d7a342304ce68f6513f280c.
+    Build{version:"2.0.3",timestamp:0x6af4b20a,image_size:0xd67000,root:0x226030,
+        object_delta:0x970,component_delta:0x1880,service_delta:0xbf8,forward_delta:0x3d0,
+        request:0xdc190,callbacks:[0xdc2a0,0xdc450,0xdc4c0],
+        signatures:&[(0xdbe80,0x303,0x77b92ef7f7c66dc5),(0xdc190,0x108,0x719d0205fb569cd3),
+            (0xdc2a0,0x1aa,0xa72e59a70f316a03),(0xdc450,0x69,0xe759d135c29ca357),(0xdc4c0,0x123,0xf498f37eea7fbed4),
+            (0x361d3,0x74,0x548231910211e55a)],
+        root_locator:0x33089,root_bytes:[0x48,0x8d,0x85,0xb0,0x33,0,0,0x48,0x89,0x05,0x99,0x2f,0x1f,0]},
 ];
 fn select_build(timestamp:u32,image_size:u32)->Option<&'static Build> {
     BUILDS.iter().find(|b|b.timestamp==timestamp&&b.image_size==image_size)
@@ -93,9 +101,6 @@ pub fn cancel(){if let Ok(mut p)=PENDING.lock(){*p=None;}FINISHED.store(0,Orderi
 pub fn request(player:&PlayerIns,origin:Position)->Result<(),String> {
     request_inner(player,origin,false,None)
 }
-pub fn request_at_safe_goal(player:&PlayerIns,origin:Position)->Result<(),String> {
-    request_inner(player,origin,true,None)
-}
 pub fn request_at_safe_block_goal(player:&PlayerIns,goal:Position)->Result<(),String> {
     let (block,physics)=positions(player);
     let origin=goal.in_physics_space(block,physics).ok_or("复活目标与当前地图不匹配")?;
@@ -120,11 +125,16 @@ fn recovered(origin:Position,current:Position,alive:bool,sent:bool,target:usize,
     sent&&alive&&target==usize::MAX&&key==0&&origin.block==current.block
         &&origin.xyz.iter().zip(current.xyz).map(|(a,b)|(a-b).powi(2)).sum::<f32>()<=4.0
 }
+fn safe_landing(goal:Position,current:Position,grounded:bool,falling:bool)->bool {
+    grounded&&!falling&&goal.block==current.block
+        &&goal.xyz.iter().zip(current.xyz).map(|(a,b)|(a-b).powi(2)).sum::<f32>()<=4.0
+}
 pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
     let Ok(mut queue)=PENDING.try_lock() else{return;};
     let Some(pending)=queue.as_mut() else{return;};
     if pending.started.elapsed()>Duration::from_secs(30) {
-        super::log("PARTY_REVIVE timeout: native spectator exit not confirmed; no reward advancement");*queue=None;return;
+        let position=world.main_player.as_ref().map(|p|(positions(p),p.chr_ins.modules.physics.standing_on_solid_ground,p.chr_ins.modules.physics.is_falling));
+        super::log(format!("PARTY_REVIVE timeout: spectator exit or safe ground not confirmed; block_goal={:?} current={position:?}; no reward advancement",pending.block_goal));*queue=None;return;
     }
     if game.warp_requested{*queue=None;return;}
     let world_address=world as *const _ as usize;
@@ -155,7 +165,9 @@ pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
         super::log(format!("PARTY_REVIVE native request submitted without detour target={:#x}",spectator.target));
         return;
     }
-    if pending.relocate&&alive&&pending.sent&&spectator.target==usize::MAX&&spectator.key==0 {
+    let landing=pending.block_goal.is_none_or(|goal|safe_landing(goal,positions(player).0,
+        player.chr_ins.modules.physics.standing_on_solid_ground,player.chr_ins.modules.physics.is_falling));
+    if (pending.relocate||!landing)&&alive&&pending.sent&&spectator.target==usize::MAX&&spectator.key==0 {
         if let Some(goal)=pending.block_goal {
             let (block,physics)=positions(player);
             let Some(origin)=goal.in_physics_space(block,physics) else{return;};
@@ -164,13 +176,13 @@ pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
         let physics=&mut player.chr_ins.modules.physics;
         physics.position.0=pending.origin.xyz[0];physics.position.1=pending.origin.xyz[1];physics.position.2=pending.origin.xyz[2];
         physics.last_update_position=physics.position;physics.chr_proxy_pos_update_requested=true;
-        pending.relocate=false;
-        super::log(format!("PARTY_REVIVE moved to safe goal: {:?}",pending.origin));
+        if pending.relocate {super::log(format!("PARTY_REVIVE moved to safe goal: physics={:?} block={:?}; waiting for ground",pending.origin,pending.block_goal));}
+        pending.relocate=false;pending.stable=0;
         return;
     }
     let (block,physics)=positions(player);
     let (origin,current)=pending.block_goal.map_or((pending.origin,physics),|goal|(goal,block));
-    if !recovered(origin,current,alive,pending.sent,spectator.target,spectator.key){pending.stable=0;return;}
+    if !landing||!recovered(origin,current,alive,pending.sent,spectator.target,spectator.key){pending.stable=0;return;}
     player.chr_ins.modules.data.hp=1;
     player.chr_ins.modules.data.fp=pending.fp.min(player.chr_ins.modules.data.max_fp);
     pending.stable+=1;
@@ -188,7 +200,7 @@ pub unsafe fn install()->Result<(),String> {
     let pe=Local.word(base+0x3c).filter(|p|*p<=0x1000).ok_or("Invalid Seamless PE header")? as usize;
     let build=select_build(Local.word(base+pe+8).ok_or("Missing Seamless timestamp")?,Local.word(base+pe+24+56).ok_or("Missing Seamless image size")?).ok_or("Unsupported Seamless build")?;
     validate(&Local,base,build)?;
-    PROFILE.store(usize::from(build.version=="2.0.2"),Ordering::Release);
+    PROFILE.store(BUILDS.iter().position(|b|std::ptr::eq(b,build)).ok_or("Unknown recovery profile")?,Ordering::Release);
     BASE.store(base,Ordering::Release);
     super::log(format!("PARTY_REVIVE native request interface ready; Seamless {}; no spectator code hooks installed",build.version));
     Ok(())
@@ -207,15 +219,27 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     #[test]
+    fn safe_goal_waits_for_loaded_ground_and_rejects_falling() {
+        let goal=Position{block:0x0a000000,xyz:[-202.71,81.864,314.077]};
+        assert!(safe_landing(goal,goal,true,false));
+        assert!(!safe_landing(goal,goal,false,false));
+        assert!(!safe_landing(goal,goal,true,true));
+        assert!(!safe_landing(goal,Position{block:0x0d000000,..goal},true,false));
+        assert!(!safe_landing(goal,Position{xyz:[-114.71,65.864,298.077],..goal},true,false));
+        assert!(!safe_landing(goal,Position{xyz:[f32::NAN,0.0,0.0],..goal},true,false));
+    }
+    #[test]
     fn build_selection_rejects_unknown_or_mixed_headers() {
         assert_eq!(select_build(0x6a98a913,0xd31000).unwrap().version,"2.0.1");
         assert_eq!(select_build(0x6ae0ad1a,0xd65000).unwrap().version,"2.0.2");
+        assert_eq!(select_build(0x6af4b20a,0xd67000).unwrap().version,"2.0.3");
+        assert!(select_build(0x6af4b20a,0xd65000).is_none());
         assert!(select_build(0x6ae0ad1a,0xd31000).is_none());
         assert!(select_build(0,0xd65000).is_none());
     }
     #[test]
     #[ignore = "requires locally installed Seamless DLL fixtures"]
-    fn real_dll_signatures_match_both_versions_and_reject_modified_code() {
+    fn real_dll_signatures_match_supported_versions_and_reject_modified_code() {
         struct Image {data:Vec<u8>,sections:Vec<(usize,usize,usize)>}
         impl Memory for Image {
             fn bytes<const N:usize>(&self,address:usize)->Option<[u8;N]> {
@@ -225,7 +249,10 @@ mod tests {
                 self.data.get(raw+rva-start..raw+rva-start+N)?.try_into().ok()
             }
         }
-        for (env,build) in [("ERDTREE_REVIVAL_DLL_201",&BUILDS[0]),("ERDTREE_REVIVAL_DLL_202",&BUILDS[1])] {
+        let selected=std::env::var("ERDTREE_REVIVAL_FIXTURE_VERSION").ok();
+        assert!(selected.as_ref().is_none_or(|v|BUILDS.iter().any(|b|b.version==v)));
+        for (env,build) in [("ERDTREE_REVIVAL_DLL_201",&BUILDS[0]),("ERDTREE_REVIVAL_DLL_202",&BUILDS[1]),("ERDTREE_REVIVAL_DLL_203",&BUILDS[2])] {
+            if selected.as_ref().is_some_and(|v|v!=build.version){continue;}
             let data=std::fs::read(std::env::var(env).expect("set fixture path")).unwrap();
             let u16at=|at|u16::from_le_bytes(data[at..at+2].try_into().unwrap()) as usize;
             let u32at=|at|u32::from_le_bytes(data[at..at+4].try_into().unwrap()) as usize;
@@ -285,9 +312,12 @@ mod tests {
         }}
     }
     #[test]fn old_layout_is_rejected_for_new_version_even_if_root_is_present() {
-        let mut m=fixture(&BUILDS[0]);
-        m.put_pointer(0x180000000+BUILDS[1].root,0x30000+BUILDS[1].object_delta);
-        assert!(locate(&m,0x180000000,0x50000,&BUILDS[1]).is_none());
+        for old in &BUILDS {for new in &BUILDS {
+            if old.version==new.version{continue;}
+            let mut m=fixture(old);
+            m.put_pointer(0x180000000+new.root,0x30000+new.object_delta);
+            assert!(locate(&m,0x180000000,0x50000,new).is_none());
+        }}
     }
     #[test]fn positive_hp_alone_does_not_confirm_spectator_exit() {
         let p=Position{block:45,xyz:[1.0,2.0,3.0]};

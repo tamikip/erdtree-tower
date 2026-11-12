@@ -26,13 +26,27 @@ static OPTIONS:LazyLock<Options>=LazyLock::new(||std::fs::read_to_string(path())
 pub fn get()->&'static Options {&OPTIONS}
 /// 本机是否按「有 DLC」运行（启动器里 DLC 设为「有 DLC」）：联机握手时报给房主
 pub fn local_dlc()->bool {OPTIONS.dlc==erdtree_tower::dlc::Mode::Full}
-/// 每帧调用：不在队伍里用本机设置；在队伍里用整队模式（None 表示还没定下，按有 DLC，如手动联机）
+fn effective_dlc(local:erdtree_tower::dlc::Mode,party:Option<Option<bool>>)->erdtree_tower::dlc::Mode {
+    use erdtree_tower::dlc::Mode;
+    match party {None=>local,Some(Some(true)) if local==Mode::Full=>Mode::Full,Some(_)=>Mode::None}
+}
+/// 每帧调用：联机仅在全队明确确认有 DLC 时启用；未知状态和本机禁用均不放行。
 pub fn sync_dlc(party:Option<Option<bool>>) {
     use erdtree_tower::dlc::Mode;
-    let want=match party {None=>OPTIONS.dlc,Some(Some(false))=>Mode::None,Some(_)=>Mode::Full};
+    let want=effective_dlc(OPTIONS.dlc,party);
     if erdtree_tower::dlc::mode()!=want {
         erdtree_tower::dlc::set(want);
-        crate::log(format!("DLC mode -> {}（{}）",want.id(),if party.is_none(){"单人，按本机设置"}else if want==Mode::None{"队伍里有人没有 DLC，整队不出 DLC 内容"}else{"全队都有 DLC"}));
+        crate::log(format!("DLC mode -> {}（{}）",want.id(),if party.is_none(){"单人，按本机设置"}else if party==Some(None){"队伍 DLC 尚未确认，暂不启用 DLC 内容"}else if want==Mode::None{"队伍里有人没有 DLC，整队不出 DLC 内容"}else{"全队都有 DLC"}));
+    }
+}
+#[test]
+fn no_dlc_settings_are_never_promoted_by_unknown_party_state() {
+    use erdtree_tower::dlc::Mode;
+    for local in [Mode::Full,Mode::None,Mode::Weapons] {
+        assert_eq!(effective_dlc(local,None),local);
+        assert_eq!(effective_dlc(local,Some(None)),Mode::None);
+        assert_eq!(effective_dlc(local,Some(Some(false))),Mode::None);
+        assert_eq!(effective_dlc(local,Some(Some(true))),if local==Mode::Full{Mode::Full}else{Mode::None});
     }
 }
 /// 绑定到某个功能的键在界面上的写法（如 Home、F10、J）

@@ -10,7 +10,7 @@ pub struct NativeTalk {
     state: u8,
     menu_kind: i32,
     pub choice: Option<i32>,
-    flask_upgrade: Option<[(i32,i32,i32);2]>,
+    flask_upgrade: Option<super::flasks::RestorationUpgrade>,
     camp: CampInteraction,
     event_menu: EventMenu,
     event_request: Option<EventRequest>,
@@ -445,8 +445,9 @@ impl NativeTalk {
             14 => {
                 let plan=self.flask_upgrade.ok_or("圣杯瓶强化事务丢失")?;
                 let player=unsafe {eldenring::cs::PlayerIns::local_player_mut()}.map_err(|_|"角色未加载")?;
-                super::flasks::apply_restoration_upgrade(unsafe {player.player_game_data.as_mut()},plan)?;
-                self.event(52,&[3,erdtree_tower::elite::TEAR as i32,-1])?;
+                super::flasks::apply_restoration_upgrade(unsafe {player.player_game_data.as_mut()},plan.flasks)?;
+                self.event(52,&[3,erdtree_tower::elite::TEAR as i32,-(plan.cost as i32)])?;
+                super::log(format!("Sacred tear batch upgrade: consumed={}",plan.cost));
                 self.flask_upgrade=None;self.dialog(9500049)?;
             },
             _ => unreachable!(),

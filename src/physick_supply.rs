@@ -1,7 +1,7 @@
 use serde::{Deserialize,Serialize};
 use crate::{Run,NodeKind};
 
-pub const STARTING_TEAR:u32=0x40000000|11002;
+pub const STARTING_TEAR:u32=0x40000000|11018;
 pub const BOTTLE:u32=250;
 pub const CAPACITY:u64=999;
 
@@ -54,7 +54,7 @@ impl Supply {
 }
 impl Run {
     pub fn physick_drop(&self,node:usize,victory:bool)->bool {
-        self.nodes.get(node).is_some_and(|n|n.kind==NodeKind::Shop ||
-            victory&&n.kind.combat()&&crate::mix(self.seed^(u64::from(self.act)<<48)^(node as u64).wrapping_mul(7919)^0x7068797369636b)%100<25)
+        self.nodes.get(node).is_some_and(|n|n.kind==NodeKind::Camp ||
+            victory&&n.kind.combat()&&crate::mix(self.seed^(u64::from(self.act)<<48)^(node as u64).wrapping_mul(7919)^0x7068797369636b)%100<15)
     }
 }

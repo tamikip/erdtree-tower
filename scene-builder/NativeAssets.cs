@@ -173,7 +173,7 @@ static class NativeAssets {
         AddText(menu,33,new[]{(9500050,"献血求宝"),(9500051,"挑战守卫"),(9500053,"三个宝箱，三份命运。每箱三成火药、三成守卫、四成宝物。"),(9500054,"贪欲已惊醒守卫。先击败他们，再来交谈。")});
         AddText(menu,33,new[]{(9500040,"升级")});
         AddText(menu,33,new[]{(9500045,"重新分配能力值")});
-        AddText(menu,33,new[]{(9500046,"提升圣杯瓶恢复量"),(9500047,"消耗 1 枚圣杯滴露，提升红、蓝圣杯瓶恢复量一级？不会补充剩余次数。"),(9500048,"需要 1 枚圣杯滴露。"),(9500049,"红、蓝圣杯瓶恢复量已提升。")});
+        AddText(menu,33,FlaskBatchText.Chinese);
         AddText(menu,33,new[]{(9500070,"暂时无法强化：圣杯瓶已达到 +12 上限，或瓶子尚未就绪。")});
         AddText(menu,33,new[]{(9500071,"调配灵药")});
         var campText=FMG.Read(menu.Files.Single(f=>f.ID==33).Bytes);

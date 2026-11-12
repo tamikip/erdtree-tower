@@ -21,6 +21,10 @@ impl Hunt {
     pub fn active(&self)->bool {self.clock.is_some()}
     pub fn result(&self)->Option<u8> {self.finished.then_some(self.killed)}
     pub fn owners(&self)->[u64;3] {self.owners}
+    pub fn claim(&self,wave:u8,local:u64)->erdtree_tower::party_game::ScarabClaim {
+        let owned=self.owners.iter().enumerate().fold(0,|mask,(slot,owner)|mask|if local!=0&&*owner==local{1<<slot}else{0});
+        erdtree_tower::party_game::ScarabClaim{wave,killed:self.killed,owned,finished:self.finished}
+    }
     pub fn start(&mut self)->Result<(),String> {
         if !self.ready(){return Err("粪金龟尚未就绪".into());}self.clock=Some(Instant::now());Ok(())
     }

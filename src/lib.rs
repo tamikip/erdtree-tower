@@ -945,6 +945,11 @@ impl Run {
     #[cfg(test)]
     pub(crate) fn offers_for_test(&self,id:usize)->Vec<Reward> {self.offers(id)}
     fn offers(&self, id: usize) -> Vec<Reward> {
+        let mut offers=self.before_summoner_guarantee(id);
+        rewards::ensure_summoner_spirit(self,id,&mut offers);
+        offers
+    }
+    fn before_summoner_guarantee(&self, id: usize) -> Vec<Reward> {
         let mut offers=rewards::offers(self,id);
         if !self.law.is_empty() {
             for reward in &mut offers {
@@ -1311,11 +1316,12 @@ impl Run {
                 Some(*id)
             }
             Phase::Reward { id, offers } => {
+                let previous_summoner=self.summoner()&&*offers==self.before_summoner_guarantee(*id);
                 if !self
                     .nodes
                     .get(*id)
                     .is_some_and(|n| n.kind.combat() || n.kind == NodeKind::Chest)
-                    || (*offers != self.offers(*id) && *offers != rewards::before_custom_spirits(self,*id) && *offers != rewards::before_tool_rate(self,*id) && *offers != rewards::before_whetblades(self,*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
+                    || (!previous_summoner && *offers != self.offers(*id) && *offers != rewards::before_custom_spirits(self,*id) && *offers != rewards::before_tool_rate(self,*id) && *offers != rewards::before_whetblades(self,*id) && *offers != rewards::before_claimed_bases(self,*id) && *offers != rewards::before_spirit_levels(self,*id) && *offers != rewards::before_currency_1500(self,*id) && *offers != rewards::before_chest_boosts(self,*id) && *offers != rewards::before_bosses(self,*id) && *offers != rewards::before_elites(self,*id) && *offers != rewards::before_base_talismans(self,*id) && *offers != self.legacy_offers(*id) && *offers != rewards::previous_offers(self,*id) && *offers != rewards::before_spirits(self,*id) && *offers != rewards::before_expansion(self,*id) && *offers != rewards::before_spirit_weight(self,*id))
                 {
                     return fail();
                 }

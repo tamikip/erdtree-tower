@@ -177,6 +177,11 @@ impl State {
             Card::Oath(kind)=>kind,
         };
         self.chosen=Some(kind);self.gear=gear(kind,class,seed,self.rules==1);
+        if self.rules==1 {
+            for (slot,id) in self.gear.iter_mut().enumerate() {
+                *id=crate::affixes::common_weapon(*id,seed^u64::from(self.act)<<48^slot as u64^u64::from(*id)).ok_or("誓约武器缺少普通词条参数")?;
+            }
+        }
         if self.rules==1 {self.held.push(Oath{kind,level:1});}
         Ok(())
     }
@@ -248,7 +253,7 @@ fn gear(kind:Kind,_class:Class,seed:u64,epic:bool)->[u32;3] {
     [pool[0],pool[1],pool[2]]
 }
 pub fn hunter_ammo(weapon:u32)->Option<u32> {
-    match weapon/1_000_000 {40|41=>Some(50000000),42=>Some(51000000),43=>Some(52000000),44=>Some(53000000),_=>None}
+    match crate::affixes::base(weapon)/1_000_000 {40|41=>Some(50000000),42=>Some(51000000),43=>Some(52000000),44=>Some(53000000),_=>None}
 }
 
 impl crate::Run {

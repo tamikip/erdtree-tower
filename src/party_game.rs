@@ -34,6 +34,9 @@ impl Config {
 pub struct Report {
     #[serde(default)] pub merchant_bound:bool,
     #[serde(default)] pub testing:bool,
+    #[serde(default)] pub event_testing:bool,
+    #[serde(default)] pub mausoleum_open:Option<bool>,
+    #[serde(default)] pub scarab_claim:Option<ScarabClaim>,
     #[serde(default)] pub law:crate::law::Law,
     #[serde(default)] pub flask_uses:u64,
     #[serde(default)] pub drawing:Option<crate::map_drawing::Request>,
@@ -64,20 +67,27 @@ pub struct Report {
     pub epoch:u64,pub seed:u64,pub act:u8,pub visited:Vec<usize>,pub map_ready:bool,
     pub arrived:bool,pub bound:bool,pub alive:bool,
 }
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
+pub struct ScarabClaim {pub wave:u8,pub killed:u8,pub owned:u8,pub finished:bool}
+impl ScarabClaim {
+    fn valid(self)->bool {self.wave>0&&self.killed<=7&&self.owned&!self.killed==0}
+}
 impl Report {
     pub fn new(run:&Run,epoch:u64,arrived:bool,bound:bool,alive:bool)->Self {
-        Self{merchant_bound:false,testing:false,law:run.law,flask_uses:0,drawing:None,trial:run.regional_event.trial,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:true,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:run.regional_event.chariot,stormveil:run.regional_event.stormveil,storm_choice:None,storm_finish:false,embers:run.embers.clone(),strikes:vec![],epoch,seed:run.seed,act:run.act,visited:run.visited.clone(),map_ready:run.phase==Phase::Map&&!run.contract_pending(),arrived,bound,alive}
+        Self{merchant_bound:false,testing:false,event_testing:false,mausoleum_open:None,scarab_claim:None,law:run.law,flask_uses:0,drawing:None,trial:run.regional_event.trial,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:true,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:run.regional_event.chariot,stormveil:run.regional_event.stormveil,storm_choice:None,storm_finish:false,embers:run.embers.clone(),strikes:vec![],epoch,seed:run.seed,act:run.act,visited:run.visited.clone(),map_ready:run.phase==Phase::Map&&!run.contract_pending(),arrived,bound,alive}
     }
     pub fn unavailable(epoch:u64)->Self {
-        Self{merchant_bound:false,testing:false,law:Default::default(),flask_uses:0,drawing:None,trial:false,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:false,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:false,stormveil:None,storm_choice:None,storm_finish:false,embers:vec![],strikes:vec![],epoch,seed:0,act:1,visited:vec![],map_ready:false,arrived:false,bound:false,alive:false}
+        Self{merchant_bound:false,testing:false,event_testing:false,mausoleum_open:None,scarab_claim:None,law:Default::default(),flask_uses:0,drawing:None,trial:false,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:false,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:false,stormveil:None,storm_choice:None,storm_finish:false,embers:vec![],strikes:vec![],epoch,seed:0,act:1,visited:vec![],map_ready:false,arrived:false,bound:false,alive:false}
     }
     pub fn at_hub(epoch:u64)->Self {Self{present:true,at_hub:true,alive:true,..Self::unavailable(epoch)}}
 }
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub enum Order {
     DescentComplete{epoch:u64},
+    MausoleumOpen{epoch:u64},
     Merchant{epoch:u64,phase:u8},
     BossTest{epoch:u64,seed:u64,test:crate::debug::BossTest},
+    EventTest{epoch:u64,seed:u64,act:u8,visited:Vec<usize>,draw:crate::events::Draw,has_stonesword_key:bool},
     Law{epoch:u64,seed:u64,law:crate::law::Law},
     MapDrawing(crate::map_drawing::Canvas),
     ForceEnd,
@@ -119,6 +129,18 @@ impl Gate {
         self.events=None;self.stormveil=None;self.trial=None;
         for p in &mut self.peers {p.1=None;}
         Ok(Order::BossTest{epoch:self.epoch,seed:run.seed,test})
+    }
+    pub fn event_test(&mut self,run:&Run,draw:crate::events::Draw)->RuleResult<Order> {
+        if self.events_unsettled()||!matches!(self.stage,Stage::Map|Stage::Reward|Stage::Service)
+            ||run.phase!=Phase::Map||!self.all(|r|r.event_testing&&r.testing&&r.alive&&r.map_ready&&r.law==run.law&&r.seed==run.seed&&r.act==run.act&&r.visited==run.visited) {
+            return Err("事件测试需全员更新版本、开启调试、存活，并完成领奖与誓约选择后回到路线图".into());
+        }
+        let mut next=run.clone();next.debug_event_test(draw)?;
+        let has_stonesword_key=self.peers.iter().any(|(_,r)|r.as_ref().is_some_and(|r|r.has_stonesword_key));
+        self.epoch=self.epoch.checked_add(1).ok_or("队伍序号耗尽")?;self.stage=Stage::Service;
+        self.events=None;self.stormveil=None;self.trial=None;
+        for p in &mut self.peers {p.1=None;}
+        Ok(Order::EventTest{epoch:self.epoch,seed:run.seed,act:run.act,visited:run.visited.clone(),draw,has_stonesword_key})
     }
     pub fn law_order(&self,run:&Run)->RuleResult<Option<Order>> {
         if !self.all(|r|r.seed==run.seed&&r.act==run.act&&r.visited==run.visited){return Ok(None);}
@@ -177,6 +199,13 @@ impl Gate {
         self.stormveil=Some(crate::stormveil::Decision::Complete);
         Some(Order::DescentComplete{epoch:self.epoch})
     }
+    pub fn mausoleum_order(&mut self)->Option<Order> {
+        if self.stage!=Stage::Service||self.trial!=Some(crate::regional_events::Trial::Mausoleum)
+            ||self.stormveil.is_some()||!self.all(|r|r.mausoleum_open.is_some())
+            ||!self.peers.iter().any(|(_,r)|r.as_ref().is_some_and(|r|r.alive&&r.mausoleum_open==Some(true))){return None;}
+        self.stormveil=Some(crate::stormveil::Decision::Complete);
+        Some(Order::MausoleumOpen{epoch:self.epoch})
+    }
     pub fn restart(&mut self,seed:u64)->RuleResult<Option<Order>> {
         if self.epoch==0||!matches!(self.stage,Stage::Stopped|Stage::Reward)||!self.all(|r|r.at_hub&&r.alive){return Ok(None);}
         if seed==0{return Err("新局种子无效".into());}
@@ -204,6 +233,19 @@ impl Gate {
             if let Some(kind)=report.as_ref().and_then(|r|r.event_request){let _=events.request(self.epoch,*player,kind);}
         }
         Ok(events.start().map(Order::EventStart))
+    }
+    pub fn scarab_owners(&self,wave:u8,killed:u8,known:[u64;3])->Option<[u64;3]> {
+        let job=self.events.as_ref()?.active()?;
+        if self.stage!=Stage::Service||job.wave!=wave||killed>7||!matches!(job.kind,crate::party_events::Kind::Scarabs(_))
+            ||!self.all(|r|r.event_bound==Some(wave)&&(!r.alive||r.scarab_claim.is_some_and(|c|c.valid()&&c.wave==wave&&c.finished))){return None;}
+        Some(std::array::from_fn(|slot|{
+            if killed&(1<<slot)==0{return 0;}
+            if known[slot]!=0&&self.peers.iter().any(|(id,_)|*id==known[slot]){return known[slot];}
+            let mut claims=self.peers.iter().filter_map(|(id,r)|r.as_ref().and_then(|r|r.scarab_claim)
+                .filter(|c|c.valid()&&c.wave==wave&&c.owned&(1<<slot)!=0).map(|_|*id));
+            let owner=claims.next().unwrap_or(0);
+            if claims.next().is_some(){0}else{owner}
+        }))
     }
     pub fn event_done(&mut self,wave:u8,killed:u8)->RuleResult<Order> {
         self.event_done_owned(wave,killed,[0;3])
@@ -235,6 +277,7 @@ impl Gate {
     pub fn report(&mut self,id:u64,report:Report)->RuleResult<()> {
         if report.visited.len()>64||report.act==0||report.act>3||report.epoch!=self.epoch||!report.law.valid(){return Err("队员旅程进度或律法不匹配".into());}
         if report.event_request.is_some_and(|k|!k.valid()){return Err("队员事件请求无效".into());}
+        if report.scarab_claim.is_some_and(|c|!c.valid()){return Err("粪金龟击杀汇报无效".into());}
         if report.embers.len()>crate::embers::Ember::ALL.len()||report.strikes.len()>crate::embers::STRIKE_WINDOW{return Err("队员余烬汇报过长".into());}
         self.peers.iter_mut().find(|p|p.0==id).ok_or("未知队员")?.1=Some(report);Ok(())
     }
@@ -345,6 +388,57 @@ mod tests {
         other.alive=false;gate.report(2,other.clone()).unwrap();assert!(gate.merchant_ready());
         other.map_ready=true;gate.report(2,other).unwrap();assert!(!gate.merchant_present());
         r.alive=false;r.map_ready=false;gate.report(1,r.clone()).unwrap();gate.report(2,r).unwrap();assert!(!gate.merchant_ready());
+    }
+    #[test]
+    fn mausoleum_open_sync_accepts_either_survivor_and_never_a_wipe() {
+        for survivor in [1,2] {
+            let run=Run::new(42,crate::Class::Samurai);
+            let mut gate=Gate::new(vec![1,2]);gate.stage=Stage::Service;
+            gate.trial=Some(crate::regional_events::Trial::Mausoleum);
+            let mut report=Report::new(&run,0,true,false,true);report.mausoleum_open=Some(false);
+            gate.report(1,report.clone()).unwrap();gate.report(2,report.clone()).unwrap();
+            assert!(gate.mausoleum_order().is_none());
+            report.alive=false;report.mausoleum_open=Some(true);
+            gate.report(1,report.clone()).unwrap();gate.report(2,report.clone()).unwrap();
+            assert!(gate.mausoleum_order().is_none(),"no revival after a party wipe");
+            report.alive=true;gate.report(survivor,report.clone()).unwrap();
+            let mut old=report.clone();old.alive=false;old.mausoleum_open=None;
+            gate.report(3-survivor,old.clone()).unwrap();
+            assert!(gate.mausoleum_order().is_none(),"old clients lack the message handler");
+            old.mausoleum_open=Some(false);gate.report(3-survivor,old).unwrap();
+            gate.trial=Some(crate::regional_events::Trial::Skip);assert!(gate.mausoleum_order().is_none());
+            gate.trial=Some(crate::regional_events::Trial::Mausoleum);
+            let order=gate.mausoleum_order().unwrap();
+            assert!(matches!(order,Order::MausoleumOpen{epoch:0}));
+            assert!(matches!(serde_json::from_str::<Order>(&serde_json::to_string(&order).unwrap()).unwrap(),Order::MausoleumOpen{epoch:0}));
+            assert!(gate.mausoleum_order().is_none(),"shared once per visit");
+        }
+    }
+    #[test]
+    fn event_test_requires_capability_consent_and_matching_route() {
+        let run=Run::new(42,crate::Class::Samurai);let draw=crate::events::Draw::Mausoleum;
+        let mut ready=Report::new(&run,0,false,false,true);ready.testing=true;ready.event_testing=true;
+        let mut gate=Gate::new(vec![1,2]);gate.report(1,ready.clone()).unwrap();
+        assert!(gate.event_test(&run,draw).is_err());
+        for field in ["event_testing","testing","alive","map_ready","seed","act","visited"] {
+            let mut other=serde_json::to_value(&ready).unwrap();
+            other[field]=match field {"seed"=>43.into(),"act"=>2.into(),"visited"=>serde_json::json!([0]),_=>false.into()};
+            gate.report(2,serde_json::from_value(other).unwrap()).unwrap();
+            assert!(gate.event_test(&run,draw).is_err(),"{field}");assert_eq!(gate.epoch,0);
+        }
+        ready.has_stonesword_key=true;gate.report(2,ready.clone()).unwrap();
+        let order=gate.event_test(&run,draw).unwrap();
+        let wire=serde_json::to_string(&order).unwrap();
+        assert!(matches!(serde_json::from_str::<Order>(&wire).unwrap(),Order::EventTest{epoch:1,seed:42,act:1,draw:crate::events::Draw::Mausoleum,has_stonesword_key:true,..}));
+        assert_eq!(gate.stage,Stage::Service);assert!(gate.event_test(&run,draw).is_err());
+        gate.begin_events().unwrap();assert_eq!(gate.stage,Stage::Service);
+        let mut old=serde_json::to_value(ready).unwrap();old.as_object_mut().unwrap().remove("event_testing");
+        assert!(!serde_json::from_value::<Report>(old).unwrap().event_testing);
+        let mut host=run.clone();let mut guest=Run::new(42,crate::Class::Astrologer);
+        let node=host.debug_event_test(draw).unwrap();assert_eq!(guest.debug_event_test(draw).unwrap(),node);
+        host.enter(node).unwrap();guest.enter(node).unwrap();
+        assert!(host.debug&&guest.debug);assert_eq!(host.event_draw(node),guest.event_draw(node));
+        assert_eq!(Run::decode(&guest.encode().unwrap()).unwrap().event_draw(node),draw);
     }
     #[test]
     fn boss_test_requires_all_peers_to_opt_in_and_be_ready() {
@@ -652,6 +746,36 @@ mod tests {
         for id in [1,2] {report.event_applied=Some(second.wave);gate.report(id,report.clone()).unwrap();}
         assert!(gate.event_start().unwrap().is_none());
         assert!(gate.resolve_votes(&run,0).unwrap().is_some());
+    }
+    #[test]
+    fn scarab_reports_fill_missing_host_owners_independently_of_payment() {
+        for payer in [1,2] {
+            let run=Run::new(42,crate::Class::Samurai);
+            let mut gate=Gate::new(vec![1,2]);gate.stage=Stage::Service;gate.begin_events().unwrap();
+            let mut host=Report::new(&run,0,true,false,true);let mut guest=host.clone();
+            if payer==1{host.event_request=Some(crate::party_events::Kind::Scarabs(1));}else{guest.event_request=Some(crate::party_events::Kind::Scarabs(1));}
+            gate.report(1,host.clone()).unwrap();gate.report(2,guest.clone()).unwrap();
+            let Some(Order::EventStart(job))=gate.event_start().unwrap() else{panic!()};assert_eq!(job.player,payer);
+            host.event_bound=Some(job.wave);guest.event_bound=Some(job.wave);
+            host.scarab_claim=Some(ScarabClaim{wave:job.wave,killed:7,owned:0,finished:true});
+            gate.report(1,host.clone()).unwrap();gate.report(2,guest.clone()).unwrap();
+            assert_eq!(gate.scarab_owners(job.wave,7,[0;3]),None,"wait for the member's result");
+            guest.scarab_claim=Some(ScarabClaim{wave:job.wave+1,killed:7,owned:7,finished:true});gate.report(2,guest.clone()).unwrap();
+            assert_eq!(gate.scarab_owners(job.wave,7,[0;3]),None,"reject another wave");
+            guest.scarab_claim.as_mut().unwrap().wave=job.wave;guest.scarab_claim.as_mut().unwrap().finished=false;gate.report(2,guest.clone()).unwrap();
+            assert_eq!(gate.scarab_owners(job.wave,7,[0;3]),None,"do not settle before late kills arrive");
+            guest.scarab_claim.as_mut().unwrap().finished=true;gate.report(2,guest.clone()).unwrap();
+            assert_eq!(gate.scarab_owners(job.wave,7,[0;3]),Some([2;3]));
+            assert_eq!(gate.scarab_owners(job.wave,7,[0,1,0]),Some([2,1,2]),"host-confirmed last hits take precedence");
+            assert_eq!(gate.scarab_owners(job.wave,5,[0;3]),Some([2,0,2]),"only host-confirmed deaths receive rewards");
+            host.scarab_claim.as_mut().unwrap().owned=1;gate.report(1,host.clone()).unwrap();
+            assert_eq!(gate.scarab_owners(job.wave,7,[0;3]),Some([0,2,2]),"conflicting claims must not duplicate rewards");
+            guest.scarab_claim.as_mut().unwrap().owned=8;assert!(gate.report(2,guest).is_err());
+            host.scarab_claim.as_mut().unwrap().owned=0;gate.report(1,host).unwrap();
+            let owners=gate.scarab_owners(job.wave,7,[0;3]).unwrap();
+            assert!(matches!(gate.event_done_owned(job.wave,7,owners).unwrap(),Order::EventDone{owners:[2,2,2],..}));
+            assert!(gate.event_done_owned(job.wave,7,owners).is_err());
+        }
     }
     #[test]
     fn scarab_killer_can_be_nonpayer_and_invalid_owners_do_not_settle() {

@@ -26,6 +26,7 @@ namespace Tower.Launcher
     {
         public const string AppId = "1245620";
         const string Tag = "erdtree-tower";
+        const int MaxRooms = 500;
         /// <summary>LobbyMatchList_t：k_iSteamMatchmakingCallbacks + 10</summary>
         const int LobbyMatchList = 510;
 
@@ -104,13 +105,13 @@ namespace Tower.Launcher
             return new SteamLobby(module);
         }
 
-        /// <summary>列出带爬塔标记的大厅（全世界范围，最多 50 个），10 秒内没有结果就报错</summary>
+        /// <summary>列出带爬塔标记的大厅（全世界范围，最多 500 个），10 秒内没有结果就报错</summary>
         public async Task<List<LobbyRoom>> ListAsync()
         {
             if (disposed) throw new ObjectDisposedException(nameof(SteamLobby));
             stringFilter(matchmaking, "tower", Tag, 0);
             distanceFilter(matchmaking, 3);
-            countFilter(matchmaking, 50);
+            countFilter(matchmaking, MaxRooms);
             var call = request(matchmaking);
             if (call == 0) throw new InvalidOperationException("Steam 拒绝了大厅查询");
             bool failed = false;
@@ -125,7 +126,7 @@ namespace Tower.Launcher
             try
             {
                 if (!result(utils, call, buffer, 4, LobbyMatchList, out failed) || failed) throw new InvalidOperationException("Steam 大厅查询失败");
-                var count = Math.Min(Marshal.ReadInt32(buffer), 50);
+                var count = Math.Min(Marshal.ReadInt32(buffer), MaxRooms);
                 var rooms = new List<LobbyRoom>();
                 for (var i = 0; i < count; i++)
                 {

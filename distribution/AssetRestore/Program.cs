@@ -45,10 +45,14 @@ namespace Tower.Assets
                 if (manifest.Version != 1 || manifest.Files == null || paths.Count!=manifest.Files.Length ||
                     !paths.IsSupersetOf(Targets)||!paths.IsSubsetOf(allowed)) throw new InvalidDataException("Invalid asset manifest");
                 var pending = new List<AssetRecipe>();
+                int checkedFiles = 0;
+                Progress.Report("checking", 0, manifest.Files.Length, "正在校验本地资源");
                 foreach (var file in manifest.Files)
                 {
+                    Progress.Report("checking", checkedFiles, manifest.Files.Length, "正在校验本地资源", Progress.Name(file.Path));
                     string target = Path.Combine(package, "scene-assets", file.Path); NoLinks(target);
                     if (!File.Exists(target) || AssetHash.FileHash(target) != file.TargetHash) pending.Add(file);
+                    Progress.Report("checking", ++checkedFiles, manifest.Files.Length, "正在校验本地资源", Progress.Name(file.Path));
                 }
                 if (pending.Count == 0) { Console.WriteLine("本地资源校验通过。"); IconRestore.Restore(package, game, manifest, validation, NoLinks); return; }
                 if (!validation && Process.GetProcessesByName("eldenring").Length != 0) throw new IOException("请先保存退出游戏，再修复资源。");
@@ -59,6 +63,7 @@ namespace Tower.Assets
                     foreach (var file in pending)
                     {
                         Console.WriteLine("正在本地生成 " + file.Path + "（首次可能需要数分钟）");
+                        Progress.Report("building", staged.Count, pending.Count, "正在生成本地资源", Progress.Name(file.Path) + " · 读取游戏原始资源");
                         if (!new[] { "Data0.bdt", "Data1.bdt", "Data2.bdt", "Data3.bdt", "DLC.bdt" }.Contains(file.Archive) ||
                             file.SourceSize <= 0 || file.SourceSize > 512 * 1024 * 1024 || file.Offset < 0 ||
                             file.Patch != file.Path.Replace('/', '_') + ".patch") throw new InvalidDataException("Invalid source recipe");
@@ -76,18 +81,23 @@ namespace Tower.Assets
                             if (repair.Offset < 0 || repair.Offset > source.Length - bytes.Length) throw new InvalidDataException("Invalid source repair");
                             Buffer.BlockCopy(bytes, 0, source, repair.Offset, bytes.Length);
                         }
+                        Progress.Report("building", staged.Count, pending.Count, "正在生成本地资源", Progress.Name(file.Path) + " · 解压原始资源");
                         source = OodleDcx.Decode(source);
                         string patch = Path.Combine(folder, file.Patch); NoLinks(patch);
                         if (AssetHash.FileHash(patch) != file.PatchHash) throw new InvalidDataException("补丁损坏，请在启动器校验并修复文件。");
                         byte[] decoded;
+                        Progress.Report("building", staged.Count, pending.Count, "正在生成本地资源", Progress.Name(file.Path) + " · 合并模组内容");
                         using (var stream = File.OpenRead(patch)) decoded = AssetPatch.Apply(source, stream, file.DecodedSize);
                         if (AssetHash.Of(decoded) != file.DecodedHash) throw new InvalidDataException("Asset patch verification failed");
                         source = null;
+                        Progress.Report("building", staged.Count, pending.Count, "正在生成本地资源", Progress.Name(file.Path) + " · 压缩生成结果");
                         var result = OodleDcx.Encode(decoded, Convert.FromBase64String(file.Header));
+                        Progress.Report("building", staged.Count, pending.Count, "正在生成本地资源", Progress.Name(file.Path) + " · 校验并写入");
                         if (AssetHash.Of(result) != file.TargetHash) throw new InvalidDataException("生成资源校验失败，原文件未替换。");
                         string target = Path.Combine(package, "scene-assets", file.Path), temporary = target + ".tower-part";
                         NoLinks(temporary); Directory.CreateDirectory(Path.GetDirectoryName(target));
                         File.WriteAllBytes(temporary, result); staged.Add(Tuple.Create(temporary, target));
+                        Progress.Report("building", staged.Count, pending.Count, "正在生成本地资源", Progress.Name(file.Path) + " · 已完成");
                         GC.Collect();
                     }
                     // All outputs pass their release hashes before replacing any installed asset.

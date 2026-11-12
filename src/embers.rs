@@ -5,7 +5,7 @@ use serde::{Deserialize,Serialize};
 pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork,SpiritResonance,Pouch,Arts,Bulwark,Breaker,Harvest,LastStand,Martyr,Mercy,Battlemage,Stride}
 
 // 运行时数值（参数类的数值见 scene-builder/EmberAssets.cs，说明文字同步引用这些常量）
-pub const EXECUTION_SECONDS:u32=5;
+pub const EXECUTION_SECONDS:u32=10;
 pub const EXECUTION_STAMINA_CUT:u32=50;
 pub const BUILDUP:u32=40;
 pub const DEATHFLAME_RADIUS:f32=4.0;
@@ -39,10 +39,10 @@ pub const SPIRIT_RESONANCE_PERCENT:u32=40;
 pub const SOUL_POINTS:u32=5;
 pub const SOUL_KILL:[u32;3]=[1,3,10];
 pub const SOUL_STEP_PERCENT:u32=3;
-pub const CHAIN_STEP_PERCENT:u32=6;
-pub const CHAIN_ROOM_LIMIT:u8=5;
-pub const SLAYER_HP_PERCENT:u32=6;
-pub const SLAYER_ATTACK_PERCENT:u32=5;
+pub const CHAIN_STEP_PERCENT:u32=5;
+pub const CHAIN_ROOM_LIMIT:u8=3;
+pub const SLAYER_HP_PERCENT:u32=5;
+pub const SLAYER_ATTACK_PERCENT:u32=4;
 pub const KEEPER_ATTACK_PERCENT:u32=3;
 /// 灵魂收容的减伤逐层乘算（每层受到的伤害 ×0.98），层数再多也不会到 100%
 pub const KEEPER_CUT_PERCENT:u32=2;
@@ -672,16 +672,16 @@ mod tests {
         let held=[Ember::Chain];
         let mut stacks=Stacks::default();
         for _ in 0..9 {stacks.gain_in_room(&held,Gain::Critical,(42,0,3));}
-        assert_eq!(stacks.chain,5);
+        assert_eq!(stacks.chain,3);
         let mut stacks:Stacks=serde_json::from_str(&serde_json::to_string(&stacks).unwrap()).unwrap();
         assert!(stacks.gain_in_room(&held,Gain::Critical,(42,0,3)).is_empty());
         for _ in 0..8 {stacks.gain_in_room(&held,Gain::Critical,(42,0,4));}
-        assert_eq!(stacks.chain,10);
+        assert_eq!(stacks.chain,6);
         stacks.gain_in_room(&held,Gain::Critical,(42,1,4));
-        assert_eq!(stacks.chain,11);
+        assert_eq!(stacks.chain,7);
         let mut old:Stacks=serde_json::from_str(r#"{"chain":50}"#).unwrap();
         for _ in 0..8 {old.gain_in_room(&held,Gain::Critical,(42,0,3));}
-        assert_eq!(old.chain,55);
+        assert_eq!(old.chain,53);
         let mut empty=Stacks::default();
         for _ in 0..8 {empty.gain_in_room(&[],Gain::Critical,(42,0,3));}
         assert_eq!(empty.gain_in_room(&held,Gain::Critical,(42,0,3)),vec![Ember::Chain]);
@@ -702,8 +702,8 @@ mod tests {
         assert_eq!(held.map(|e|stacks.level(e)),[203,101,101,101],"no cap");
         assert_eq!(stacks.gain(&held,Gain::Critical),vec![Ember::Chain]);
         assert!(Ember::ALL.iter().all(|e|e.stacking()==e.stack_bonus(1).is_some()));
-        assert_eq!(Ember::Godslayer.stack_bonus(8).unwrap(),"最大生命 +48%、攻击 +40%");
-        assert_eq!(Ember::Chain.stack_bonus(50).unwrap(),"致命一击伤害 +300%");
+        assert_eq!(Ember::Godslayer.stack_bonus(8).unwrap(),"最大生命 +40%、攻击 +32%");
+        assert_eq!(Ember::Chain.stack_bonus(50).unwrap(),"致命一击伤害 +250%");
         assert_eq!(Ember::SpiritKeeper.stack_bonus(10).unwrap(),"召唤物伤害 +30%、受到的伤害 -18%");
         let deep=stack_rates(Ember::SpiritKeeper,500).unwrap();assert!(deep.cut>0.0&&deep.cut<0.001,"damage cut never reaches zero");
         assert_eq!(stack_rates(Ember::SoulEater,0).unwrap(),Rates{attack:1.0,hp:1.0,cut:1.0});
@@ -712,7 +712,9 @@ mod tests {
     #[test]
     fn buffed_ember_values_and_growth_match_the_requested_balance() {
         assert_eq!((SOUL_POINTS,SOUL_STEP_PERCENT),(5,3));
-        assert_eq!((SLAYER_HP_PERCENT,SLAYER_ATTACK_PERCENT),(6,5));
+        assert_eq!((SLAYER_HP_PERCENT,SLAYER_ATTACK_PERCENT),(5,4));
+        assert_eq!(EXECUTION_SECONDS,10);
+        assert_eq!((CHAIN_STEP_PERCENT,CHAIN_ROOM_LIMIT),(5,3));
         assert_eq!(HARVEST_POINTS,[2,5,10]);
         assert_eq!(u32::from(FRENZY_STACKS)*FRENZY_STEP_PERCENT,80);
         assert_eq!(BUILDUP,40);
@@ -731,7 +733,7 @@ mod tests {
     }
     #[test]
     fn card_text_uses_the_tuned_numbers() {
-        assert_eq!(Ember::Execution.effect(),"致命一击后 5 秒内\n精力消耗 -50%");
+        assert_eq!(Ember::Execution.effect(),"致命一击后 10 秒内\n精力消耗 -50%");
         assert_eq!(Ember::Barrier.effect(),"施放法术或祷告时\n受到的伤害降低 50%");
         assert_eq!(Ember::FullMoon.effect(),"专注不低于 70% 时\n造成的伤害提高 50%");
         assert_eq!(Ember::SpiritResonance.effect(),"召唤物在场时\n你造成的伤害 +40%");

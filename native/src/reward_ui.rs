@@ -302,7 +302,8 @@ fn card_icon(run:&Run,reward:&Reward)->Option<u32> {
     id.and_then(|id|DETAILS.get(&id)).map(|detail|detail.icon)
 }
 fn card_summary(detail:&Detail)->String {
-    if !detail.info.trim().is_empty(){return if detail.skill.is_empty(){detail.info.clone()}else{format!("战技：{}\n{}",detail.skill.lines().next().unwrap_or(""),detail.info)};}
+    let info=detail.info.lines().filter(|line|!line.trim_start().starts_with("补正组合：")).collect::<Vec<_>>().join("\n");
+    if !info.trim().is_empty(){return if detail.skill.is_empty(){info}else{format!("战技：{}\n{info}",detail.skill.lines().next().unwrap_or(""))};}
     let weight=detail.stats.lines().find(|line|line.starts_with("重量：")).unwrap_or("");
     let skill=detail.skill.lines().next().unwrap_or("");
     if !skill.is_empty() {

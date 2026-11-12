@@ -14,11 +14,11 @@ static class EmberAssets {
     const float ResonanceAttack=1.4f;
     // 战技的精粹（与 src/embers.rs 的 ARTS_* 一致）：战技造成的伤害 ×1.25（复制原版只对战技生效的增伤 312310，与战技伤害词条同一模板）、战技专注消耗 ×0.5；持有即常驻
     const float ArtsAttack=1.25f,ArtsCost=0.5f;
-    const float ExecutionSeconds=5f,ExecutionStamina=0.5f,RevengeRate=1.3f,FrenzyStep=0.02f,CommandAttack=1.2f,CommandCut=0.8f;
+    const float ExecutionSeconds=10f,ExecutionStamina=0.5f,RevengeRate=1.3f,FrenzyStep=0.02f,CommandAttack=1.2f,CommandCut=0.8f;
     const int Buildup=40,FrenzyStacks=40,FlashVfx=1605000;
     // 叠层余烬（与 src/embers.rs 的常量一致）
     const float HarvestStep=0.01f;
-    const float SlayerHp=0.06f,SlayerAttack=0.05f,SoulStep=0.03f,ChainStep=0.06f,KeeperAttack=0.03f,KeeperCut=0.02f;
+    const float SlayerHp=0.05f,SlayerAttack=0.04f,SoulStep=0.03f,ChainStep=0.05f,KeeperAttack=0.03f,KeeperCut=0.02f;
     const int CriticalState=288,CriticalOnly=367;
     static readonly string[] Kept=["spCategory","categoryPriority","effectTargetOpposeTarget","effectTargetFriendlyTarget","effectTargetSelfTarget","effectTargetSelf","effectTargetFriend","effectTargetEnemy","effectTargetPlayer","effectTargetAI","effectTargetLive","effectTargetGhost"];
     static void Set(PARAM.Row r,string key,object value)=>r[key].Value=Convert.ChangeType(value,r[key].Value.GetType());
@@ -38,7 +38,7 @@ static class EmberAssets {
     }
     static List<PARAM.Row> Build(PARAM p) {
         var rows=new List<PARAM.Row>();
-        // 无声处刑：常驻（stateInfo 288）→ 触发 → 致命一击后 5 秒精力消耗减半
+        // 无声处刑：常驻（stateInfo 288）→ 触发 → 致命一击后 10 秒精力消耗减半
         var resident=new PARAM.Row(p.Rows.Single(r=>r.ID==350500)){ID=First,Name="Tower ember execution"};
         Set(resident,"iconId",-1);Set(resident,"spCategory",0);Set(resident,"categoryPriority",0);rows.Add(resident);
         var trigger=new PARAM.Row(p.Rows.Single(r=>r.ID==350501)){ID=First+1,Name="Tower ember execution trigger"};

@@ -5,7 +5,7 @@ use eldenring::cs::{SummonBuddyManager,WorldChrMan};
 struct Member {key:u64,param:i32,alive:bool}
 pub(super) struct Use {goods:u32,before:Vec<u64>,params:Vec<i32>,members:HashMap<u64,(bool,Instant)>}
 #[derive(Default)]
-struct Ledger {inventory:Vec<(u32,u32)>,uses:Vec<Use>,closed:bool}
+struct Ledger {inventory:Vec<(u32,u32)>,observed_inventory:Option<Vec<(u32,u32)>>,uses:Vec<Use>,closed:bool}
 #[derive(Debug)]
 pub(crate) struct Refund {pub goods:u32,pub quantity:u32,post_spend_max:u32,target:Option<u32>,confirmed:bool}
 fn count(inventory:&[(u32,u32)],goods:u32)->u32 {inventory.iter().filter(|(id,_)|*id==goods).fold(0,|sum,(_,n)|sum.saturating_add(*n))}
@@ -15,6 +15,18 @@ impl Refund {
     fn confirm(&mut self,current:u32){if self.target.is_some_and(|target|current>=target){self.confirmed=true;}}
 }
 impl Ledger {
+    fn refresh_inventory(&mut self,current:&[(u32,u32)]) {
+        if self.closed{return;}
+        let previous=self.observed_inventory.as_deref().unwrap_or(&self.inventory);
+        let goods:std::collections::BTreeSet<_>=current.iter().map(|(goods,_)|*goods).collect();
+        let additions:Vec<_>=goods.into_iter().map(|goods|(goods,count(current,goods).saturating_sub(count(previous,goods)))).filter(|(_,n)|*n>0).collect();
+        self.observed_inventory=Some(current.to_vec());
+        for (goods,quantity) in additions {
+            let before=count(&self.inventory,goods);
+            self.inventory.retain(|(id,_)|*id!=goods);
+            self.inventory.push((goods,before.saturating_add(quantity)));
+        }
+    }
     fn accept(&mut self,usage:Use) {
         let used=self.uses.iter().filter(|u|u.goods==usage.goods).count() as u32;
         if !self.closed&&count(&self.inventory,usage.goods)>used{self.uses.push(usage);}
@@ -45,7 +57,7 @@ impl Ledger {
     }
 }
 
-static LEDGER:Mutex<Ledger>=Mutex::new(Ledger{inventory:Vec::new(),uses:Vec::new(),closed:true});
+static LEDGER:Mutex<Ledger>=Mutex::new(Ledger{inventory:Vec::new(),observed_inventory:None,uses:Vec::new(),closed:true});
 fn local_members(manager:&SummonBuddyManager,owner:i32)->Vec<Member> {
     manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter(|group|!group.is_remote).map(|group| {
         let chr=unsafe {group.chr_ins.as_ref()};let handle=chr.field_ins_handle;
@@ -67,12 +79,16 @@ pub(super) fn accepted(usage:Use) {
         else {super::super::log(format!("ASH_GROUP ignored request goods={goods}: encounter closed, limit reached, or absent from starting inventory"));}}
 }
 pub(crate) fn begin(before:&[(u32,u32)]) {if let Ok(mut ledger)=LEDGER.lock(){*ledger=Ledger{inventory:before.to_vec(),..Default::default()};}}
+pub(crate) fn tracking()->bool {LEDGER.lock().is_ok_and(|ledger|!ledger.closed)}
+pub(crate) fn close(){if let Ok(mut ledger)=LEDGER.lock(){ledger.closed=true;}}
 pub(crate) fn observe(world:&WorldChrMan) {
     let Some(player)=world.main_player.as_ref() else{return;};
     let manager=&world.summon_buddy_manager;
     let owner=unsafe {player.player_game_data.as_ref()}.character_event_id as i32;
     let members=local_members(manager,owner);
+    let inventory=super::super::loadout::ash_snapshot(unsafe {player.player_game_data.as_ref()}).ok();
     if let Ok(mut ledger)=LEDGER.lock() {
+        if let Some(inventory)=inventory {ledger.refresh_inventory(&inventory);}
         if !ledger.closed&&ledger.uses.is_empty()&&!members.is_empty()&&manager.active_summon_goods_id>0&&!manager.disappear_requested&&super::ACTIVE.load(std::sync::atomic::Ordering::Acquire) {
             // 召唤请求没被追踪到时（没装上追踪，或开战前就召唤了：倒数、敌人还没出现时追踪还没开），按场上的召唤物补记这一次，
             // 否则胜利时召唤物还活着也不返还骨灰（玩家日志：每场都是开战前召唤，ASH_GROUP victory refunds=[]）
@@ -115,6 +131,31 @@ pub(crate) fn pump(data:&mut eldenring::cs::PlayerGameData,plan:&mut [Refund])->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shop_purchase_is_tracked_and_portal_cannot_refund_it_twice() {
+        let mut ledger=Ledger::default();
+        ledger.refresh_inventory(&[(212000,1)]);
+        ledger.accept(usage(212000,&[],212000));
+        ledger.refresh_inventory(&[(212000,1)]);
+        ledger.accept(usage(212000,&[],212000));
+        assert_eq!(ledger.uses.len(),1,"pending consumption is not a new purchase");
+        ledger.refresh_inventory(&[]);
+        ledger.observe(&[member(1,212000,true),member(2,212000,true)],false,Instant::now());
+        let refunds=ledger.settle();
+        assert_eq!((refunds[0].goods,refunds[0].quantity),(212000,1));
+        assert!(ledger.settle().is_empty(),"victory and portal share one receipt");
+    }
+    #[test]
+    fn event_precombat_use_survives_empty_post_summon_inventory() {
+        let mut ledger=Ledger{inventory:vec![(212000,1)],..Default::default()};
+        ledger.accept(usage(212000,&[],212000));
+        ledger.observe(&[member(1,212000,true),member(2,212000,true)],false,Instant::now());
+        let refunds=ledger.settle();
+        assert_eq!(refunds.len(),1);
+        assert_eq!((refunds[0].goods,refunds[0].quantity),(212000,1),"one ash, not two skeletons");
+        assert_eq!(refunds[0].grant(0),Some(1));
+        assert!(ledger.settle().is_empty(),"settlement cannot pay twice");
+    }
     #[test]
     fn summoner_resummons_after_two_dead_groups_still_refund_the_survivor() {
         let mut ledger=Ledger{inventory:vec![(270039,3)],..Default::default()};

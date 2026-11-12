@@ -1,9 +1,9 @@
 use erdtree_tower::{Class,Run,NodeKind,physick_supply::Supply};
 
 #[test]
-fn each_shop_gives_one_bottle_even_after_reload() {
+fn each_camp_gives_one_bottle_even_after_reload() {
     let mut run=Run::new(42,Class::Samurai);
-    let id=run.nodes.iter().position(|n|n.kind==NodeKind::Shop).unwrap();
+    let id=run.nodes.iter().position(|n|n.kind==NodeKind::Camp).unwrap();
     assert!(run.physick_drop(id,false));
     assert!(run.physick_supply.queue(run.act,id));
     assert!(!run.physick_supply.queue(run.act,id));
@@ -18,7 +18,7 @@ fn each_shop_gives_one_bottle_even_after_reload() {
 }
 
 #[test]
-fn battle_drop_is_stable_twenty_five_percent_and_requires_victory() {
+fn battle_drop_is_stable_fifteen_percent_and_requires_victory() {
     let mut drops=0;
     for seed in 0..10000 {
         let run=Run::new(seed,Class::Samurai);
@@ -27,12 +27,12 @@ fn battle_drop_is_stable_twenty_five_percent_and_requires_victory() {
         drops+=usize::from(run.physick_drop(id,true));
         let mut other=run.clone();other.class=Class::Astrologer;
         assert_eq!(run.physick_drop(id,true),other.physick_drop(id,true));
-        for (id,node) in run.nodes.iter().enumerate().filter(|(_,n)|!n.kind.combat()&&n.kind!=NodeKind::Shop) {
+        for (id,node) in run.nodes.iter().enumerate().filter(|(_,n)|!n.kind.combat()&&n.kind!=NodeKind::Camp) {
             assert!(!run.physick_drop(id,true),"{:?}",node.kind);
         }
         assert!(!run.physick_drop(usize::MAX,true));
     }
-    assert!((2300..2700).contains(&drops),"{drops}");
+    assert!((1300..1700).contains(&drops),"{drops}");
 }
 
 #[test]

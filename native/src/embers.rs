@@ -7,7 +7,7 @@ use erdtree_tower::{Phase,Run,embers::{self,Ember,Gain,Strike,StrikeRequest}};
 pub const FIRST:i32=9670000;
 /// 无声处刑的旧常驻效果（处决状态 288）：只用于清理。挂着它时原版染红 / 染蓝凶刀的触发也会生效，处决会回血回蓝，所以不再挂上
 const EXECUTION:i32=FIRST;
-/// 无声处刑：致命一击后挂上 5 秒（精力消耗减半），由原生处决事件触发，不依赖处决状态
+/// 无声处刑：致命一击后挂上 10 秒（精力消耗减半），由原生处决事件触发，不依赖处决状态
 const EXECUTION_RELIEF:i32=FIRST+2;
 const BLOOD:i32=FIRST+10;
 const FROST:i32=FIRST+11;

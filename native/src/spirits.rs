@@ -127,7 +127,16 @@ unsafe extern "C" fn clear_frame(manager:*mut u8) {
 }
 unsafe extern "C" fn request(manager:*mut u8,effect:i32)->bool {
     let original:unsafe extern "C" fn(*mut u8,i32)->bool=unsafe {std::mem::transmute(ORIGINAL.load(Ordering::Acquire))};
-    if !ACTIVE.load(Ordering::Acquire){return unsafe {original(manager,effect)};}
+    if !ACTIVE.load(Ordering::Acquire){
+        let usage=refund::tracking().then(|| {
+            let buddy=unsafe {&*manager.cast::<eldenring::cs::SummonBuddyManager>()};
+            let goods=unsafe {manager.add(0xe0).cast::<i32>().read()};
+            refund::capture(buddy,goods,effect)
+        }).flatten();
+        let accepted=unsafe {original(manager,effect)};
+        if accepted&&let Some(usage)=usage {refund::accepted(usage);}
+        return accepted;
+    }
     let query:unsafe extern "C" fn(*mut u8,i32)->i32=unsafe {std::mem::transmute(USE_STATE.load(Ordering::Acquire))};
     let state=unsafe {query(manager,-1)};
     let field=|offset|unsafe {manager.add(offset).cast::<i32>().read()};

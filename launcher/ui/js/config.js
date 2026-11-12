@@ -36,7 +36,7 @@ window.HOYO_CONFIG = {
     { icon: 'social-home', label: '项目主页', href: 'https://github.com/tamikip/erdtree-tower' },
     { icon: 'social-lobby', label: '联机大厅', action: 'lobby' },
     { icon: 'social-wiki', label: 'Wiki 百科', action: 'openWiki' },
-    { icon: 'social-feedback', label: '问题反馈', href: 'https://github.com/tamikip/erdtree-tower/issues' },
+    { icon: 'social-feedback', label: '问题修复', action: 'troubleshoot' },
     { icon: 'social-history', label: '更新日志与历史', action: 'releaseHistory' },
     { icon: 'social-folder', label: 'Mod 日志目录', action: 'openModLogs' },
   ],
@@ -232,7 +232,7 @@ window.HOYO_CONFIG = {
             title: 'DLC（下次启动游戏生效）',
             rows: [
               { type: 'select', key: 'dlc', label: '黄金树之影 DLC', hint: '没买 DLC 选「没有 DLC」；联机时队伍里有人没有 DLC，整队都不出 DLC 内容',
-                value: '有 DLC', options: ['有 DLC', '没有 DLC', '没有 DLC，保留 DLC 武器（实验）'] },
+                value: '有 DLC', options: ['有 DLC', '没有 DLC'] },
             ],
           },
           {
@@ -335,6 +335,10 @@ window.HOYO_CONFIG = {
             ],
           },
         ],
+      },
+      {
+        key: 'troubleshoot', name: '问题修复',
+        groups: [{ rows: [{ type: 'troubleshoot' }] }],
       },
       {
         key: 'general', name: '常规',

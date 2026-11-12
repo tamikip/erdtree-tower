@@ -198,15 +198,15 @@ impl Menu {
                 if let Some(_tab)=ui.tab_item("物品") {self.items(ui);}
                 if let Some(_tab)=ui.tab_item("状态") {self.state(ui,run);}
                 if let Some(_tab)=ui.tab_item("灵庙测试") {
-                    ui.text_wrapped(crate::i18n::t("单人快捷测试：进入引路人问号房，再选择前往龙王平台灵庙或领取 800 卢恩。此旅程计为调试，不计入正式解锁。"));
+                    ui.text_wrapped(crate::i18n::t("进入引路人问号房，再选择前往龙王平台灵庙或领取 800 卢恩。联机由房主发起，全员需开启调试并回到路线图，不计正式解锁。"));
                     ui.text_wrapped(crate::i18n::t("复制前在右手装备目标武器；可先在物品页用拼音搜索领取测试武器。"));
-                    let _disabled=ui.begin_disabled(PARTY_ROLE.load(Ordering::Relaxed)!=0||run.phase!=erdtree_tower::Phase::Map||view.busy||view.travelling);
-                    if ui.button(crate::i18n::t("进入灵庙事件测试（单人）")){send(Command::MausoleumTest);}
+                    let _disabled=ui.begin_disabled(PARTY_ROLE.load(Ordering::Relaxed)==2||run.phase!=erdtree_tower::Phase::Map||view.busy||view.travelling);
+                    if ui.button(crate::i18n::t("进入灵庙事件测试")){send(Command::MausoleumTest);}
                 }
                 if let Some(_tab)=ui.tab_item("事件测试") {
                     use erdtree_tower::events::Draw;
-                    ui.text_wrapped(crate::i18n::t("先开始旅程并停在路线图。点击后直接进入指定问号事件；隐形道路在试炼 NPC 的菜单里选择。测试旅程不计正式解锁。仅限独自游玩。"));
-                    let _disabled=ui.begin_disabled(PARTY_ROLE.load(Ordering::Relaxed)!=0||run.phase!=erdtree_tower::Phase::Map||view.busy||view.travelling);
+                    ui.text_wrapped(crate::i18n::t("先开始旅程并停在路线图。联机由房主选择事件，全员需更新版本、开启调试并完成领奖。隐形道路在试炼 NPC 菜单里选择；测试旅程不计正式解锁。"));
+                    let _disabled=ui.begin_disabled(PARTY_ROLE.load(Ordering::Relaxed)==2||run.phase!=erdtree_tower::Phase::Map||view.busy||view.travelling);
                     for (label,draw) in [("试炼岔路（含异端塔隐形桥）",Draw::Trial),("恢复泉水",Draw::Spring),("骰子赌徒",Draw::Dice),("盲盒商人",Draw::Mystery),("词条重铸",Draw::Reforge),("重练炉",Draw::Furnace),("粪金龟",Draw::Scarabs),("灵庙引路人",Draw::Mausoleum),("多宝箱",Draw::Chests),("祭坛",Draw::Altar),("上锁宝箱",Draw::Locked)] {
                         if ui.button(crate::i18n::t(label)){send(Command::EventTest(draw));}
                     }
@@ -483,7 +483,7 @@ fn chain_test(ui:&Ui,run:&Run) {
     ui.text_colored(if ok{[0.5,0.95,0.6,1.0]}else{[1.0,0.65,0.35,1.0]},crate::i18n::t(if ok{"参数检查通过（不代表已完成实战伤害验证）"}else{"参数未就绪或与层数不符"}));
     ui.text(crate::i18n::t(format!("已挂载倍率效果数：{}   限定致命一击：{}",trace.effects,trace.critical_only)));
     ui.separator();
-    ui.text_wrapped(crate::i18n::t("进入战斗后背刺或处决一次，再打开此页：真实触发次数应 +1，层数应 +1，倍率应增加 0.06。普通攻击不应加层。营地假人不走战斗叠层检测，请使用战斗或 Boss 测试入口。"));
+    ui.text_wrapped(crate::i18n::t("进入战斗后背刺或处决一次，再打开此页：真实触发次数应 +1，层数应 +1，倍率应增加 0.05。普通攻击不应加层。营地假人不走战斗叠层检测，请使用战斗或 Boss 测试入口。"));
     ui.text_wrapped(crate::i18n::t("10 层按钮仅用于手动对照参数，不计入真实触发次数。比较伤害请保持同一把武器、同一敌人及其他增益不变，并关闭秒杀。"));
 }
 fn set_roster(roster:Vec<Enemy>) {

@@ -16,7 +16,7 @@ static class BossAffixAssets {
     static (int id,string name,int kind,(string,object)[] fields)[] Rows=>[
         (First,"Tower boss affix stalwart",0,[("toughnessDamageCutRate",0.5f),("vfxId",8570)]),
         (First+10,"Tower boss affix bulwark",0,[..All(Cuts,0.75f),("vfxId",8510)]),
-        (First+20,"Tower boss affix frenzied",0,[..All(Attacks,1.25f),..All(Cuts,1.1f),("vfxId",1605000)]),
+        (First+20,"Tower boss affix frenzied",0,[..All(Attacks,1.3f),..All(Cuts,1.1f),("vfxId",1605000)]),
         (First+30,"Tower boss affix regenerating",0,[("motionInterval",1f),("changeHpRate",-0.3f),("vfxId",1643000)]),
         // 苦难律法「词条强化」：编号 +1 的强化版，光效相同（削韧 ×0.35、受到伤害 -35%、攻击 +35%、每秒回复 0.45%）
         (First+1,"Tower boss affix stalwart empowered",0,[("toughnessDamageCutRate",0.35f),("vfxId",8570)]),
@@ -31,10 +31,10 @@ static class BossAffixAssets {
         (First+60,"Tower boss affix thorned",0,[("vfxId",21490001),("vfxId1",321600),("vfxId2",5865)]),
         (First+65,"Tower boss affix leeching flash",0,[("effectEndurance",1.5f),("vfxId",8680),("vfxId1",5806)]),
         // 嫉妒用黑焰（黑焰庇佑 + 黑焰缠身），傲慢用白金圣光（王之神圣加护 + 神圣加护），与狂暴的红光、黄金律法的金光区分开
-        (First+70,"Tower boss affix envious rage",0,[("effectEndurance",10f),..All(Attacks,1.3f),("vfxId",1627000),("vfxId1",9010)]),
+        (First+70,"Tower boss affix envious rage",0,[("effectEndurance",15f),..All(Attacks,1.3f),("vfxId",1627000),("vfxId1",9010)]),
         (First+80,"Tower boss affix proud",0,[..All(Attacks,1.2f),("vfxId",1649000),("vfxId1",1648000)]),
         // 词条强化：嫉妒攻击 +45%、傲慢攻击 +30%
-        (First+71,"Tower boss affix envious rage empowered",0,[("effectEndurance",10f),..All(Attacks,1.45f),("vfxId",1627000),("vfxId1",9010)]),
+        (First+71,"Tower boss affix envious rage empowered",0,[("effectEndurance",15f),..All(Attacks,1.45f),("vfxId",1627000),("vfxId1",9010)]),
         (First+81,"Tower boss affix proud empowered",0,[..All(Attacks,1.3f),("vfxId",1649000),("vfxId1",1648000)]),
         // 黄金律法的护盾：同时挂三个原版金色护体光效（黄金壁垒、黄金雷电附加、黄金誓言），比单个黄金誓言醒目
         (First+90,"Tower boss affix golden shield",0,[("effectEndurance",5f),..All(Cuts,0.3f),("vfxId",9620090),("vfxId1",9620091),("vfxId2",1660000)]),

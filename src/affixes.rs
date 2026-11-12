@@ -21,6 +21,11 @@ pub fn lookup(id:u32)->Option<&'static Item>{BY_ID.get(&id).map(|i|&CATALOG[*i])
 pub fn base(id:u32)->u32 {BY_ID.get(&id).map_or(id,|i|VARIANTS[*i].base)}
 pub fn tier(id:u32)->Option<u8>{BY_ID.get(&id).map(|i|VARIANTS[*i].tier)}
 pub fn profile(id:u32)->Option<u8>{BY_ID.get(&id).and_then(|i|VARIANTS[*i].profile)}
+pub fn common_weapon(id:u32,entropy:u64)->Option<u32> {
+    let groups=ADVANCED.get(&base(id))?;
+    let choices:Vec<_>=groups.iter().map(|g|g[0]).filter(|id|*id!=0).collect();
+    (!choices.is_empty()).then(||choices[crate::mix(entropy) as usize%choices.len()])
+}
 /// 规则 4 的前缀概率（0..100 的掷骰值）：普通 25%、稀有 35%、史诗 28%、传说 12%
 pub fn prefix_tier(value:u64)->u8 {match value {0..=24=>0,25..=59=>1,60..=87=>2,_=>3}}
 /// 规则 5 起品质随旅程进度变化：第一幕第 1 层为 QUALITY_START，第三幕最后一层为 QUALITY_END，中间按层线性过渡（普通、稀有、史诗、传说，合计 100）

@@ -411,6 +411,25 @@
   align-items: center;
 }
 
+.launch-status {
+  position: absolute; right: 60px; bottom: 138px; width: 350px; padding: 17px 20px;
+  z-index: 30; border: 1px solid rgba(227,196,129,.32); border-radius: 12px;
+  background: rgba(18,21,23,.95); color: #f4e9d2; box-shadow: 0 12px 36px rgba(0,0,0,.3);
+}
+.launch-status[hidden] { display: none; }
+.launch-status-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 15px; }
+.launch-status-head span { color: #bbae94; font-variant-numeric: tabular-nums; font-size: 12px; }
+.launch-status-detail { margin-top: 9px; color: #d4ccbb; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.launch-status-track { margin-top: 13px; height: 5px; border-radius: 5px; background: #3a382f; overflow: hidden; }
+.launch-status-track span { display: block; height: 100%; border-radius: inherit; background: #d7b76b; transition: width .3s ease; }
+.launch-status-meta { margin-top: 8px; font-size: 11px; color: #bbae94; }
+.launch-status.indeterminate .launch-status-track span { animation: launch-flow 1.7s ease-in-out infinite; }
+.launch-status.failed { border-color: #aa655d; }
+.launch-status.failed strong { color: #f2b8ad; }
+.cta .btn-primary:disabled { cursor: wait; opacity: .65; }
+@keyframes launch-flow { from { transform: translateX(-110%); } to { transform: translateX(420%); } }
+@media (prefers-reduced-motion: reduce) { .launch-status.indeterminate .launch-status-track span { animation: none; } }
+
 .btn-primary {
   width: var(--cta-w);
   height: var(--cta-h);
@@ -2051,11 +2070,28 @@ html.reduced-motion *::after {
 
 /* ================= 联机大厅（沿用设置对话框的外框） ================= */
 .lobby-dialog { display: block; }
+.repair-intro { color: var(--c-text-faint); font-size: 13px; line-height: 1.7; margin: 0 0 16px; }
+.repair-card { border: 1px solid rgba(224,178,90,.16); border-radius: 10px; margin-bottom: 10px; background: rgba(255,255,255,.025); }
+.repair-card summary { padding: 14px; cursor: pointer; font-size: 14px; color: var(--c-text); }
+.repair-card summary:hover { color: #e0b25a; }
+.repair-card p { padding: 0 14px; margin: 0; color: var(--c-text-faint); font-size: 13px; line-height: 1.8; }
+.repair-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; }
+.repair-feedback { display: inline-block; margin: 12px 0; color: #e0b25a; font-size: 13px; }
 .lobby-body { padding: 32px 32px 24px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
 .lobby-hint { font-size: 12px; color: var(--c-text-faint); line-height: 18px; }
 .lobby-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .lobby-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--c-text-faint); font-size: 13px; }
-.lobby-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.lobby-list { list-style: none; margin: 0; padding: 0 6px 0 0; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #736344 transparent; }
+.lobby-list::-webkit-scrollbar { width: 6px; }
+.lobby-list::-webkit-scrollbar-track { background: transparent; }
+.lobby-list::-webkit-scrollbar-thumb { background: #736344; border-radius: 8px; }
+.lobby-list::-webkit-scrollbar-thumb:hover { background: #b39a65; }
+.lobby-room[hidden], .lobby-list[hidden], .lobby-empty[hidden] { display: none; }
+.lobby-search { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-shrink: 0; }
+.lobby-search .inp { flex: 1; min-width: 0; width: auto; }
+.lobby-search .lobby-hint { white-space: nowrap; }
+.lobby-toolbar > span:last-child { flex-shrink: 0; }
+.lobby-meta { overflow-wrap: anywhere; }
 .lobby-room { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
 .lobby-room + .lobby-room { margin-top: 6px; }
 .lobby-room:hover { background: rgba(255, 255, 255, 0.09); }

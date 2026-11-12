@@ -36,6 +36,7 @@ namespace Tower.Launcher
         ReleaseManifest? latest;
         string updateStatus = "尚未检查";
         bool checking, launching;
+        LaunchProgress? launchProgress;
         bool historyLoading;
         int? launchWorkerId;
         CancellationTokenSource? running;
@@ -376,6 +377,7 @@ namespace Tower.Launcher
             form.Post("app", "hostTakeover", new { download = true });
             PushStatus();
             if (pendingToast is { } toast) { pendingToast = null; Done(toast.text, toast.ms, toast.restart); }
+            PushLaunchProgress();
             if (settings.AutoCheck && latest == null) _ = CheckAsync(false);
         }
 
@@ -811,6 +813,14 @@ namespace Tower.Launcher
             return false;
         }
 
+        void PushLaunchProgress()
+        {
+            var p = launchProgress;
+            if (p == null) return;
+            form.Post("game", "launchProgress", new { game = Game, phase = p.Phase, text = p.Text, detail = p.Detail,
+                done = p.Done, total = p.Total, percent = p.Percent, elapsed = p.Seconds, active = !p.Terminal });
+        }
+
         async Task LaunchAsync(bool lobbyHost = false, Func<bool>? prepare = null)
         {
             if (!CanPrepareLaunch()) return;
@@ -821,6 +831,7 @@ namespace Tower.Launcher
                 return;
             }
             launching = true;
+            launchProgress = new LaunchProgress(); PushLaunchProgress();
             try
             {
             var script = Path.Combine(paths.InstallDir, "Start-Tower.ps1");
@@ -834,6 +845,10 @@ namespace Tower.Launcher
                 if (!lobbyHost && File.Exists(LobbyFile)) File.Delete(LobbyFile);
                 var options = TowerOptions.Read(OptionsFile);
                 options.TryGetValue("dlc", out var dlcMode);
+                if (string.Equals(dlcMode, "weapons", StringComparison.OrdinalIgnoreCase)) {
+                    TowerOptions.Write(OptionsFile, "dlc", "none");
+                    dlcMode = "none";
+                }
                 var dlcWarning = DlcLaunchCheck.Warning(gameDir, settings.Mode == HostSettings.Seamless, dlcMode);
                 if (dlcWarning != null)
                 {
@@ -849,44 +864,66 @@ namespace Tower.Launcher
                 Directory.CreateDirectory(logs);
                 var arguments = $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File {Quote(wrapper)} -Entry {Quote(script)} -Mode {mode} -Loader {settings.Loader} -GameDir {Quote(gameDir)} -ErrorFile {Quote(errorFile)} -LogDirectory {Quote(logs)}";
                 Log.Write("开始游戏：" + arguments);
+                var output = new LaunchLogReader(Path.Combine(logs, "stdout.log"));
+                var nativeLog = new LaunchLogReader(Path.Combine(paths.InstallDir,
+                    mode == HostSettings.Seamless ? "seamless-entry/runtime/tower-preview.log" : "tower-preview.log"), true);
                 var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
                 using var process = Process.Start(new ProcessStartInfo(powershell, arguments) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = paths.InstallDir })!;
                 launchWorkerId = process.Id;
                 Toast("正在启动黄金树爬塔…", "info", 6000);
                 var localAssets = UsesLocalAssets();
+                launchProgress.Set(localAssets ? "checking" : "starting", localAssets ? "正在检查本地资源" : "正在启动加载器",
+                    localAssets ? "首次生成或修复可能需要数分钟；进度会实时更新" : settings.Loader);
+                PushLaunchProgress();
                 var launchWaitTicks = localAssets ? 3600 : 120;
                 if (localAssets) Toast("正在检查本地资源；首次生成或修复可能需要数分钟，请勿重复启动", "info", 12000);
                 if (mode == HostSettings.Seamless && Seamless() is { } seamless && seamless.Installed && !seamless.Version().Verified)
                     Toast("这个无缝联机版本还没验证过：照常启动，联机复活修复会自动关闭；联机双方要用同一个版本", "warn", 8000);
                 // 加载器拉起游戏后脚本可能一直等到游戏退出，也可能马上结束：两种情况都只盯「脚本报错」和「游戏起来了」
                 var started = false;
-                for (var waited = 0; !process.HasExited || (!started && process.ExitCode == 0 && waited < launchWaitTicks); waited++)
+                var startedTick = -1;
+                for (var waited = 0; !process.HasExited || (process.ExitCode == 0 && (!started && waited < launchWaitTicks || started && !launchProgress.Terminal && waited - startedTick < 120)); waited++)
                 {
                     await Task.Delay(500);
+                    foreach (var line in output.Read()) launchProgress.Output(line);
+                    foreach (var line in nativeLog.Read()) launchProgress.Native(line);
+                    if (started && !launchProgress.Terminal && !GameRunning()) {
+                        launchProgress.End("failed", "游戏在画面就绪前退出", "请打开启动日志查看原因"); PushLaunchProgress(); break;
+                    }
+                    if (started && !launchProgress.Terminal && waited - startedTick >= 120)
+                        launchProgress.End("running", "游戏进程已启动", "尚未收到首帧信号，请查看游戏窗口；无需重复启动");
+                    PushLaunchProgress();
+                    if (started && launchProgress.Terminal && settings.CloseExit) { form.Close(); return; }
                     if (!started && waited >= launchWaitTicks - 1) {
                         Log.Write("等待游戏进程超时；后台日志：" + logs);
+                        launchProgress.End("failed", "启动等待超时", "后台可能仍在准备资源，请打开日志查看详情"); PushLaunchProgress();
                         Toast(localAssets ? "本地资源准备或启动耗时过长，请查看后台日志" : "60 秒内未检测到游戏启动，请查看后台日志", "error", 0, "打开日志", "openLogs");
                         return;
                     }
                     if (started || !GameRunning()) continue;
                     started = true;
+                    startedTick = waited; launchProgress.GameDetected(); PushLaunchProgress();
                     Log.Write("游戏已启动");
-                    if (settings.CloseExit) { form.Close(); return; }
-                    if (process.HasExited) break;
                 }
-                if (process.ExitCode != 0)
+                if (process.HasExited && process.ExitCode != 0)
                 {
                     var reason = LaunchResult.Summary(errorFile, logs, process.ExitCode);
                     Log.Write($"启动脚本退出码 {process.ExitCode}：{reason}");
+                    launchProgress.End("failed", "启动失败", reason); PushLaunchProgress();
                     Toast("启动失败：" + reason, "error", 0, "打开日志", "openLogs");
                 }
             }
             catch (Exception e) when (e is IOException || e is Win32Exception || e is UnauthorizedAccessException)
             {
                 Log.Write("启动失败：" + e);
+                launchProgress.End("failed", "启动失败", e.Message); PushLaunchProgress();
                 Toast("启动失败：" + e.Message, "error", 0, "打开日志", "openLogs");
             }
-            finally { launching = false; }
+            finally {
+                launching = false;
+                if (!launchProgress.Terminal) launchProgress.End("cancelled", "启动已结束", "可以查看日志或重新启动");
+                PushLaunchProgress();
+            }
         }
 
         bool UsesLocalAssets()

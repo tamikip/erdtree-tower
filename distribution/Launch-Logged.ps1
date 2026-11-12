@@ -8,9 +8,11 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 try {
-    New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+    [void][IO.Directory]::CreateDirectory($LogDirectory)
+    $bootstrap = 'foreach ($module in @(''Microsoft.PowerShell.Management'',''Microsoft.PowerShell.Utility'')) { Import-Module ([IO.Path]::Combine($PSHOME,''Modules'',$module,($module + ''.psd1''))) -ErrorAction Stop }; '
+    & ([ScriptBlock]::Create($bootstrap))
     function Literal([string]$Value) { "'" + $Value.Replace("'", "''") + "'" }
-    $command = '$ProgressPreference = ''SilentlyContinue''; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); & ' + (Literal $Entry) + ' -Mode ' + (Literal $Mode) + ' -GameDir ' + (Literal $GameDir) + ' -ErrorFile ' + (Literal $ErrorFile)
+    $command = $bootstrap + '$ProgressPreference = ''SilentlyContinue''; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); & ' + (Literal $Entry) + ' -Mode ' + (Literal $Mode) + ' -GameDir ' + (Literal $GameDir) + ' -ErrorFile ' + (Literal $ErrorFile)
     $command += ' -Loader ' + (Literal $Loader)
     $command += '; $ok = $?; if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }; if (-not $ok) { exit 1 }; exit 0'
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))

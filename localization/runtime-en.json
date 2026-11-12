@@ -1,4 +1,12 @@
 {
+  "批量提升圣杯瓶恢复量": "Upgrade flask restoration in bulk",
+  "使用身上可用的圣杯滴露，批量提升红、蓝圣杯瓶恢复量？最高 +12，多余滴露保留，不补充剩余次数。": "Use carried Sacred Tears to upgrade both flasks up to +12? Excess tears are kept. Remaining charges are not refilled.",
+  "需要至少 1 枚圣杯滴露。": "At least one Sacred Tear is required.",
+  "红、蓝圣杯瓶恢复量已批量提升，多余滴露已保留。": "Both flasks have been upgraded. Excess Sacred Tears were kept.",
+  "事件测试需全员更新版本、开启调试、存活，并完成领奖与誓约选择后回到路线图": "Event tests require everyone to update, enable debug mode, stay alive, and return to the route map after claiming rewards and choosing oaths.",
+  "仅就绪的房主可发起事件测试": "Only the ready host can start an event test.",
+  "事件测试未获本机调试授权或旅程不同步": "Event test rejected: local debug mode is disabled or the run is out of sync.",
+  "等待队伍同步建立后再测试事件": "Wait for party synchronization before testing events.",
   "战车将在 {remaining} 秒后出现": "Chariot appears in {remaining}s",
   "正在加载战车……": "Loading chariot...",
   "泥头车生存：剩余 {remaining} 秒": "Chariot Survival: {remaining}s remaining",

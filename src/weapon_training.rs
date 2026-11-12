@@ -12,16 +12,20 @@ pub const TYPES:&[(u8,&str)]=&[
     (60,"格斗术"),(61,"调香瓶"),(62,"突刺盾"),(63,"投掷剑"),(64,"反手剑"),(66,"大刀"),(67,"轻大剑"),(68,"兽爪"),
 ];
 pub fn known(kind:u8)->bool {TYPES.iter().any(|&(id,_)|id==kind)}
-/// 武器种类的名称（直剑、大剑……）：按基础武器编号的百万位判断，词条武器先换回基础武器；不是已知种类返回 None
+pub fn kind(id:u32)->u32 {
+    let base=crate::affixes::base((id&0x0fffffff)/10000*10000);
+    match base {12510000|12530000=>23,_=>base/1_000_000}
+}
+/// 血怪手臂与铁砧大锤位于大槌编号段，实际 wepType=41（特大武器）。
 pub fn type_name(id:u32)->Option<&'static str> {
-    let kind=(crate::affixes::base(id)&0x0fffffff)/1_000_000;
+    let kind=kind(id);
     TYPES.iter().find(|&&(k,_)|u32::from(k)==kind).map(|&(_,name)|name)
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct Preference {pub kind:u8,pub level:u8}
 impl Preference {
     pub fn valid(self)->bool {known(self.kind)&&(1..=5).contains(&self.level)}
-    pub fn weight(self,id:u32)->u64 {if self.valid()&&(id&0x0fffffff)/1_000_000==u32::from(self.kind) {weight_percent(self.level)}else{100}}
+    pub fn weight(self,id:u32)->u64 {if self.valid()&&kind(id)==u32::from(self.kind) {weight_percent(self.level)}else{100}}
 }
 #[derive(Clone,Debug,Default,PartialEq,Eq,Serialize,Deserialize)]
 #[serde(default)]
@@ -53,7 +57,7 @@ pub fn pick(ids:&[u32],roll:u64,preference:Preference,class:Option<Class>)->usiz
 }
 pub fn pick_many(ids:&[u32],roll:u64,preferences:&[Preference],class:Option<Class>)->usize {
     assert!(!ids.is_empty());
-    let favored=|id:u32|class.is_some_and(|c|c.weapon_types().contains(&((id&0x0fffffff)/1_000_000)));
+    let favored=|id:u32|class.is_some_and(|c|c.weapon_types().contains(&kind(id)));
     let count=ids.iter().filter(|&&id|favored(id)).count() as u64;
     let weight=|id|preferences.iter().map(|p|p.weight(id)).max().unwrap_or(100)*if count==0 {1}else{3*count+if favored(id){7*ids.len() as u64}else{0}};
     let mut ticket=roll%ids.iter().map(|&id|weight(id)).sum::<u64>();
@@ -72,6 +76,15 @@ pub fn reward(run:&crate::Run,ids:&[u32],roll:u64)->u32 {
 mod type_name_tests {
     #[test]
     fn weapon_cards_name_their_weapon_type() {
+        for base in [12510000,12530000] {
+            assert_eq!(super::type_name(base),Some("特大武器"));
+            for item in crate::affixes::CATALOG.iter().filter(|i|crate::affixes::base(i.id)==base) {
+                assert_eq!(super::type_name(item.id+1249),Some("特大武器"));
+                assert!(super::Preference{kind:23,level:1}.weight(item.id)>100);
+                assert_eq!(super::Preference{kind:12,level:1}.weight(item.id),100);
+            }
+        }
+        assert_eq!(super::type_name(12520000),Some("大槌"));
         assert_eq!(super::type_name(2000000),Some("直剑"));assert_eq!(super::type_name(3000000),Some("大剑"));
         assert_eq!(super::type_name(33000000),Some("法杖"));assert_eq!(super::type_name(66000000),Some("大刀"));
         assert_eq!(super::type_name(99000000),None);
