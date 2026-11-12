@@ -141,7 +141,7 @@ namespace Tower.Launcher
                 case "game.pause": Stop(true); break;
                 case "game.cancel": Stop(false); break;
                 case "game.launch": _ = LaunchAsync(); break;
-                case "lobby.list": _ = LobbyListAsync(); break;
+                case "lobby.list": _ = LobbyListAsync(Text(payload, "query")); break;
                 case "lobby.host": _ = LobbyHostAsync(payload); break;
                 case "lobby.join": _ = LobbyJoinAsync(payload); break;
                 case "lobby.close": CloseLobby(); break;
@@ -667,6 +667,7 @@ namespace Tower.Launcher
 
         SteamLobby? steam;
         List<LobbyRoom> rooms = new List<LobbyRoom>();
+        bool lobbyListing;
         string LobbyFile => Path.Combine(paths.InstallDir, "tower-lobby.json");
         string LobbyVersion()
         {
@@ -680,14 +681,18 @@ namespace Tower.Launcher
             try { steam.Dispose(); } catch (Exception e) { Log.Write("关闭 Steam 大厅连接：" + e.Message); }
             steam = null;
         }
-        async Task LobbyListAsync()
+        async Task LobbyListAsync(string query = "")
         {
+            if (lobbyListing) return;
+            query = (query ?? "").Trim();
+            if (query.Length > 80 || query.Any(char.IsControl)) { form.Post("lobby", "rooms", new { error = "房间名无效" }); return; }
             var gameDir = GameDir() ?? FindGameDir();
             if (gameDir == null) { form.Post("lobby", "rooms", new { error = "没有找到游戏目录，请先在设置里选择" }); return; }
+            lobbyListing = true;
             try
             {
                 steam ??= SteamLobby.Open(gameDir);
-                rooms = await steam.ListAsync();
+                rooms = await steam.ListAsync(query);
                 var version = LobbyVersion();
                 form.Post("lobby", "rooms", new
                 {
@@ -706,6 +711,7 @@ namespace Tower.Launcher
                 CloseLobby();
                 form.Post("lobby", "rooms", new { error = e.Message });
             }
+            finally { lobbyListing = false; }
         }
         /// <summary>
         /// 自己开的房间（模组目录里的 tower-lobby.json 与 DLL 写的 tower-lobby-status.txt）：Steam 的大厅查询不一定列出自己开的房间，

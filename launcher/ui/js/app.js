@@ -939,7 +939,7 @@
       if (match) count++;
     });
     var total = dlg.querySelector('#lobbyResults');
-    if (total) total.textContent = query ? count + ' / ' + lobbyState.rooms.length + ' 个房间' : lobbyState.rooms.length + ' 个房间';
+    if (total) total.textContent = query ? count + ' / 已加载 ' + lobbyState.rooms.length + ' 个' : '已加载 ' + lobbyState.rooms.length + ' 个';
     var empty = dlg.querySelector('#lobbyNoMatch');
     if (empty) empty.hidden = count > 0;
     var list = dlg.querySelector('.lobby-list');
@@ -979,7 +979,9 @@
         '<span><button class="btn-ghost" data-lobby="refresh"' + (L.loading ? ' disabled' : '') + '>' + (L.loading ? '刷新中…' : '刷新') + '</button> ' +
         '<button class="btn-ghost primary" data-lobby="host">开房</button></span></div>' +
         '<div class="lobby-search"><input class="inp" id="lobbySearch" maxlength="80" aria-label="搜索房间" placeholder="搜索房间名、房主或房间 ID" value="' + esc(L.query || '') + '">' +
-        '<button class="btn-ghost" data-lobby="clearSearch">清空</button><span id="lobbyResults" class="lobby-hint" aria-live="polite"></span></div>';
+        '<button class="btn-ghost" data-lobby="searchRemote"' + (L.loading ? ' disabled' : '') + '>完整房间名查找</button>' +
+        '<button class="btn-ghost" data-lobby="clearSearch"' + (L.loading ? ' disabled' : '') + '>清空</button><span id="lobbyResults" class="lobby-hint" aria-live="polite"></span></div>' +
+        '<div class="lobby-hint">输入时筛选已加载列表；找不到时，填写完整房间名并点击查找，从 Steam 查询。列表数量不是大厅总数。</div>';
       if (L.mine) {
         html += '<div class="lobby-mine lobby-mine-' + esc(L.mine.state) + (L.mine.state === 'open' && !L.mine.ready ? ' lobby-mine-wait' : '') + '">你开的房间「' + esc(L.mine.name) + '」：' + esc(L.mine.detail) +
           (L.mine.state === 'open' ? '<span class="lobby-hint">（自己的房间在下面的列表里可能看不到，请让队友刷新确认）</span>' : '') + '</div>';
@@ -1022,8 +1024,17 @@
     var act = b.getAttribute('data-lobby');
     var L = lobbyState;
     if (act === 'close') { closeModal(); return; }
-    if (act === 'clearSearch') { L.query = ''; var search = document.getElementById('lobbySearch'); search.value = ''; filterLobby(); search.focus(); return; }
-    if (act === 'refresh') { L.loading = true; L.error = ''; renderLobby(); bridge.lobby.list(); return; }
+    if (act === 'searchRemote') {
+      if (L.loading) return;
+      var query = (L.query || '').trim();
+      if (!query) { toast('请填写完整房间名', 'warn'); return; }
+      L.remoteQuery = query; L.loading = true; L.error = ''; renderLobby(); bridge.lobby.list(query); return;
+    }
+    if (act === 'clearSearch') {
+      if (L.loading) return;
+      L.query = ''; L.remoteQuery = ''; L.loading = true; L.error = ''; renderLobby(); bridge.lobby.list(); return;
+    }
+    if (act === 'refresh') { if (L.loading) return; L.loading = true; L.error = ''; renderLobby(); bridge.lobby.list(L.remoteQuery || ''); return; }
     if (act === 'host') { L.view = 'host'; renderLobby(); return; }
     if (act === 'back') { L.view = 'list'; renderLobby(); return; }
     if (act === 'create') {

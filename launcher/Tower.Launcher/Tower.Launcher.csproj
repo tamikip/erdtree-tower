@@ -11,7 +11,7 @@
     <RootNamespace>Tower.Launcher</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>tower.ico</ApplicationIcon>
-    <Version>1.6.1</Version>
+    <Version>1.6.2</Version>
     <Product>黄金树爬塔启动器</Product>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>

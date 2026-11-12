@@ -112,7 +112,7 @@
     /* ---- 设置 ---- */
     /* 联机大厅（宿主 TowerHost 的 lobby.*）：列出房间、开房、加入；关掉对话框时断开启动器的 Steam 连接 */
     lobby: {
-      list: function () { post('lobby', 'list'); },
+      list: function (query) { post('lobby', 'list', { query: query || '' }); },
       host: function (room) { post('lobby', 'host', room); },
       join: function (id, password) { post('lobby', 'join', { id: id, password: password || '' }); },
       close: function () { post('lobby', 'close'); },

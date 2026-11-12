@@ -106,10 +106,11 @@ namespace Tower.Launcher
         }
 
         /// <summary>列出带爬塔标记的大厅（全世界范围，最多 500 个），10 秒内没有结果就报错</summary>
-        public async Task<List<LobbyRoom>> ListAsync()
+        public async Task<List<LobbyRoom>> ListAsync(string exactName = "")
         {
             if (disposed) throw new ObjectDisposedException(nameof(SteamLobby));
             stringFilter(matchmaking, "tower", Tag, 0);
+            if (exactName.Length > 0) stringFilter(matchmaking, "name", exactName, 0);
             distanceFilter(matchmaking, 3);
             countFilter(matchmaking, MaxRooms);
             var call = request(matchmaking);
@@ -126,7 +127,9 @@ namespace Tower.Launcher
             try
             {
                 if (!result(utils, call, buffer, 4, LobbyMatchList, out failed) || failed) throw new InvalidOperationException("Steam 大厅查询失败");
-                var count = Math.Min(Marshal.ReadInt32(buffer), MaxRooms);
+                var returned = Marshal.ReadInt32(buffer);
+                var count = Math.Min(returned, MaxRooms);
+                Log.Write($"大厅查询：mode={(exactName.Length > 0 ? "exact-name" : "browse")} requested={MaxRooms} returned={returned} read={count}");
                 var rooms = new List<LobbyRoom>();
                 for (var i = 0; i < count; i++)
                 {
