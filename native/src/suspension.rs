@@ -49,20 +49,9 @@ pub fn clear(owner:(u32,i32))->Result<(),String> {
     }Ok(())
 }
 pub fn draw(ui:&hudhook::imgui::Ui,view:Option<&super::runtime::View>) {
-    use hudhook::imgui::{Condition,Key};
+    use hudhook::imgui::Key;
     let eligible=view.and_then(|v|v.run.as_ref()).is_some_and(|r|!matches!(r.phase,erdtree_tower::Phase::Dead|erdtree_tower::Phase::Won));
     if eligible&&ui.is_key_pressed_no_repeat(Key::F6){REQUEST.store(true,Ordering::Release);}
-    let text=NOTICE.lock().map(|s|s.clone()).unwrap_or_default();
-    if !eligible&&text.is_empty(){return;}
-    ui.window("Journey suspension##tower-suspension").title_bar(false).resizable(false).movable(false)
-        .position([(ui.io().display_size[0]-375.0).max(0.0),(ui.io().display_size[1]-145.0).max(0.0)],Condition::Always)
-        .size([360.0,130.0],Condition::Always).build(||{
-            if eligible {
-                let label=match ROLE.load(Ordering::Acquire){1=>"整队保存并暂退 [F6]",2=>"保存并安全离队 [F6]",_=>"保存并暂退 [F6]"};
-                if ui.button(super::i18n::t(label)){REQUEST.store(true,Ordering::Release);}
-            }
-            if !text.is_empty(){ui.text_wrapped(super::i18n::t(&text));}
-        });
 }
 
 #[cfg(test)]
