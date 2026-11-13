@@ -1,4 +1,6 @@
 {
+  "寒霜枷锁": "Frost Shackles",
+  "敌人触发冻伤后，持续 10 秒\n行动速度 -30%，造成伤害 -20%\n再次触发刷新持续时间，不叠加": "When an enemy suffers Frostbite, for 10 seconds:\nAction speed -30%, damage dealt -20%.\nReapplying refreshes the duration; does not stack.",
   "没有持有余烬「战斗法师」": "You do not have the Battlemage ember.",
   "无效的补正": "Invalid scaling type.",
   "一局最多转换 {BATTLEMAGE_WEAPONS} 把武器": "You may convert at most {BATTLEMAGE_WEAPONS} weapons per run.",

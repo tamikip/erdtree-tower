@@ -43,6 +43,7 @@ impl Pattern {
 struct Catalog {exact:HashMap<String,String>,patterns:Vec<Pattern>,prefixes:HashMap<String,Vec<String>>}
 static CATALOG:LazyLock<Catalog>=LazyLock::new(||{
     let mut exact:HashMap<String,String>=serde_json::from_str(include_str!("../localization/official-en.json")).expect("Invalid official English catalog");
+    exact.extend(serde_json::from_str::<HashMap<String,String>>(include_str!("../localization/spells-en.json")).expect("Invalid spell English catalog"));
     exact.extend(serde_json::from_str::<HashMap<String,String>>(include_str!("../localization/en-US.json")).expect("Invalid English catalog"));
     exact.extend(serde_json::from_str::<HashMap<String,String>>(include_str!("../localization/core-en.json")).expect("Invalid core English catalog"));
     exact.extend(serde_json::from_str::<HashMap<String,String>>(include_str!("../localization/embers-en.json")).expect("Invalid ember English catalog"));

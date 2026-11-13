@@ -10,15 +10,16 @@ static class MelinaAssets {
         var bosses=File.ReadAllLines(Path.Combine(dir,"boss-pool.txt")).Select(l=>l.Split('|')).ToArray();
         bool SoloBoss(string[] p)=>p.Length>10&&p[10].Length>0;
         bool SoloEnemy(string[] p)=>p.Length>5&&(p[5]=="solo"||p[5]=="party");
+        bool Latest(string[] p)=>new[]{4000,4491,4460}.Contains(int.Parse(p[2]));
         // 序号 153 起的 Boss（DLC 的融泥骑士、黄金河马、贝勒、拉塔恩、梅瑟莫）排在新普通怪之后，与 native/src/enemies.rs 的 LATE_BOSS_FIRST 相同
         bool Late(string[] p)=>int.Parse(p[2])>=153;
         return pool.Where(p=>!Solo(p)&&!SoloEnemy(p)).Select(p=>p[4])
             .Concat(bosses.Where(p=>!SoloBoss(p)).Select(p=>p[7]))
             .Concat(pool.Where(Solo).Select(p=>p[4]))
             .Concat(bosses.Where(p=>SoloBoss(p)&&!Late(p)).Select(p=>p[7]))
-            .Concat(pool.Where(SoloEnemy).Select(p=>p[4]))
+            .Concat(pool.Where(p=>SoloEnemy(p)&&!Latest(p)).Select(p=>p[4]))
             .Concat(bosses.Where(p=>Late(p)&&int.Parse(p[2])<159).Select(p=>p[7])).Concat(new[]{"英雄石像鬼"})
-            .Concat(bosses.Where(p=>int.Parse(p[2])>=159).Select(p=>p[7])).Distinct().ToArray();
+            .Concat(bosses.Where(p=>int.Parse(p[2])>=159).Select(p=>p[7])).Concat(pool.Where(Latest).Select(p=>p[4])).Distinct().ToArray();
     }
     public static IEnumerable<(int id,string text)> PreviewTexts(string[] names) {
         for(int i=0;i<names.Length;i++)for(int n=1;n<=15;n++)yield return (PreviewFirst+i*16+n,$"{names[i]} ×{n}");

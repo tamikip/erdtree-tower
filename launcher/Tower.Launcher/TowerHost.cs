@@ -668,6 +668,8 @@ namespace Tower.Launcher
         SteamLobby? steam;
         List<LobbyRoom> rooms = new List<LobbyRoom>();
         bool lobbyListing;
+        string? queuedLobbyQuery;
+        int lobbyGeneration;
         string LobbyFile => Path.Combine(paths.InstallDir, "tower-lobby.json");
         string LobbyVersion()
         {
@@ -677,26 +679,30 @@ namespace Tower.Launcher
         }
         void CloseLobby()
         {
+            lobbyGeneration++; queuedLobbyQuery = null;
             if (steam == null) return;
             try { steam.Dispose(); } catch (Exception e) { Log.Write("关闭 Steam 大厅连接：" + e.Message); }
             steam = null;
         }
         async Task LobbyListAsync(string query = "")
         {
-            if (lobbyListing) return;
+            if (lobbyListing) { queuedLobbyQuery = query; return; }
             query = (query ?? "").Trim();
             if (query.Length > 80 || query.Any(char.IsControl)) { form.Post("lobby", "rooms", new { error = "房间名无效" }); return; }
             var gameDir = GameDir() ?? FindGameDir();
             if (gameDir == null) { form.Post("lobby", "rooms", new { error = "没有找到游戏目录，请先在设置里选择" }); return; }
             lobbyListing = true;
+            var generation = lobbyGeneration;
             try
             {
                 steam ??= SteamLobby.Open(gameDir);
                 rooms = await steam.ListAsync(query);
+                if (generation != lobbyGeneration) return;
                 var version = LobbyVersion();
                 form.Post("lobby", "rooms", new
                 {
                     version,
+                    limited = steam.ListLimited,
                     mine = OwnRoom(),
                     rooms = rooms.Select(r => new
                     {
@@ -707,11 +713,15 @@ namespace Tower.Launcher
             }
             catch (Exception e) when (e is InvalidOperationException || e is TimeoutException || e is DllNotFoundException || e is EntryPointNotFoundException || e is BadImageFormatException)
             {
+                if (generation != lobbyGeneration) return;
                 Log.Write("大厅列表失败：" + e.Message);
                 CloseLobby();
                 form.Post("lobby", "rooms", new { error = e.Message });
             }
-            finally { lobbyListing = false; }
+            finally {
+                lobbyListing = false;
+                if (queuedLobbyQuery != null) { var next = queuedLobbyQuery; queuedLobbyQuery = null; _ = LobbyListAsync(next); }
+            }
         }
         /// <summary>
         /// 自己开的房间（模组目录里的 tower-lobby.json 与 DLL 写的 tower-lobby-status.txt）：Steam 的大厅查询不一定列出自己开的房间，
@@ -754,7 +764,7 @@ namespace Tower.Launcher
             var roomPassword = Text(payload, "password");
             var max = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("max", out var m) && m.TryGetInt32(out var n) ? n : 4;
             if (name.Length == 0 || name.Length > 32) { Toast("房间名请填 1–32 个字", "warn"); return; }
-            if (max < 2 || max > 8) { Toast("房间人数为 2–8", "warn"); return; }
+            if (max < 2 || max > 6) { Toast("房间人数为 2–6", "warn"); return; }
             if (roomPassword.Length > 32) { Toast("房间密码最多 32 个字", "warn"); return; }
             var locked = roomPassword.Length > 0;
             var salt = locked ? SteamLobby.RandomSalt() : "";
@@ -789,6 +799,8 @@ namespace Tower.Launcher
             }
             else password = room.Password;
             if (password.Length < 8) { Toast("房间数据不完整，请刷新列表", "warn"); return; }
+            var passwordError = LobbyLaunch.PasswordError(room.Locked, password, room.PasswordFingerprint);
+            if (passwordError != null) { Toast(passwordError, "warn", 6000); return; }
             await LaunchAsync(prepare: () =>
             {
                 if (!UseSeamlessPassword(password)) return false;

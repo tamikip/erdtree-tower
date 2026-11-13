@@ -2113,3 +2113,7 @@ html.reduced-motion *::after {
 .lobby-mine .lobby-hint { margin-left: 6px; }
 .lobby-mine-failed, .lobby-mine-missing { background: rgba(224, 96, 80, 0.14); }
 .lobby-mine-wait { background: rgba(224, 178, 90, 0.2); }
+.lobby-pages { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; padding-top: 10px; color: var(--c-text-dim); font-size: 12px; }
+.lobby-pages[hidden] { display: none; }
+.lobby-pages .btn-ghost { min-width: 30px; padding: 5px 9px; }
+.lobby-pages .btn-ghost:disabled { opacity: .4; cursor: default; }

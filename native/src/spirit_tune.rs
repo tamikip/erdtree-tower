@@ -16,7 +16,10 @@ pub fn inventory_peak(data:&PlayerGameData)->u8 {
         .filter(|e|e.quantity>0&&e.item_id.category()==ItemCategory::Goods)
         .filter_map(|e|spirit_level(0x40000000|e.item_id.param_id())).max().unwrap_or(0)
 }
-fn peak(data:&PlayerGameData)->u8 {PEAK.load(Ordering::Relaxed).max(inventory_peak(data))}
+fn peak(data:&PlayerGameData)->u8 {
+    let weapon=unsafe {SoloParamRepository::instance()}.map_or(0,|params|(super::smith::effective_peak(data,params)/5) as u8);
+    PEAK.load(Ordering::Relaxed).max(inventory_peak(data)).max(weapon).min(SPIRIT_MAX)
+}
 fn choices(owned:&[u32],peak:u8)->Vec<Offer> {
     let mut offers:Vec<Offer>=Vec::new();
     for &source in owned {

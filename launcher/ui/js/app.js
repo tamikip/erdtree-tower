@@ -929,15 +929,32 @@
     var dlg = document.getElementById('lobbyDialog');
     if (!dlg) return;
     var query = (lobbyState.query || '').trim().toLowerCase();
-    var count = 0;
+    var matches = [];
     dlg.querySelectorAll('.lobby-room').forEach(function (row, index) {
       var room = lobbyState.rooms[index];
       var match = !query || [room.name, room.host, room.id].some(function (value) {
         return String(value || '').toLowerCase().indexOf(query) !== -1;
       });
-      row.hidden = !match;
-      if (match) count++;
+      row.hidden = true;
+      if (match) matches.push(row);
     });
+    var count = matches.length, pages = Math.max(1, Math.ceil(count / 20));
+    var page = Math.max(0, Math.min(lobbyState.page || 0, pages - 1));
+    lobbyState.page = page;
+    matches.slice(page * 20, page * 20 + 20).forEach(function (row) { row.hidden = false; });
+    var pager = dlg.querySelector('#lobbyPages');
+    if (pager) {
+      pager.hidden = count === 0;
+      var buttons = '<button class="btn-ghost" data-lobby="page" data-page="' + (page - 1) + '"' + (page === 0 ? ' disabled' : '') + '>上一页</button>';
+      var shown = [];
+      for (var p = 0; p < pages; p++) {
+        if (p !== 0 && p !== pages - 1 && Math.abs(p - page) > 2) continue;
+        if (shown.length && p - shown[shown.length - 1] > 1) buttons += '<span>…</span>';
+        shown.push(p);
+        buttons += '<button class="btn-ghost' + (p === page ? ' primary' : '') + '" data-lobby="page" data-page="' + p + '"' + (p === page ? ' aria-current="page"' : '') + '>' + (p + 1) + '</button>';
+      }
+      pager.innerHTML = buttons + '<button class="btn-ghost" data-lobby="page" data-page="' + (page + 1) + '"' + (page + 1 === pages ? ' disabled' : '') + '>下一页</button><span>' + (page + 1) + ' / ' + pages + ' 页 · 每页 20 个</span>';
+    }
     var total = dlg.querySelector('#lobbyResults');
     if (total) total.textContent = query ? count + ' / 已加载 ' + lobbyState.rooms.length + ' 个' : '已加载 ' + lobbyState.rooms.length + ' 个';
     var empty = dlg.querySelector('#lobbyNoMatch');
@@ -949,6 +966,7 @@
   document.addEventListener('input', function (e) {
     if (e.target.id !== 'lobbySearch') return;
     lobbyState.query = e.target.value;
+    lobbyState.page = 0;
     filterLobby();
     var list = document.querySelector('.lobby-list');
     if (list) list.scrollTop = 0;
@@ -967,7 +985,7 @@
       html += '<div class="lobby-hint">开房后启动器会自动设置无缝联机密码并启动游戏；进游戏后照常用无缝联机的道具开启联机，房间就会出现在大厅里，队友不用填密码。</div>' +
         '<div class="set-row"><div class="label">房间名</div><div class="ctrl"><input class="inp" id="lobbyName" maxlength="32" placeholder="例如：一起爬塔"></div></div>' +
         '<div class="set-row"><div class="label">人数上限</div><div class="ctrl"><select class="inp" id="lobbyMax">' +
-        [2, 3, 4, 5, 6, 7, 8].map(function (n) { return '<option value="' + n + '"' + (n === 4 ? ' selected' : '') + '>' + n + ' 人</option>'; }).join('') +
+        [2, 3, 4, 5, 6].map(function (n) { return '<option value="' + n + '"' + (n === 4 ? ' selected' : '') + '>' + n + ' 人</option>'; }).join('') +
         '</select></div></div>' +
         '<div class="set-row"><div class="label">房间密码<div class="hint">可不填；填了就是私密房间，只有知道密码的人能进</div></div>' +
         '<div class="ctrl"><input class="inp" id="lobbyPassword" maxlength="32" type="password" placeholder="不填即公开"></div></div>' +
@@ -1010,6 +1028,8 @@
         }).join('') + '</ul><div class="lobby-empty" id="lobbyNoMatch" hidden>没有匹配的房间，试试其他关键词或刷新列表</div>';
       }
     }
+    if (L.view !== 'host') html += '<div id="lobbyPages" class="lobby-pages"></div>' +
+      (L.limited ? '<div class="lobby-hint">部分分组仍达到查询上限，列表可能不完整；找不到时请用完整房间名查找。</div>' : '');
     html += '</div>';
     dlg.innerHTML = html;
     filterLobby();
@@ -1023,6 +1043,13 @@
     if (!b || !document.getElementById('lobbyDialog')) return;
     var act = b.getAttribute('data-lobby');
     var L = lobbyState;
+    if (act === 'page') {
+      var nextPage = Number(b.getAttribute('data-page'));
+      if (!Number.isInteger(nextPage) || nextPage < 0) return;
+      L.page = nextPage; filterLobby();
+      var pageList = document.querySelector('.lobby-list'); if (pageList) pageList.scrollTop = 0;
+      return;
+    }
     if (act === 'close') { closeModal(); return; }
     if (act === 'searchRemote') {
       if (L.loading) return;
@@ -1066,7 +1093,7 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' || e.isComposing || e.target.id === 'lobbySearch' || !document.getElementById('lobbyDialog')) return;
-    var confirm = document.querySelector('[data-lobby="joinConfirm"]') || document.querySelector('[data-lobby="create"]');
+    var confirm = Array.prototype.find.call(document.querySelectorAll('[data-lobby="joinConfirm"], [data-lobby="create"]'), function (button) { return button.offsetParent !== null; });
     if (confirm) confirm.click();
   });
 
@@ -2119,6 +2146,8 @@
         lobbyState.loading = false;
         lobbyState.error = p.error || '';
         lobbyState.rooms = p.rooms || [];
+        lobbyState.limited = !!p.limited;
+        lobbyState.page = 0;
         if (p.version) lobbyState.version = p.version;
         lobbyState.mine = p.mine || null;
         if (lobbyState.joining && !lobbyState.rooms.some(function (r) { return r.id === lobbyState.joining; })) lobbyState.joining = null;

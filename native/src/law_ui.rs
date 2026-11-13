@@ -25,7 +25,7 @@ fn place(id:usize)->(usize,[f32;2]) {
     let n=&NODES[id];let c=f32::from(n.col.saturating_sub(1));
     let (row,pair)=match n.row {0=>(0,None),1=>(1,None),2=>(2,Some(0.0)),9=>(2,Some(1.0)),10=>(2,Some(2.0)),3=>(3,None),4=>(4,None),5=>(5,Some(0.0)),6=>(5,Some(1.0)),7=>(6,None),_=>(7,None)};
     let gap=match n.art {2|13|16|17=>24.0,3|14=>48.0,18=>72.0,_=>0.0};
-    let x=match pair {Some(p)=>LEFT+p*300.0+c*144.0,None=>LEFT+c*158.0+gap};
+    let x=if n.row==0 {LEFT+c*148.0}else{match pair {Some(p)=>LEFT+p*300.0+c*144.0,None=>LEFT+c*158.0+gap}};
     (row,[x,124.0+row as f32*66.0+n.branch as f32*28.0])
 }
 /// 手柄方向键移动焦点：左右只在同一行里走，上下走到最近的一行里横向最近的卡片

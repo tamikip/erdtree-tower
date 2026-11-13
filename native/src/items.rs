@@ -60,6 +60,7 @@ pub fn give(entries: &[(i32, i32, i32)]) -> Result<(), String> {
         give(manager, items.as_ptr(), output.as_mut_ptr(), 0);
     }
     super::log(format!("Item grant requested: {entries:?}"));
+    super::spell_affixes::granted(entries);
     Ok(())
 }
 

@@ -201,10 +201,11 @@ fn dlc_shop_pools_are_reachable_with_affixes_and_native_categories() {
     let mut seen=[false;6];
     for seed in 0..2000 {
         for item in stock(&Run::new(seed,erdtree_tower::Class::Astrologer)) {
-            let base=erdtree_tower::affixes::base(if item.kind==1 {0x10000000|item.id as u32}else{item.id as u32})&0x0fffffff;
+            let tag=match item.kind {1=>0x10000000,2=>0x20000000,3=>0x40000000,_=>0};
+            let base=erdtree_tower::affixes::base(tag|item.id as u32)&0x0fffffff;
             seen[0]|=item.kind==0&&base==64500000;
             seen[1]|=item.kind==1&&(5000000..6000000).contains(&base);
-            seen[2]|=item.kind==2&&item.id==8220;
+            seen[2]|=item.kind==2&&base==8220;
             seen[3]|=item.kind==3&&item.id==2004320;
             seen[4]|=item.kind==4&&item.id==409000;
             seen[5]|=item.kind==3&&(2011000..=2011070).contains(&item.id);

@@ -7,8 +7,8 @@ use crate::runtime::{self,Action,View};
 struct Detail {icon:u32,name:String,info:String,caption:String,stats:String,skill:String}
 static RARITIES:LazyLock<HashMap<u32,u8>>=LazyLock::new(||include_str!("../../scene-assets/reward-rarities.tsv").lines().chain(include_str!("../../scene-assets/affix-rarities.tsv").lines()).chain(include_str!("../../scene-assets/affix-v2-rarities.tsv").lines()).chain(include_str!("../../scene-assets/talisman-rarities.tsv").lines()).map(|line| {
     let (id,rarity)=line.split_once('\t').unwrap();(id.parse().unwrap(),rarity.parse().unwrap())
-}).chain(std::iter::once((0x40000000|super::smith::VOUCHER,0))).collect());
-pub fn item_quality(id:u32)->u8 {RARITIES.get(&erdtree_tower::rewards::spirit_base(id)).copied().unwrap_or(0).min(3)}
+}).chain(include_str!("../../scene-assets/spell-affix-rarities.tsv").lines().chain(include_str!("../../scene-assets/talisman-passive-rarities.tsv").lines()).map(|line|{let(id,tier)=line.split_once('\t').unwrap();(id.parse().unwrap(),tier.parse().unwrap())})).chain(std::iter::once((0x40000000|super::smith::VOUCHER,0))).collect());
+pub fn item_quality(id:u32)->u8 {erdtree_tower::spell_affixes::variant(id).map(|v|v.tier).unwrap_or_else(||RARITIES.get(&erdtree_tower::rewards::spirit_base(id)).copied().unwrap_or(0)).min(3)}
 pub(crate) fn rarity_color(tier:usize)->[f32;4] {
     static COLORS:LazyLock<[[f32;4];4]>=LazyLock::new(|| {
         let rows:Vec<_>=include_str!("../../scene-assets/equipment-colors.txt").lines().enumerate().map(|(index,line)| {
@@ -17,6 +17,19 @@ pub(crate) fn rarity_color(tier:usize)->[f32;4] {
         }).collect();rows.try_into().unwrap()
     });
     COLORS[tier.min(3)]
+}
+#[test]
+fn spell_affix_cards_keep_quality_name_and_original_description_and_icon() {
+    let run=Run::new(31,erdtree_tower::Class::Astrologer);
+    for v in erdtree_tower::spell_affixes::VARIANTS.iter() {
+        assert_eq!(item_quality(v.item.id),v.tier);
+        let detail=offer_detail(&run,0,0,&Reward::Item(v.item.id)).unwrap();
+        assert_eq!(detail.icon,DETAILS[&v.base].icon);
+        assert_eq!(card_summary(&detail),card_summary(&DETAILS[&v.base]));
+        assert_eq!(detail.name,v.item.name);
+        let translated=erdtree_tower::localization::translate_en(&DETAILS[&v.item.id].info);
+        assert!(!translated.chars().any(|c|('\u{4e00}'..='\u{9fff}').contains(&c)),"{translated}");
+    }
 }
 #[test]
 fn affixed_equipment_details_and_icons_cover_every_variant() {
@@ -138,6 +151,10 @@ static DETAILS:LazyLock<HashMap<u32,Detail>>=LazyLock::new(|| {
         let p:Vec<_>=line.split('\t').collect();
         (p[0].parse().unwrap(),Detail{icon:p[1].parse().unwrap(),name:p[2].into(),info:p[3].replace("\\n","\n"),caption:p[4].replace("\\n","\n"),stats:p[5].replace("\\n","\n"),skill:p[6].replace("\\n","\n")})
     }).collect();
+    for line in include_str!("../../scene-assets/spell-affix-details.tsv").lines().chain(include_str!("../../scene-assets/talisman-passive-details.tsv").lines()) {
+        let p:Vec<_>=line.split('\t').collect();
+        result.insert(p[0].parse().unwrap(),Detail{icon:p[1].parse().unwrap(),name:p[2].into(),info:p[3].replace("\\n","\n"),caption:p[4].replace("\\n","\n"),stats:p[5].replace("\\n","\n"),skill:p[6].replace("\\n","\n")});
+    }
     result.insert(0x40000000|super::smith::VOUCHER,Detail{icon:990104,name:"强化石".into(),info:"在营地铁匠或商店强化武器，也可升阶护符、调灵骨灰".into(),caption:String::new(),stats:String::new(),skill:String::new()});
     for (id,detail) in &mut result {
         // 原版没有战技的盾牌，默认战灰是“无技能”，中文名是占位的“DLC dummy”
@@ -285,10 +302,10 @@ fn item_id(run:&Run,reward:&Reward)->Option<u32> {
 const EMBER_EMBLEMS:u32=990000;
 static EMBLEMS_READY:LazyLock<bool>=LazyLock::new(|| {
     let root=crate::LOG_PATH.with_file_name("scene-assets").join("reward-icons");
-    (0..erdtree_tower::embers::Ember::ALL.len() as u32).all(|i|std::fs::metadata(root.join(format!("{}.rgba",EMBER_EMBLEMS+i))).is_ok_and(|m|m.len()==160*160*4))
+    erdtree_tower::embers::Ember::ALL.into_iter().all(|e|std::fs::metadata(root.join(format!("{}.rgba",EMBER_EMBLEMS+e.icon_index() as u32))).is_ok_and(|m|m.len()==160*160*4))
 });
 pub fn ember_icon(ember:erdtree_tower::embers::Ember)->Option<u32> {
-    if *EMBLEMS_READY {return Some(EMBER_EMBLEMS+ember.index() as u32);}
+    if *EMBLEMS_READY {return Some(EMBER_EMBLEMS+ember.icon_index() as u32);}
     DETAILS.get(&(0x20000000|erdtree_tower::embers::icon_talisman(ember))).map(|detail|detail.icon)
 }
 /// 特殊奖励的卡片图标（scene-builder/extra_reward_icons.py 生成的 990100 起 5 张）：武器强化、圣杯扩容、记忆扩容、卢恩、强化石；
@@ -320,6 +337,7 @@ fn card_summary(detail:&Detail)->String {
 }
 fn offer_detail(run:&Run,node:usize,slot:usize,reward:&Reward)->Option<Detail> {
     let id=item_id(run,reward)?;let mut detail=DETAILS.get(&id)?.clone();
+    if let Some(spell)=erdtree_tower::spell_affixes::variant(id){detail.info=card_summary(&DETAILS[&spell.base]);}
     let gem=super::random_ashes::preview(run,node,slot,id);
     if let Some((name,text))=super::random_ashes::description(gem){detail.skill=format!("{name}\n{}",text.replace("\\n","\n"));}
     Some(detail)
@@ -666,7 +684,7 @@ impl Panel {
                 let preview=offer_detail(run,id,i,reward);let detail=preview.as_ref();
                 let (category,title,summary)=match reward {
                     Reward::Item(id)=>{
-                        let item=erdtree_tower::rewards::lookup(*id);let base=erdtree_tower::affixes::base(*id);let legendary=erdtree_tower::elite::LEGENDARY.contains(&base);
+                        let item=erdtree_tower::rewards::lookup(*id);let base=erdtree_tower::affixes::base(*id);let legendary=erdtree_tower::spell_affixes::variant(*id).is_none()&&erdtree_tower::elite::LEGENDARY.contains(&base);
                         let category=item.map_or("物品",|v|if legendary {match v.kind {erdtree_tower::rewards::ItemKind::Sorcery=>"传说魔法",erdtree_tower::rewards::ItemKind::Incantation=>"传说祷告",_=>"传说武器"}}else if erdtree_tower::elite::EPIC.contains(&base){"史诗武器"}else{v.kind.label()});
                         (category,detail.map_or("未知物品".into(),|v|v.name.clone()),detail.map_or(String::new(),card_summary))
                     },
@@ -679,7 +697,7 @@ impl Panel {
                     Reward::FlaskCapacity=>("增益","圣杯扩容".into(),"红、蓝瓶上限各 +1\n本局生效，不补瓶".into()),
                     Reward::MemorySlot=>("增益","记忆扩容".into(),"记忆栏位 +1\n魔法与祷告共用，本局生效".into()),
                     Reward::StarStream=>("增益","星流引导".into(),"彗星亚兹勒随视角左右瞄准\n光束保持水平".into()),
-                    Reward::Ember(ember)=>("余烬",ember.name().into(),format!("{}\n本局生效{}",ember.effect(),ember_class_label(*ember).map_or(String::new(),|l|format!(" · {l}")))),
+                    Reward::Ember(ember)=>("余烬",ember.name().into(),ember.effect().into()),
                 };
                 let tier=quality(run,reward);
                 // 余烬：卡面与名字按余烬的品质着色，类别写成“余烬 · 品质”，外加一圈余火色的外框，和普通奖励区分开

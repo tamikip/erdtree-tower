@@ -3,9 +3,9 @@ using SoulsFormats;
 // 同品质的重复词条叠加：词条效果是装备的常驻效果（AffixAssets.EffectFirst + 种类×10 + 品质），游戏对同一编号只保留一份，
 // 两件装备带同一词条同一品质时只算一次。这里给每个词条效果复制 Copies 份数值相同、编号不同的效果
 // （First + 份数×1000 + 原编号偏移），由原生 DLL（native/src/affix_stack.rs）按身上重复的件数挂上。
-// 最多 10 件装备（6 个武器栏 + 4 件防具）；第 0 份用于补足原版未激活的收起武器。
+// 最多 14 件装备（6 个武器栏 + 4 件防具 + 4 枚护符）；第 0 份补足非原生常驻效果。
 static class AffixStackAssets {
-    public const int First=9880000,Copies=9,Span=1000;
+    public const int First=9880000,Copies=13,Span=1000;
     static bool Ours(int id)=>id>=First&&id<First+Span*(Copies+1)&&(id-First)%Span<AffixAssets.Kinds*10;
     static bool Affix(int id)=>id>=AffixAssets.EffectFirst&&id<AffixAssets.EffectFirst+AffixAssets.Kinds*10;
     public static void Patch(string input,string output) {

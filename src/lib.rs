@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod coordinator;
+pub mod suspension;
 pub mod party_rewards;
 pub mod party_link;
 pub mod party_game;
@@ -34,6 +35,8 @@ pub mod journal;
 pub mod score;
 pub mod legacy;
 pub mod weapon_training;
+pub mod spell_affixes;
+pub mod talisman_passives;
 pub mod transmog;
 pub mod titles;
 pub mod auras;
@@ -217,6 +220,8 @@ pub struct Run {
     #[serde(default)]
     pub affix_equipment: bool,
     #[serde(default)]
+    pub spell_affixes: bool,
+    #[serde(default)]
     pub affix_rules: u8,
     #[serde(default)]
     pub boss_reward_rules: u8,
@@ -225,6 +230,8 @@ pub struct Run {
     pub class_rules: u8,
     #[serde(default)]
     pub talisman_affixes: bool,
+    #[serde(default)]
+    pub talisman_passives: bool,
     #[serde(default)]
     pub ruby_spells: bool,
     #[serde(default)]
@@ -690,10 +697,12 @@ impl Run {
         Self {
             schema: 7,
             affix_equipment: true,
+            spell_affixes: true,
             affix_rules: 5,
             boss_reward_rules: 2,
             class_rules: 1,
             talisman_affixes: true,
+            talisman_passives: true,
             ruby_spells: false,
             boss_affixes: true,
             boss_affix_rules: 1,
@@ -1209,6 +1218,9 @@ impl Run {
             (previous==*offers).then_some(*id)
         }else{None};
         run.embers.retain(|ember|!ember.retired());
+        if let Phase::Reward{id,ref offers}=run.phase {
+            if offers.iter().any(|r|matches!(r,Reward::Ember(e) if e.retired())) {run.phase=Phase::Reward{id,offers:run.offers(id)};}
+        }
         if let Some(id)=old_rewards {run.phase=Phase::Reward{id,offers:run.offers(id)};}
         if run.ruby_spells {
             run.ruby_spells=false;

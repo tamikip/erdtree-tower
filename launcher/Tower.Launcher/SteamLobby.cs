@@ -12,7 +12,7 @@ namespace Tower.Launcher
     sealed class LobbyRoom
     {
         public ulong Id;
-        public string Name = "", Host = "", State = "", Version = "", Salt = "", Password = "";
+        public string Name = "", Host = "", State = "", Version = "", Salt = "", Password = "", PasswordFingerprint = "";
         public int Players, Max;
         public bool Locked, Open, Started;
     }
@@ -105,12 +105,26 @@ namespace Tower.Launcher
             return new SteamLobby(module);
         }
 
-        /// <summary>列出带爬塔标记的大厅（全世界范围，最多 500 个），10 秒内没有结果就报错</summary>
+        public bool ListLimited { get; private set; }
+        public int ListQueries { get; private set; }
+        int returnedCount;
+        /// <summary>饱和列表分组查询并去重；精确房间名条件应用于每次请求。</summary>
         public async Task<List<LobbyRoom>> ListAsync(string exactName = "")
+        {
+            var found = await LobbyBrowse.CollectAsync(async filters => {
+                var rooms = await QueryAsync(exactName, filters);
+                return new LobbyBrowse.Page<LobbyRoom>(rooms, returnedCount >= 50);
+            }, room => room.Id);
+            ListLimited = found.Limited; ListQueries = found.Queries;
+            Log.Write($"大厅汇总：queries={found.Queries} unique={found.Rooms.Count} limited={found.Limited}");
+            return found.Rooms;
+        }
+        async Task<List<LobbyRoom>> QueryAsync(string exactName, IReadOnlyList<KeyValuePair<string,string>> filters)
         {
             if (disposed) throw new ObjectDisposedException(nameof(SteamLobby));
             stringFilter(matchmaking, "tower", Tag, 0);
             if (exactName.Length > 0) stringFilter(matchmaking, "name", exactName, 0);
+            foreach (var filter in filters) stringFilter(matchmaking, filter.Key, filter.Value, 0);
             distanceFilter(matchmaking, 3);
             countFilter(matchmaking, MaxRooms);
             var call = request(matchmaking);
@@ -118,6 +132,7 @@ namespace Tower.Launcher
             bool failed = false;
             for (var i = 0; ; i++)
             {
+                if (disposed) throw new ObjectDisposedException(nameof(SteamLobby));
                 runCallbacks();
                 if (completed(utils, call, out failed)) break;
                 if (i >= 100) throw new TimeoutException("Steam 大厅查询超时");
@@ -128,6 +143,7 @@ namespace Tower.Launcher
             {
                 if (!result(utils, call, buffer, 4, LobbyMatchList, out failed) || failed) throw new InvalidOperationException("Steam 大厅查询失败");
                 var returned = Marshal.ReadInt32(buffer);
+                returnedCount = returned;
                 var count = Math.Min(returned, MaxRooms);
                 Log.Write($"大厅查询：mode={(exactName.Length > 0 ? "exact-name" : "browse")} requested={MaxRooms} returned={returned} read={count}");
                 var rooms = new List<LobbyRoom>();
@@ -140,6 +156,7 @@ namespace Tower.Launcher
                         Id = id, Name = Read(id, "name"), Host = Read(id, "host"), State = Read(id, "state"), Version = Read(id, "v"),
                         Players = int.TryParse(Read(id, "players"), out var p) ? p : 1, Max = int.TryParse(Read(id, "max"), out var m) ? m : 0,
                         Locked = Read(id, "lock") == "1", Open = Read(id, "open") == "1", Started = Read(id, "started") == "1", Salt = Read(id, "salt"), Password = Read(id, "pwd"),
+                        PasswordFingerprint = Read(id, "pwd_sha256"),
                     });
                 }
                 return rooms;
@@ -184,7 +201,7 @@ namespace Tower.Launcher
             using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
             return Hex(bytes);
         }
-        /// <summary>私密房间的无缝联机密码：SHA-256(盐 + ":" + 房间密码) 的前 24 位十六进制；大厅里只公开盐</summary>
+        /// <summary>私密房间的无缝联机密码：SHA-256(盐 + ":" + 房间密码) 的前 24 位十六进制；大厅公开盐和派生密码的摘要</summary>
         public static string Derive(string salt, string roomPassword)
         {
             using var sha = SHA256.Create();

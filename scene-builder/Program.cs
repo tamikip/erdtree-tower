@@ -1,5 +1,25 @@
 using SoulsFormats;
 using System.Numerics;
+if(args.Length==4&&args[3]=="golden-shield-patch") {BossAffixAssets.PatchGolden(args[2],args[1]);return;}
+if(args.Length==4&&args[3]=="frost-shackle-patch") {FrostShackleAssets.Patch(args[2],args[1],args[0]);return;}
+if(args.Length==4&&args[3]=="talisman-passive-build") {TalismanPassiveAssets.Build(args[2],args[1],args[0]);return;}
+if(args.Length==4&&args[3]=="patches-event-patch") {PatchesEventAssets.Patch(args[2],args[1],args[0]);return;}
+if(args.Length==4&&args[3]=="patches-event-inspect") {Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));PatchesEventAssets.Inspect(args[2]);return;}
+if(args.Length==4&&args[3]=="spell-affix-inspect") {SpellAffixAssets.Inspect(args[2],args[1]);return;}
+if(args.Length==4&&args[3]=="spell-affix-build") {SpellAffixAssets.Build(args[2],args[1],args[0]);return;}
+if(args.Length==4&&args[3]=="spell-affix-original-descriptions") {SpellAffixAssets.OriginalDescriptions(args[2],args[1],args[0]);return;}
+if(args.Length==4&&args[3]=="enemy-expansion-verify") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    EnemyExpansionAssets.Verify(args[2]);return;
+}
+if(args.Length==5&&args[3]=="enemy-expansion-english") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    EnemyExpansionAssets.English(args[2],args[1],args[4]);return;
+}
+if(args.Length==4&&args[3]=="enemy-expansion-patch") {
+    Oodle.Oodle6Ptr=System.Runtime.InteropServices.NativeLibrary.Load(Path.Combine(args[0],"oo2core_6_win64.dll"));
+    EnemyExpansionAssets.Patch(args[2],args[1]);return;
+}
 if(args.Length==4&&args[3] is "affix-reinforcement-fix" or "affix-reinforcement-verify") {
     AffixReinforcementFix.Patch(args[2],args[1],args[3]=="affix-reinforcement-verify");return;
 }
@@ -15,6 +35,17 @@ if(args.Length==4&&args[3]=="affix-scaling-inspect") {
         foreach(var r in reinforce.Rows.Where(r=>r.ID==type||r.ID==type+7))Console.WriteLine($"REINFORCE {r.ID}: "+string.Join(" ",r.Cells.Where(c=>c.Def.InternalName.Contains("correct",StringComparison.OrdinalIgnoreCase)).Select(c=>$"{c.Def.InternalName}={c.Value}")));
     }
     return;
+}
+if(args.Length==4&&args[3]=="weapon-type-export") {
+    var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(args[2],"regulation.bin"));
+    var table=PARAM.Read(reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="EquipParamWeapon").Bytes);
+    table.ApplyParamdef(PARAMDEF.XmlDeserialize("work/SoulsRandomizers/diste/Defs/EquipParamWeapon.xml"));
+    var rows=table.Rows.ToDictionary(r=>r.ID);
+    var ids=File.ReadAllLines(Path.Combine(args[2],"reward-catalog.txt")).Select(l=>l.Split('|')).Where(p=>p[0]=="weapon").Select(p=>int.Parse(p[1]))
+        .Concat(new[]{"affix-catalog.txt","affix-v2-catalog.txt"}.SelectMany(n=>File.ReadAllLines(Path.Combine(args[2],n))).Select(l=>l.Split('|')).Where(p=>p[0]=="weapon").Select(p=>int.Parse(p[2]))).Distinct().Order().ToArray();
+    Directory.CreateDirectory(args[1]);
+    File.WriteAllLines(Path.Combine(args[1],"weapon-types.tsv"),ids.Select(id=>$"{id}\t{rows[id]["wepType"].Value}"));
+    Console.WriteLine($"Exported {ids.Length} weapon types from regulation.bin");return;
 }
 if(args.Length==4&&args[3]=="weapon-type-inspect") {
     var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(args[2],"regulation.bin"));

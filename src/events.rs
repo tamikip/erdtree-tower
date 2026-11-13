@@ -125,6 +125,7 @@ impl Run {
     pub fn resolve_story(&mut self, choice: usize) -> RuleResult<StoryEffect> {
         let id = self.active_node(NodeKind::Event)?;
         let index=self.story_index()?;
+        if index==DICE&&(self.regional_event.patches_angry||self.regional_event.patches_dead){return Err("帕琪已停止赌博".into());}
         if choice > 1 {return Err("无效事件选项".into());}
         if self.regional_event.opened!=0||self.regional_event.settled {return Err("这里的事件已经用过".into());}
         // 重练炉可以反复用：不标记“已用过”，记下次数，价格每次翻倍
@@ -164,6 +165,17 @@ impl Run {
 #[cfg(test)]
 mod gamble_tests {
     use crate::{Class,NodeKind,Run,affixes,events::*};
+    #[test]
+    fn hostile_or_dead_patches_cannot_take_bets_and_state_survives_reload() {
+        for dead in [false,true] {
+            let mut run=Run::new(42,Class::Samurai);let node=run.debug_event_test(Draw::Dice).unwrap();run.enter(node).unwrap();
+            run.gold=50000;run.regional_event.patches_angry=true;run.regional_event.patches_dead=dead;
+            let mut loaded=Run::decode(&run.encode().unwrap()).unwrap();
+            assert!(loaded.regional_event.patches_angry);assert_eq!(loaded.regional_event.patches_dead,dead);
+            assert!(loaded.resolve_story(0).is_err());assert_eq!(loaded.gold,50000);
+            loaded.leave_regional_event().unwrap();
+        }
+    }
     #[test]
     fn furnace_price_doubles_and_swaps_for_another_weapon_of_the_same_quality() {
         assert_eq!((furnace_price(0),furnace_price(1),furnace_price(3)),(1000,2000,8000));

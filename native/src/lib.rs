@@ -21,8 +21,12 @@ use hudhook::{
 };
 
 mod blessings;
+mod suspension;
+mod frost_shackle;
 mod pad;
 mod retry_item;
+mod spell_affixes;
+mod retry_rescue;
 mod options;
 mod native_settings;
 mod native_settings_keys;
@@ -378,6 +382,7 @@ impl ImguiRenderLoop for TowerPreview {
             log("First overlay frame rendered");
         }
         let view = runtime::view();
+        suspension::draw(ui,view.as_ref());
         let map_open=self.visible&&view.as_ref().and_then(|v|v.run.as_ref()).or(self.run.as_ref()).is_some_and(|r|matches!(r.phase,Phase::Map));
         if options::pressed(ui,Hotkey::Overlay)&&!map_open {
             self.visible = !self.visible;

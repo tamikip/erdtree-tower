@@ -6,6 +6,8 @@ pub const SPRING_GOLD:u32=800;
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Progress {
+    #[serde(default,skip_serializing_if="std::ops::Not::not")] pub patches_angry:bool,
+    #[serde(default,skip_serializing_if="std::ops::Not::not")] pub patches_dead:bool,
     #[serde(default,skip_serializing_if="Option::is_none")] pub mausoleum:Option<crate::mausoleum::CopyState>,
     #[serde(default)] pub trial:bool,
     pub opened: u8, pub guards: bool,

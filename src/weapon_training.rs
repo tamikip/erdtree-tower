@@ -12,11 +12,22 @@ pub const TYPES:&[(u8,&str)]=&[
     (60,"格斗术"),(61,"调香瓶"),(62,"突刺盾"),(63,"投掷剑"),(64,"反手剑"),(66,"大刀"),(67,"轻大剑"),(68,"兽爪"),
 ];
 pub fn known(kind:u8)->bool {TYPES.iter().any(|&(id,_)|id==kind)}
+static WEAPON_TYPES:std::sync::LazyLock<std::collections::HashMap<u32,u32>>=std::sync::LazyLock::new(||
+    include_str!("../scene-assets/weapon-types.tsv").lines().map(|line| {
+        let (id,raw)=line.split_once('\t').unwrap();
+        (id.parse().unwrap(),param_kind(raw.parse().unwrap()).expect("unknown weapon parameter type"))
+    }).collect());
+fn param_kind(raw:u16)->Option<u32> {Some(match raw {
+    1=>1,3=>2,5=>3,7=>4,9=>7,11=>8,13=>9,14=>10,15=>5,16=>6,
+    17=>14,19=>15,21=>11,23=>12,24=>13,25=>16,28=>17,29=>18,31=>19,
+    35=>21,37=>22,39=>20,41=>23,50=>40,51=>41,53=>42,55=>43,56=>44,
+    57=>33,61=>34,65=>30,67=>31,69=>32,87=>24,88=>60,89=>61,90=>62,
+    91=>63,92=>64,93=>67,94=>66,95=>68,_=>return None,
+})}
 pub fn kind(id:u32)->u32 {
     let base=crate::affixes::base((id&0x0fffffff)/10000*10000);
-    match base {12510000|12530000=>23,_=>base/1_000_000}
+    WEAPON_TYPES.get(&base).copied().unwrap_or(base/1_000_000)
 }
-/// 血怪手臂与铁砧大锤位于大槌编号段，实际 wepType=41（特大武器）。
 pub fn type_name(id:u32)->Option<&'static str> {
     let kind=kind(id);
     TYPES.iter().find(|&&(k,_)|u32::from(k)==kind).map(|&(_,name)|name)
@@ -74,6 +85,26 @@ pub fn reward(run:&crate::Run,ids:&[u32],roll:u64)->u32 {
 
 #[cfg(test)]
 mod type_name_tests {
+    #[test]
+    fn parameter_categories_override_misleading_id_ranges() {
+        for (id,name) in [(2080000,"曲剑"),(2090000,"大剑"),(2520000,"刀"),(2530000,"刺剑"),
+            (3500000,"重刺剑"),(8500000,"大斧"),(15010000,"斧"),(16550000,"大矛"),
+            (21550000,"小盾"),(30060000,"中盾"),(31170000,"小盾")] {
+            assert_eq!(super::type_name(id),Some(name));
+            for item in crate::affixes::CATALOG.iter().filter(|i|crate::affixes::base(i.id)==id) {
+                assert_eq!(super::type_name(item.id+1249),Some(name));
+            }
+        }
+    }
+    #[test]
+    fn parameter_table_covers_all_reward_and_affix_weapons() {
+        for item in crate::rewards::CATALOG.iter().chain(crate::affixes::CATALOG.iter())
+            .filter(|i|i.kind==crate::rewards::ItemKind::Weapon) {
+            let base=crate::affixes::base(item.id);
+            assert!(super::WEAPON_TYPES.contains_key(&base),"missing {} {}",item.id,item.name);
+        }
+        for &kind in super::WEAPON_TYPES.values(){assert!(super::known(kind as u8));}
+    }
     #[test]
     fn weapon_cards_name_their_weapon_type() {
         for base in [12510000,12530000] {

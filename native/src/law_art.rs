@@ -26,6 +26,11 @@ fn uv(index:u8)->([f32;2],[f32;2]) {
 }
 /// 画律法图标（简约线条版；线条版没加载时退回原来的插画图标）；都没加载时返回 false（调用方不画图标）
 pub fn draw_line(draw:&DrawListMut<'_>,index:u8,min:[f32;2],max:[f32;2],light:u8)->bool {
+    if index==19 {
+        let w=max[0]-min[0];let h=max[1]-min[1];let color=ImColor32::from_rgba(light,light,light,255);
+        for x in [0.12,0.48] {draw.add_polyline(vec![[min[0]+w*x,min[1]+h*0.2],[min[0]+w*(x+0.3),min[1]+h*0.5],[min[0]+w*x,min[1]+h*0.8]],color).thickness((w*0.08).max(1.0)).build();}
+        return true;
+    }
     // 精英横行复用精英徽记，并加上升箭头，不增加纹理依赖。
     let base=if index==18 {2}else{index};
     let shown=draw_from(&LINE_ATLAS,draw,base,min,max,light)||draw_from(&ATLAS,draw,base,min,max,light);

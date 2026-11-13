@@ -88,6 +88,12 @@ static class PartyDlcAssets {
             uint first=(uint)(48000000+act*10000);var existing=maps[act].Parts.Enemies.Where(p=>p.EntityID>=first&&p.EntityID<first+300).ToArray();
             int ordinal=existing.Length;
             if(!existing.Select(p=>p.EntityID).Order().SequenceEqual(Enumerable.Range(0,ordinal).Select(i=>first+(uint)i)))throw new Exception("Noncontiguous combat slot layout");
+            uint Allocate() {
+                var candidates=Enumerable.Range(0,300).Select(i=>first+(uint)i)
+                    .Concat(Enumerable.Range(1,3).SelectMany(a=>Enumerable.Range(0,300).Select(i=>(uint)(48000000+a*10000+i))));
+                foreach(var id in candidates)if(!maps.Values.Any(m=>m.Parts.GetEntries().Any(p=>p.EntityID==id||p.EntityID==id+3000000)))return id;
+                throw new Exception("Party flag capacity exceeded across all acts");
+            }
             foreach(var enemy in enemies.Where(e=>e.Act==act)) {
                 var placed=existing.Where(p=>p.NPCParamID==enemy.Npc).ToArray();
                 if(placed.Length>0) {
@@ -95,7 +101,7 @@ static class PartyDlcAssets {
                     continue;
                 }
                 for(int copy=0;copy<4;copy++) {
-                uint id=first+(uint)ordinal++;if(ordinal>300)throw new Exception("Party flag capacity exceeded");
+                uint id=Allocate();
                 Add(enemy,id,act,false,templates[enemy.Model]);Add(enemy,id+3000000,2,true,templates[enemy.Model]);
                 manifest.Add($"{act}|{enemy.Npc}|{enemy.Model}|{enemy.Think}|{copy}|{id}|{id+3000000}");
                 }
@@ -104,8 +110,7 @@ static class PartyDlcAssets {
                 var beast=BossAssets.Parts(input).Single(b=>b.Name=="坠星成兽");
                 var enemy=new Enemy(3,beast.Model,BossAssets.Npc(beast,true),beast.Think);
                 var placed=existing.SingleOrDefault(p=>p.NPCParamID==enemy.Npc);
-                uint id=placed?.EntityID??first+(uint)ordinal++;
-                if(ordinal>300)throw new Exception("Party flag capacity exceeded");
+                uint id=placed?.EntityID??Allocate();
                 if(placed==null) {
                     var template=maps[beast.Act].Parts.Enemies.First(p=>p.NPCParamID==enemy.Npc);
                     Add(enemy,id,3,false,template);Add(enemy,id+3000000,2,true,template);
@@ -128,7 +133,7 @@ static class PartyDlcAssets {
                     if(FirstActEliteAssets.Npc(enemy.Npc)) {
                         id=48030294u+(uint)(enemy.Npc-950000322);
                         if(maps.Values.Any(m=>m.Parts.Enemies.Any(p=>p.EntityID==id)))throw new Exception("Reserved first-act elite slot already occupied");
-                    } else {id=first+(uint)ordinal++;if(ordinal>300)throw new Exception("Party flag capacity exceeded");}
+                    } else {id=Allocate();}
                     Add(enemy,id,act,false,templates[enemy.Model]);Add(enemy,id+3000000,2,true,templates[enemy.Model]);
                     extra.Add($"{act}|{enemy.Npc}|{enemy.Model}|{enemy.Think}|{copy}|{id}|{id+3000000}");
                 }
@@ -155,6 +160,6 @@ static class PartyDlcAssets {
         }
         File.WriteAllLines(Path.Combine(output,"party-dlc-slots.tsv"),manifest);
         File.WriteAllLines(Path.Combine(output,"party-extra-slots.tsv"),extra);
-        PartyGuardAssets.Verify(output);PartyPlacement.Audit(output);Console.WriteLine($"Verified {manifest.Count} DLC and {extra.Count} appended slots plus matching guards; all existing placements and events preserved");
+        PartyGuardAssets.Verify(output);PartyPlacement.Audit(output,true);Console.WriteLine($"Verified {manifest.Count} DLC and {extra.Count} appended slots plus matching guards; all existing placements and events preserved");
     }
 }

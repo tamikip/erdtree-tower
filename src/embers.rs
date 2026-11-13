@@ -2,7 +2,7 @@ use serde::{Deserialize,Serialize};
 
 /// 余烬：誓约三选一里的机制增益，没有代价，不能深化；选过的整局生效
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Hash,Serialize,Deserialize)]
-pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork,SpiritResonance,Pouch,Arts,Bulwark,Breaker,Harvest,LastStand,Martyr,Mercy,Battlemage,Stride}
+pub enum Ember {Execution,Bloodlord,Frost,Deathflame,Miquella,Rise,DragonHeart,Revenge,Frenzy,Echo,Feast,Thorns,SpiritLink,SpiritBurst,SpiritFeast,SpiritCommand,SpiritTwin,SoulEater,Chain,Godslayer,SpiritKeeper,Barrier,Meditation,Glintstone,FullMoon,Footwork,SpiritResonance,Pouch,Arts,Bulwark,Breaker,Harvest,LastStand,Martyr,Mercy,Battlemage,Stride,FrostShackle}
 
 // 运行时数值（参数类的数值见 scene-builder/EmberAssets.cs，说明文字同步引用这些常量）
 pub const EXECUTION_SECONDS:u32=10;
@@ -91,13 +91,15 @@ pub const HARVEST_STEP_PERCENT:u32=1;
 pub const HARVEST_POINT_CAP:u32=1000;
 
 impl Ember {
-    pub const ALL:[Self;36]=[Self::Execution,Self::Bloodlord,Self::Frost,Self::Deathflame,Self::Miquella,Self::Rise,Self::DragonHeart,Self::Revenge,Self::Frenzy,Self::Echo,Self::Feast,Self::Thorns,
+    pub const ALL:[Self;37]=[Self::Execution,Self::Bloodlord,Self::Frost,Self::Deathflame,Self::Miquella,Self::Rise,Self::DragonHeart,Self::Revenge,Self::Frenzy,Self::Echo,Self::Feast,Self::Thorns,
         Self::SpiritLink,Self::SpiritBurst,Self::SpiritFeast,Self::SpiritCommand,Self::SpiritTwin,Self::SoulEater,Self::Chain,Self::Godslayer,Self::SpiritKeeper,
-        Self::Barrier,Self::Meditation,Self::Glintstone,Self::FullMoon,Self::Footwork,Self::SpiritResonance,Self::Pouch,Self::Arts,Self::Bulwark,Self::Breaker,Self::Harvest,Self::LastStand,Self::Martyr,Self::Mercy,Self::Battlemage];
+        Self::Barrier,Self::Meditation,Self::Glintstone,Self::FullMoon,Self::Footwork,Self::SpiritResonance,Self::Pouch,Self::Arts,Self::Bulwark,Self::Breaker,Self::Harvest,Self::LastStand,Self::Martyr,Self::Mercy,Self::Battlemage,Self::FrostShackle];
     // Retained only for old saves and archived runs.
-    pub fn retired(self)->bool {self==Self::Stride}
-    pub fn index(self)->usize {if self.retired(){36}else{Self::ALL.iter().position(|e|*e==self).unwrap()}}
+    pub fn retired(self)->bool {matches!(self,Self::Stride|Self::SpiritTwin)}
+    pub fn index(self)->usize {match self {Self::Stride=>36,Self::FrostShackle=>37,_=>Self::ALL.iter().position(|e|*e==self).unwrap()}}
+    pub fn icon_index(self)->usize {if self==Self::FrostShackle{Self::Frost.index()}else{self.index()}}
     pub fn name(self)->&'static str {match self {
+        Self::FrostShackle=>"寒霜枷锁",
         Self::Execution=>"无声处刑",Self::Bloodlord=>"鲜血君王的赐福",Self::Frost=>"永冻吐息",Self::Deathflame=>"死诞之焰",
         Self::Miquella=>"米凯拉之刃",Self::Rise=>"荷莱·露的再起",Self::DragonHeart=>"古龙之心",Self::Revenge=>"以血还血",
         Self::Frenzy=>"癫火狂热",Self::Echo=>"圣杯余响",Self::Feast=>"噬神之蛇的饱食",Self::Thorns=>"荆棘之躯",
@@ -107,6 +109,7 @@ impl Ember {
         Self::Footwork=>"黑刀刺客的身法",Self::SpiritResonance=>"灵唤师的共鸣",Self::Pouch=>"行商的无底囊",Self::Arts=>"战技的精粹",Self::Bulwark=>"坩埚骑士的铁壁",Self::Breaker=>"鲜血骑士的破势",Self::Harvest=>"处刑者的血宴",Self::LastStand=>"红狮子的不退",Self::Martyr=>"殉道者的苦修",Self::Mercy=>"黄金树的恩泽",Self::Battlemage=>"战斗法师",Self::Stride=>"已移除的余烬",
     }}
     pub fn effect(self)->String {match self {
+        Self::FrostShackle=>"敌人触发冻伤后，持续 10 秒\n行动速度 -30%，造成伤害 -20%\n再次触发刷新持续时间，不叠加".into(),
         Self::Execution=>format!("致命一击后 {EXECUTION_SECONDS} 秒内\n精力消耗 -{EXECUTION_STAMINA_CUT}%"),
         Self::Bloodlord=>format!("每次命中积累\n{BUILDUP} 点出血"),
         Self::Frost=>format!("每次命中积累\n{BUILDUP} 点冻伤"),
@@ -317,7 +320,7 @@ pub fn offer(seed:u64,held:&[Ember],spirits:bool,casting:bool,class:Option<crate
     offer_in(seed,held,spirits,casting,class,false)
 }
 fn pool(held:&[Ember],spirits:bool,casting:bool,class:Option<crate::Class>,legacy:bool)->Vec<Ember> {
-    Ember::ALL.into_iter().chain(legacy.then_some(Ember::Stride)).filter(|e|!held.contains(e)&&e.fits(spirits,casting,class)).collect()
+    Ember::ALL.into_iter().chain(legacy.then_some(Ember::Stride)).filter(|e|(legacy||!e.retired())&&!held.contains(e)&&e.fits(spirits,casting,class)).collect()
 }
 fn offer_in(seed:u64,held:&[Ember],spirits:bool,casting:bool,class:Option<crate::Class>,legacy:bool)->Option<Ember> {
     let pool=pool(held,spirits,casting,class,legacy);
@@ -384,6 +387,7 @@ pub fn carries_catalyst(run:&crate::Run)->bool {
 }
 /// 借用原版护符的图标
 pub fn icon_talisman(ember:Ember)->u32 {match ember {
+    Ember::FrostShackle=>1140,
     Ember::Execution=>5050,Ember::Bloodlord=>2160,Ember::Frost=>1140,Ember::Deathflame=>1190,Ember::Miquella=>1250,Ember::Rise=>3090,
     Ember::DragonHeart=>4020,Ember::Revenge=>2060,Ember::Frenzy=>2080,Ember::Echo=>5000,Ember::Feast=>5030,Ember::Thorns=>1210,
     Ember::SpiritLink=>6090,Ember::SpiritBurst=>6020,Ember::SpiritFeast=>2210,Ember::SpiritCommand=>3060,Ember::SpiritTwin=>6090,
@@ -403,6 +407,24 @@ pub fn thorns_damage(taken:i32,target_max:i32,boss:bool)->i32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn frost_shackle_keeps_existing_ids_and_is_universal_epic() {
+        use super::*;
+        assert_eq!(Ember::Battlemage.index(),35);assert_eq!(Ember::Stride.index(),36);
+        assert_eq!(Ember::FrostShackle.index(),37);assert_eq!(Ember::FrostShackle.icon_index(),Ember::Frost.index());
+        assert_eq!(Ember::FrostShackle.quality(),2);assert!(Ember::FrostShackle.classes().is_none());
+        assert_eq!(Ember::ALL.iter().map(|e|e.index()).collect::<std::collections::HashSet<_>>().len(),Ember::ALL.len());
+        let held:Vec<_>=Ember::ALL.into_iter().filter(|e|*e!=Ember::FrostShackle).collect();
+        assert_eq!(offer(1,&held,false,false,None),Some(Ember::FrostShackle));
+    }
+    #[test]
+    fn twin_is_temporarily_retired_without_renumbering_other_embers() {
+        use super::*;
+        assert_eq!(Ember::SpiritTwin.index(),16);assert_eq!(Ember::SoulEater.index(),17);
+        assert!(!pool(&[],true,true,Some(crate::Class::Confessor),false).contains(&Ember::SpiritTwin));
+        let mut run=crate::Run::new(1,crate::Class::Confessor);run.embers.push(Ember::SpiritTwin);
+        assert!(!crate::Run::decode(&run.encode().unwrap()).unwrap().embers.contains(&Ember::SpiritTwin));
+    }
     use super::*;
     #[test]
     fn retired_stride_is_not_offered_and_old_saves_still_load() {
@@ -441,7 +463,7 @@ mod tests {
         let held:Vec<_>=Ember::ALL.into_iter().filter(|e|e.quality()==3).collect();
         assert!((0..500).all(|seed|offer_by_quality(seed,&held,true,true,None,[0,0,0,100]).unwrap().quality()==2));
         let mut all=vec![];while let Some(e)=offer_by_quality(all.len() as u64*13,&all,true,true,None,[0,0,85,15]) {all.push(e);}
-        assert_eq!(all.len(),Ember::ALL.len());
+        assert_eq!(all.len(),Ember::ALL.iter().filter(|e|!e.retired()).count());
     }
     #[test]
     fn battlemage_cuts_damage_by_the_higher_mind_stat_and_records_weapons() {
@@ -501,13 +523,13 @@ mod tests {
     fn class_embers_only_reach_their_own_classes() {
         use crate::Class;
         let general=Ember::ALL.iter().filter(|e|e.classes().is_none()).count();
-        assert_eq!(general,13);
+        assert_eq!(general,14);
         for class in Class::PLAYABLE {
             let mut drawn=vec![];
             while let Some(e)=offer(drawn.len() as u64*29,&drawn,true,true,Some(class)) {
                 assert!(e.classes().is_none_or(|c|c.contains(&class)),"{class:?} drew {e:?}");drawn.push(e);
             }
-            let own=Ember::ALL.iter().filter(|e|e.classes().is_some_and(|c|c.contains(&class))).count();
+            let own=Ember::ALL.iter().filter(|e|!e.retired()&&e.classes().is_some_and(|c|c.contains(&class))).count();
             assert_eq!(drawn.len(),general+own,"{class:?}");assert!(own>=2);
         }
         assert!(Ember::ALL.iter().all(|e|!e.needs_spirit()||e.classes()==Some(&[Class::Confessor][..])));
@@ -519,13 +541,13 @@ mod tests {
     #[test]
     fn offers_skip_held_embers_and_run_out_cleanly() {
         let mut held=vec![];
-        for _ in 0..Ember::ALL.len() {let e=offer(held.len() as u64*31,&held,true,true,None).unwrap();assert!(!held.contains(&e));held.push(e);}
+        for _ in 0..Ember::ALL.iter().filter(|e|!e.retired()).count() {let e=offer(held.len() as u64*31,&held,true,true,None).unwrap();assert!(!held.contains(&e));held.push(e);}
         assert_eq!(offer(1,&held,true,true,None),None);
         assert_eq!(offer(5,&[],true,true,None),offer(5,&[],true,true,None));
         // 没有骨灰、也没有法杖圣印记时只出 25 枚（不分职业时），抽完就没有了
         let mut plain=vec![];
         while let Some(e)=offer(plain.len() as u64*17,&plain,false,false,None) {assert!(!e.needs_spirit()&&!e.needs_casting());plain.push(e);}
-        assert_eq!(plain.len(),25);
+        assert_eq!(plain.len(),26);
     }
     #[test]
     fn enemy_damage_is_capped_for_bosses() {
@@ -664,7 +686,7 @@ mod tests {
         assert!(picked_up>0&&casters>0);
         let mut plain=vec![];
         while let Some(e)=offer(plain.len() as u64*17,&plain,true,false,None) {assert!(!e.needs_casting());plain.push(e);}
-        assert_eq!(plain.len(),Ember::ALL.len()-4);
+        assert_eq!(plain.len(),Ember::ALL.iter().filter(|e|!e.retired()&&!e.needs_casting()).count());
         assert!(Ember::ALL.into_iter().filter(|e|e.needs_casting()).all(|e|e.quality()==if e==Ember::Meditation {3}else{2}&&!e.needs_spirit()&&!e.affects_enemies()));
     }
     #[test]

@@ -18,7 +18,7 @@ static ADVANCED:LazyLock<HashMap<u32,Vec<[u32;4]>>>=LazyLock::new(|| {
 });
 static BASE_RARITY:LazyLock<HashMap<u32,u8>>=LazyLock::new(||include_str!("../scene-assets/reward-rarities.tsv").lines().map(|l|{let (id,tier)=l.split_once('\t').unwrap();(id.parse().unwrap(),tier.parse().unwrap())}).collect());
 pub fn lookup(id:u32)->Option<&'static Item>{BY_ID.get(&id).map(|i|&CATALOG[*i])}
-pub fn base(id:u32)->u32 {BY_ID.get(&id).map_or(id,|i|VARIANTS[*i].base)}
+pub fn base(id:u32)->u32 {BY_ID.get(&id).map_or_else(||crate::talisman_passives::base(crate::spell_affixes::base(id)),|i|VARIANTS[*i].base)}
 pub fn tier(id:u32)->Option<u8>{BY_ID.get(&id).map(|i|VARIANTS[*i].tier)}
 pub fn profile(id:u32)->Option<u8>{BY_ID.get(&id).and_then(|i|VARIANTS[*i].profile)}
 pub fn common_weapon(id:u32,entropy:u64)->Option<u32> {
@@ -53,8 +53,9 @@ pub fn roll(run:&Run,id:u32,entropy:u64,repeat:bool)->Option<u32> {roll_min(run,
 /// 规则 3 起品质只看前缀，按来源决定保底；Boss 新规则仅第一张保底传说。
 /// 旧规则（affix_rules < 3）仍以原版稀有度为最低品质，忽略 min
 pub fn roll_min(run:&Run,id:u32,entropy:u64,repeat:bool,min:u8)->Option<u32> {
-    if id>>28==2{return Some(crate::talismans::roll(run,id,entropy,repeat));}
+    if id>>28==2{return Some(crate::talismans::roll_min(run,id,entropy,repeat,min));}
     if !run.affix_equipment{return Some(id);}
+    if run.spell_affixes&&crate::spell_affixes::supported(id){return crate::spell_affixes::roll(run,id,entropy,repeat,min);}
     let groups=if run.affix_rules>=2 {ADVANCED.get(&id).map(Vec::as_slice)}else{BY_BASE.get(&id).map(std::slice::from_ref)};
     let Some(groups)=groups else{return Some(id)};
     let start=if run.affix_rules>=2{crate::mix(run.reward_seed()^entropy^u64::from(id)^0xa4c4_7e99) as usize%groups.len()}else{0};

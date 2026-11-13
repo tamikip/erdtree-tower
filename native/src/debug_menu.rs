@@ -363,7 +363,7 @@ impl Menu {
         }
         ui.separator();ui.text(crate::i18n::t("余烬"));
         if ui.small_button(crate::i18n::t("预览原生余烬获得窗口（不发奖）")) {crate::ember_notice::preview(Ember::SpiritTwin);OPEN.store(false,Ordering::Relaxed);}
-        for (i,ember) in Ember::ALL.into_iter().enumerate() {
+        for (i,ember) in Ember::ALL.into_iter().enumerate().filter(|(_,e)|!e.retired()) {
             if i%3!=0 {ui.same_line_with_pos(10.0+(i%3) as f32*200.0);}
             let mut held=run.embers.contains(&ember);
             if ui.checkbox(crate::i18n::t(format!("{}##ember-{i}",ember.name())),&mut held) {send(Command::Ember(ember,held));}

@@ -5,6 +5,18 @@ namespace Tower.Update.Tests;
 
 public class LobbyLaunchTests
 {
+    [Fact]
+    public void Wrong_private_password_and_missing_verifier_block_launch()
+    {
+        var hash = LobbyLaunch.Fingerprint("derived-correct-password");
+        Assert.Null(LobbyLaunch.PasswordError(true, "derived-correct-password", hash));
+        Assert.Null(LobbyLaunch.PasswordError(true, "derived-correct-password", hash.ToUpperInvariant()));
+        Assert.Contains("密码错误", LobbyLaunch.PasswordError(true, "derived-wrong-password", hash));
+        Assert.NotNull(LobbyLaunch.PasswordError(true, "anything", ""));
+        Assert.NotNull(LobbyLaunch.PasswordError(true, "anything", new string('z', 64)));
+        Assert.Null(LobbyLaunch.PasswordError(false, "legacy-public-password", ""));
+        Assert.NotNull(LobbyLaunch.PasswordError(false, "stale-public-password", hash));
+    }
     [Theory]
     [InlineData(true, false, false, false)]
     [InlineData(false, true, false, false)]

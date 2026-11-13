@@ -32,6 +32,9 @@ impl Config {
 }
 #[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct Report {
+    #[serde(default)] pub pause_saved:Option<u64>,
+    #[serde(default)] pub leaving:bool,
+    #[serde(default)] pub resume:Option<crate::suspension::Point>,
     #[serde(default)] pub merchant_bound:bool,
     #[serde(default)] pub testing:bool,
     #[serde(default)] pub event_testing:bool,
@@ -74,15 +77,20 @@ impl ScarabClaim {
 }
 impl Report {
     pub fn new(run:&Run,epoch:u64,arrived:bool,bound:bool,alive:bool)->Self {
-        Self{merchant_bound:false,testing:false,event_testing:false,mausoleum_open:None,scarab_claim:None,law:run.law,flask_uses:0,drawing:None,trial:run.regional_event.trial,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:true,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:run.regional_event.chariot,stormveil:run.regional_event.stormveil,storm_choice:None,storm_finish:false,embers:run.embers.clone(),strikes:vec![],epoch,seed:run.seed,act:run.act,visited:run.visited.clone(),map_ready:run.phase==Phase::Map&&!run.contract_pending(),arrived,bound,alive}
+        Self{pause_saved:None,leaving:false,resume:None,merchant_bound:false,testing:false,event_testing:false,mausoleum_open:None,scarab_claim:None,law:run.law,flask_uses:0,drawing:None,trial:run.regional_event.trial,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:true,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:run.regional_event.chariot,stormveil:run.regional_event.stormveil,storm_choice:None,storm_finish:false,embers:run.embers.clone(),strikes:vec![],epoch,seed:run.seed,act:run.act,visited:run.visited.clone(),map_ready:run.phase==Phase::Map&&!run.contract_pending(),arrived,bound,alive}
     }
     pub fn unavailable(epoch:u64)->Self {
-        Self{merchant_bound:false,testing:false,event_testing:false,mausoleum_open:None,scarab_claim:None,law:Default::default(),flask_uses:0,drawing:None,trial:false,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:false,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:false,stormveil:None,storm_choice:None,storm_finish:false,embers:vec![],strikes:vec![],epoch,seed:0,act:1,visited:vec![],map_ready:false,arrived:false,bound:false,alive:false}
+        Self{pause_saved:None,leaving:false,resume:None,merchant_bound:false,testing:false,event_testing:false,mausoleum_open:None,scarab_claim:None,law:Default::default(),flask_uses:0,drawing:None,trial:false,trial_choice:None,has_stonesword_key:false,chariot_ready:false,rest_end:false,portal:false,title:0,present:false,at_hub:false,event_request:None,event_bound:None,event_applied:None,selected:None,chariot:false,stormveil:None,storm_choice:None,storm_finish:false,embers:vec![],strikes:vec![],epoch,seed:0,act:1,visited:vec![],map_ready:false,arrived:false,bound:false,alive:false}
     }
     pub fn at_hub(epoch:u64)->Self {Self{present:true,at_hub:true,alive:true,..Self::unavailable(epoch)}}
 }
 #[derive(Clone,Debug,Serialize,Deserialize)]
 pub enum Order {
+    PausePrepare{epoch:u64,ticket:u64},
+    PauseCommit{epoch:u64,ticket:u64},
+    PauseAbort{epoch:u64,ticket:u64},
+    LeaveReady{epoch:u64,player:u64},
+    ResumeReady{epoch:u64,point:crate::suspension::Point},
     DescentComplete{epoch:u64},
     MausoleumOpen{epoch:u64},
     Merchant{epoch:u64,phase:u8},
@@ -107,6 +115,7 @@ pub enum Order {
     Spawn{epoch:u64},Engage{epoch:u64},Victory{epoch:u64},Rewards{epoch:u64},Defeat{epoch:u64},Stop(String),
     /// 全队的称号：(Steam ID, 称号编号)；不分轮次，随时覆盖
     Titles(Vec<(u64,u8)>),
+    FrostShackles{epoch:u64,remaining:Vec<(u8,u16)>},
 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Stage {Map,Travel,Combat,Fighting,Service,Reward,Stopped}
@@ -275,6 +284,7 @@ impl Gate {
     /// 队员退出了无缝会话（不是房主）：从队伍里去掉，之后的“全员”判断（出发、开战、胜利、领奖、投票）不再等他
     pub fn remove(&mut self,id:u64)->bool {let before=self.peers.len();self.peers.retain(|p|p.0!=id);self.peers.len()<before}
     pub fn report(&mut self,id:u64,report:Report)->RuleResult<()> {
+        if report.resume.as_ref().is_some_and(|p|p.visited.len()>64||!(1..=3).contains(&p.act)||p.law.len()>16){return Err("暂存旅程信息无效".into());}
         if report.visited.len()>64||report.act==0||report.act>3||report.epoch!=self.epoch||!report.law.valid(){return Err("队员旅程进度或律法不匹配".into());}
         if report.event_request.is_some_and(|k|!k.valid()){return Err("队员事件请求无效".into());}
         if report.scarab_claim.is_some_and(|c|!c.valid()){return Err("粪金龟击杀汇报无效".into());}
@@ -316,6 +326,16 @@ impl Gate {
         if matches!(self.stage,Stage::Travel|Stage::Combat|Stage::Fighting|Stage::Service)&&self.all(|r|!r.alive){self.stage=Stage::Stopped;Some(Order::Defeat{epoch:self.epoch})}else{None}
     }
     pub fn members(&self)->Vec<u64> {self.peers.iter().map(|p|p.0).collect()}
+    pub fn pause_ready(&self)->bool {
+        let Some(first)=self.peers.first().and_then(|p|p.1.as_ref()) else{return false};
+        self.all(|r|r.alive&&r.map_ready&&r.seed==first.seed&&r.act==first.act&&r.visited==first.visited&&r.law==first.law)
+    }
+    pub fn pause_saved(&self,ticket:u64)->bool {
+        let Some(point)=self.peers.first().and_then(|p|p.1.as_ref()).and_then(|r|r.resume.as_ref()) else{return false};
+        ticket!=0&&self.all(|r|r.alive&&r.pause_saved==Some(ticket)&&r.resume.as_ref()==Some(point))
+    }
+    pub fn leaving(&self)->Vec<u64> {self.peers.iter().filter_map(|(id,r)|r.as_ref().filter(|r|r.epoch==self.epoch&&r.present&&r.alive&&r.leaving).map(|_|*id)).collect()}
+    pub fn resume_ready(&self,point:&crate::suspension::Point)->bool {self.all(|r|r.epoch==self.epoch&&r.at_hub&&r.alive&&r.resume.as_ref()==Some(point))}
     /// 成员的敌人侧余烬效果（只取本场战斗、在场的成员），以及核对用的余烬
     /// 本场在场队员持有的余烬（房主据此代为执行只作用在敌人身上、又不走汇报的余烬，如鲜血骑士的破势）
     pub fn held_embers(&self)->Vec<crate::embers::Ember> {
@@ -453,6 +473,19 @@ mod tests {
         assert!(matches!(gate.boss_test(&run,test).unwrap(),Order::BossTest{epoch:1,seed:42,test:t} if t==test));
         assert_eq!(gate.stage,Stage::Travel);
         assert!(gate.boss_test(&run,test).is_err());assert_eq!(gate.epoch,1);
+    }
+    #[test]
+    fn suspension_barriers_require_every_member_and_matching_progress() {
+        let run=Run::new(42,crate::Class::Samurai);let point=crate::suspension::Point::of(&run).unwrap();
+        let mut gate=Gate::new(vec![1,2]);let mut report=Report::new(&run,0,false,false,true);
+        gate.report(1,report.clone()).unwrap();assert!(!gate.pause_ready());
+        gate.report(2,report.clone()).unwrap();assert!(gate.pause_ready());
+        report.pause_saved=Some(9);report.resume=Some(point.clone());gate.report(1,report.clone()).unwrap();assert!(!gate.pause_saved(9));
+        let mut wrong=report.clone();wrong.resume.as_mut().unwrap().seed=43;gate.report(2,wrong).unwrap();assert!(!gate.pause_saved(9));
+        gate.report(2,report).unwrap();assert!(gate.pause_saved(9));assert!(!gate.pause_saved(10));
+        let mut hub=Report::at_hub(0);hub.resume=Some(point.clone());gate.report(1,hub.clone()).unwrap();assert!(!gate.resume_ready(&point));
+        gate.report(2,hub.clone()).unwrap();assert!(gate.resume_ready(&point));
+        hub.alive=false;gate.report(2,hub).unwrap();assert!(!gate.resume_ready(&point));
     }
     #[test]
     fn titles_are_collected_from_every_present_member() {

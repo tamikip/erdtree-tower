@@ -91,6 +91,7 @@ pub fn observe_peak(data:&PlayerGameData,state:&mut State) {
         }
     };
     scan(&data.equipment.equip_inventory_data);if let Some(storage)=data.storage.as_ref(){scan(storage);}
+    state.peak=state.peak.max(super::smith::effective_peak(data,params) as u8);
 }
 pub fn gift_entries(state:&State,index:usize,data:&PlayerGameData)->Result<[(u32,u32);2],String> {
     let base=*state.gear.get(index).ok_or("装备选择不存在")?;

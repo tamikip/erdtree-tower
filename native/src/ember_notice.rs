@@ -38,7 +38,7 @@ fn popup(ember:Ember)->Result<bool,String> {
     unsafe {CSMenuManImp::instance()}.map_err(|_|"原生菜单尚未就绪")?;
     let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"物品参数尚未就绪")?;
     let row=params.get::<EquipParamGoods>(GOODS_BASE+ember.index() as u32).ok_or("缺少余烬原生显示资源")?;
-    if row.icon_id()!=ICON_BASE+ember.index() as u16 {return Err("余烬原生图标参数不匹配".into());}
+    if row.icon_id()!=ICON_BASE+ember.icon_index() as u16 {return Err("余烬原生图标参数不匹配".into());}
     let manager=unsafe {MapItemMan::instance_mut()}.map_err(|_|"物品显示队列尚未就绪")? as *mut MapItemMan as *mut u8;
     let count=unsafe {manager.add(0x148).cast::<u64>().read()};
     if count>10 {return Err("物品显示队列布局不匹配".into());}

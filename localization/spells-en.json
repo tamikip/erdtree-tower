@@ -1,0 +1,19 @@
+{
+  "替换同名法术，保留记忆位置": "Replaces the same spell; keeps its memory slot",
+  "强效": "Potent",
+  "节能": "Efficient",
+  "轻盈": "Lightweight",
+  "破势": "Staggering",
+  "蓄能": "Charged",
+  "绵延": "Lasting",
+  "慈悲": "Merciful",
+  "蚀骨": "Corrosive",
+  "直接攻击威力 +{value}%": "Direct attack power +{value}%",
+  "专注值消耗 -{value}%": "FP cost -{value}%",
+  "精力消耗 -{value}%": "Stamina cost -{value}%",
+  "削韧 +{value}%": "Poise damage +{value}%",
+  "完整蓄力攻击威力 +{value}%": "Fully charged attack power +{value}%",
+  "效果持续时间 +{value}%": "Effect duration +{value}%",
+  "直接治疗量 +{value}%": "Instant healing +{value}%",
+  "异常积累 +{value}%": "Status buildup +{value}%"
+}

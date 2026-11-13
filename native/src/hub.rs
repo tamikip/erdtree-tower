@@ -175,7 +175,7 @@ impl Hub {
     pub fn dialog_active(&self)->bool {self.active && self.room.as_ref().is_some_and(|r|r.dialog_active())}
     pub fn new(owner:(u32,i32), archetype:u8)->Result<Self,String> {
         let save=path(owner,"json");
-        let resume=if save.exists() {
+        let resume=if let Some(saved)=super::suspension::load(owner)? {Some(saved)}else if save.exists() {
             let text=std::fs::read_to_string(&save).map_err(|e|e.to_string())?;
             // 职业重做前的旧存档（旧职业或旧职业规则）不再继续：改名备份，按没有存档处理
             if Run::retired_save(&text) {
@@ -188,11 +188,15 @@ impl Hub {
         let chosen=std::fs::read_to_string(path(owner,"reset")).or_else(|_|std::fs::read_to_string(path(owner,"class"))).ok().and_then(|s|s.parse().ok()).filter(|a|super::class_from_archetype(*a).is_some()).unwrap_or(if super::class_from_archetype(archetype).is_some(){archetype}else{0});
         let reset=resume.as_ref().is_none_or(|r| matches!(r.phase,Phase::Dead|Phase::Won)) || path(owner,"reset").exists();
         let paused=!reset&&path(owner,"paused").exists();
-        if paused {if let Some(run)=&resume {super::run_screen::summary_with((erdtree_tower::journal::Record::new(run,super::run_log::read(&super::run_log::path(owner)),vec![],0),None));}}
         let settled=resume.as_ref().is_some_and(|r|matches!(r.phase,Phase::Dead|Phase::Won));
         Ok(Self {active:true,paused,owner,room:None,clock:Instant::now(),warp:WarpGate::default(),reset,start:false,chosen,resume,seed:None,fixed_seed:None,law:Default::default(),settled,recovery_return:false})
     }
     pub fn finish(&mut self) { self.active=true;self.paused=false;self.settled=true;self.reset=true;self.start=false;self.resume=None;self.seed=None;self.law=Default::default();self.warp=WarpGate::default();self.recovery_return=false; }
+    pub fn suspended_run(&self)->Option<&Run> {self.resume.as_ref().filter(|_|self.paused)}
+    pub fn pause(&mut self,run:Run) {
+        self.active=true;self.paused=true;self.settled=false;self.reset=false;self.start=false;
+        self.resume=Some(run);self.warp=WarpGate::default();self.recovery_return=false;self.clock=Instant::now();
+    }
     /// 选职业界面默认选中上次的职业
     fn current_class(&self)->Class {super::class_from_archetype(self.chosen).unwrap_or(Class::PLAYABLE[0])}
     /// 选定职业后开局：重置为该职业的出身再开始旅程
@@ -234,7 +238,7 @@ impl Hub {
         }
         if self.reset && (!player.chr_ins.modules.physics.standing_on_solid_ground || player.chr_ins.chr_flags1c5.is_invincible()) {return Ok(None);}
         if self.reset {
-            if path(self.owner,"paused").exists(){std::fs::remove_file(path(self.owner,"paused")).map_err(|e|e.to_string())?;}self.paused=false;
+            super::suspension::clear(self.owner)?;self.paused=false;
             std::fs::write(path(self.owner,"reset"),self.chosen.to_string()).map_err(|e|e.to_string())?;
             let player=world.main_player.as_mut().unwrap();
             super::blessings::Blessings::clear_run(&mut player.chr_ins);
@@ -332,9 +336,9 @@ impl Hub {
                 (0,1)=>super::run_screen::class_entry(None,law_start_allowed(),self.current_class()),
                 (0,3)=>{if seeded_start_allowed(){super::run_screen::seed_entry();}else{room.notice(9500105)?;}},
                 (0,2)=>{
-                    if let Some(mut run)=self.resume.take().filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)) {
+                    if let Some(mut run)=self.resume.clone().filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)) {
                         run.resume_from_hub()?;
-                        if path(self.owner,"paused").exists(){std::fs::remove_file(path(self.owner,"paused")).map_err(|e|e.to_string())?;}self.paused=false;
+                        super::suspension::clear(self.owner)?;self.paused=false;self.resume=None;
                         room.retire(world);self.room=None;self.active=false;
                         let player=world.main_player.as_mut().unwrap();
                         player.chr_ins.modules.data.hp=(i64::from(player.chr_ins.modules.data.max_hp)*i64::from(run.hp)/i64::from(run.max_hp.max(1))).clamp(1,i64::from(player.chr_ins.modules.data.max_hp)) as i32;

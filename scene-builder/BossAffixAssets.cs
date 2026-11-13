@@ -37,7 +37,7 @@ static class BossAffixAssets {
         (First+71,"Tower boss affix envious rage empowered",0,[("effectEndurance",15f),..All(Attacks,1.45f),("vfxId",1627000),("vfxId1",9010)]),
         (First+81,"Tower boss affix proud empowered",0,[..All(Attacks,1.3f),("vfxId",1649000),("vfxId1",1648000)]),
         // 黄金律法的护盾：同时挂三个原版金色护体光效（黄金壁垒、黄金雷电附加、黄金誓言），比单个黄金誓言醒目
-        (First+90,"Tower boss affix golden shield",0,[("effectEndurance",5f),..All(Cuts,0.3f),("vfxId",9620090),("vfxId1",9620091),("vfxId2",1660000)]),
+        (First+90,"Tower boss affix golden shield",0,[("effectEndurance",5f),..All(Cuts,0.4f),("vfxId",9620090),("vfxId1",9620091),("vfxId2",1660000)]),
         (First+95,"Tower boss affix reborn",0,[("effectEndurance",3f),("vfxId",1643000)]),
     ];
     static PARAM.Row Create(PARAM effects,(int id,string name,int kind,(string,object)[] fields) spec) {
@@ -114,5 +114,26 @@ static class BossAffixAssets {
         string Hash(string p)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p)));
         File.WriteAllText(Path.Combine(output,"boss-affix-build.json"),System.Text.Json.JsonSerializer.Serialize(new{effects=Rows.Select(r=>r.id),sourceRegulationSha256=Hash(Path.Combine(input,"regulation.bin")),regulationSha256=Hash(path)},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine($"Verified {Rows.Length} boss affix effects; all existing regulation data preserved");
+    }
+    public static void PatchGolden(string input,string output) {
+        if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging output required");
+        var reg=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(Path.Combine(input,"regulation.bin"));
+        var file=reg.Files.Single(f=>Path.GetFileNameWithoutExtension(f.Name.Replace('\\','/'))=="SpEffectParam");
+        var original=file.Bytes.ToArray();
+        var p=PARAM.Read(original);p.ApplyParamdef(PARAMDEF.XmlDeserialize("work/SoulsRandomizers/diste/Defs/SpEffect.xml"));
+        var row=p.Rows.Single(r=>r.ID==First+90);
+        foreach(var key in Cuts)row[key].Value=0.4f;
+        row["effectEndurance"].Value=5f;file.Bytes=p.Write();
+        Directory.CreateDirectory(output);var path=Path.Combine(output,"regulation.bin");
+        SoulsFormats.Cryptography.RegulationDecryptor.EncryptERRegulation(path,reg);
+        var check=SoulsFormats.Cryptography.RegulationDecryptor.DecryptERRegulation(path);
+        foreach(var f in reg.Files)if(!f.Bytes.SequenceEqual(check.Files.Single(c=>c.Name==f.Name).Bytes))throw new Exception("Regulation roundtrip mismatch");
+        var old=PARAM.Read(original);old.ApplyParamdef(p.AppliedParamdef);
+        var rows=p.Rows.ToDictionary(r=>r.ID);
+        foreach(var r in old.Rows)foreach(var cell in r.Cells) {
+            object expected=r.ID==First+90&&Cuts.Contains(cell.Def.InternalName)?0.4f:r.ID==First+90&&cell.Def.InternalName=="effectEndurance"?5f:cell.Value;
+            if(!System.Collections.StructuralComparisons.StructuralEqualityComparer.Equals(expected,rows[r.ID][cell.Def.InternalName].Value))throw new Exception("Unrelated effect changed");
+        }
+        Console.WriteLine("Golden shield verified: duration 5s, all damage received x0.4; other fields and tables preserved.");
     }
 }

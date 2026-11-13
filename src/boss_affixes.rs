@@ -17,13 +17,13 @@ impl Affix {
             Affix::Stalwart=>"韧性翻倍；用重攻击和跳劈更快打出硬直",
             Affix::Bulwark=>"受到的伤害 -25%",
             Affix::Frenzied=>"攻击 +30%，但受到的伤害 +10%",
-            Affix::Regenerating=>"每秒回复 0.3% 最大生命；持续压制可以抵消",
+            Affix::Regenerating=>"连续 3 秒未受伤后，每秒回复 0.3% 最大生命；受伤后重新计时",
             Affix::Rot=>"攻击附带猩红腐败：每次打中你都会积累腐败；备好药",
             Affix::Envious=>"你喝圣杯瓶后，攻击 +30%，持续 15 秒",
             Affix::Proud=>"8 秒没挨打时攻击 +20%，被打中后清除",
-            Affix::Golden=>"每 20 秒展开 5 秒金色护盾，受到的伤害 -70%",
+            Affix::Golden=>"每 25 秒展开 5 秒金色护盾，受到的伤害 -60%",
             Affix::Reborn=>"生命首次降到 10% 以下时回复至 40%，仅一次",
-            Affix::Leeching=>"每次打中你，回复其最大生命 1.5%",
+            Affix::Leeching=>"每次打中你，回复其最大生命 1%",
             Affix::Thorned=>"受到伤害的 10% 反弹给你，一次最多 200（不会致死）",
             Affix::Swift=>"动作速度 +10%：出招、收招、移动都更快，压得更紧",
         }
@@ -112,11 +112,17 @@ pub fn roll(run:&Run,node:usize)->Vec<Affix> {
     let budget=node_budget(run,node);
     if !run.boss_affixes||budget==0 {return vec![];}
     // 规则 0（旧存档）只用最早的 9 个词条和原来的分组
-    let (count,group):(usize,fn(Affix)->u8)=if run.boss_affix_rules>=1 {(Affix::ALL.len(),Affix::group)}else{(LEGACY_AFFIXES,Affix::legacy_group)};
+    let (count,group):(usize,fn(Affix)->u8)=if run.boss_affix_rules>=1||run.law.swift_affixes() {(Affix::ALL.len(),Affix::group)}else{(LEGACY_AFFIXES,Affix::legacy_group)};
     // 傲慢的已移除：不再抽到（枚举、组合表与血条名称编号保留，旧组合的序号不变）；再生的第二幕起、吸血的第三幕起才会出现
-    let mut pool:Vec<_>=Affix::ALL[..count].iter().copied().filter(|a|!RETIRED.contains(a)&&run.act>=a.first_act()).collect();
+    let mut pool:Vec<_>=Affix::ALL[..count].iter().copied().filter(|a|*a!=Affix::Swift&&!RETIRED.contains(a)&&run.act>=a.first_act()).collect();
     pool.sort_by_key(|a|crate::mix(run.seed^(node as u64).wrapping_mul(7919)^(u64::from(run.act)<<40)^a.index() as u64^0xb055_af1c));
     let (mut left,mut chosen)=(budget,Vec::new());
+    let swift=run.law.swift_affixes()&&match run.nodes[node].kind {
+        NodeKind::Boss=>true,
+        NodeKind::Elite=>run.law.elite_affixes()&&crate::mix(run.seed^(node as u64).wrapping_mul(7919)^(u64::from(run.act)<<40)^0x5a1f_25)%4==0,
+        _=>false,
+    };
+    if swift {chosen.push(Affix::Swift);left=left.saturating_sub(Affix::Swift.cost());}
     for affix in pool {
         if chosen.len()==MAX_AFFIXES {break;}
         if affix.cost()<=left&&(group(affix)==0||!chosen.iter().any(|c:&Affix|group(*c)==group(affix))) {left-=affix.cost();chosen.push(affix);}
@@ -135,6 +141,24 @@ mod tests {
     use super::*;
     use crate::Class;
     fn boss(run:&Run)->usize {run.nodes.iter().position(|n|n.kind==NodeKind::Boss).unwrap()}
+    #[test]
+    fn swift_is_opt_in_guaranteed_for_bosses_and_quarter_of_enabled_elites() {
+        let mut run=Run::new(1,Class::Samurai);let node=boss(&run);let mut hits=0;
+        for seed in 0..1024 {
+            run.seed=seed;run.nodes[node].kind=NodeKind::Boss;run.law=crate::law::Law::default();
+            assert!(!roll(&run,node).contains(&Affix::Swift));
+            run.law=run.law.toggle(35);let affixes=roll(&run,node);
+            assert_eq!(affixes.iter().filter(|a|**a==Affix::Swift).count(),1);
+            assert!(combos().contains(&affixes)&&points(&affixes)<=node_budget(&run,node));
+            run.nodes[node].kind=NodeKind::Elite;assert!(roll(&run,node).is_empty());
+            run.law=run.law.toggle(5);let affixes=roll(&run,node);
+            let expected=crate::mix(seed^(node as u64).wrapping_mul(7919)^(u64::from(run.act)<<40)^0x5a1f_25)%4==0;
+            assert_eq!(affixes.contains(&Affix::Swift),expected);hits+=usize::from(expected);
+            assert!(combos().contains(&affixes));
+        }
+        assert!((210..=300).contains(&hits),"{hits}/1024");
+        let law=crate::law::Law::default().toggle(35);assert_eq!(law.code().len(),9);assert_eq!(crate::law::Law::parse(&law.code()),Some(law));
+    }
     #[test]
     fn elite_pool_titles_are_unique_and_do_not_overlap_boss_titles() {
         let builder=include_str!("../scene-builder/AffixTextFix.cs");
@@ -164,7 +188,8 @@ mod tests {
             assert_eq!(bonus_runes(&run,node),[9000,18000,30000][usize::from(act)-1]*15*u32::from(points(&affixes))/100);
             seen.extend(affixes);
         }}
-        assert_eq!(seen.len(),Affix::ALL.len()-RETIRED.len(),"new runs can roll every affix that is not retired");
+        assert_eq!(seen.len(),Affix::ALL.len()-RETIRED.len()-1,"Swift requires its law");
+        assert!(!seen.contains(&Affix::Swift));
         assert!(RETIRED.iter().all(|a|!seen.contains(a)));
         // 再生的第二幕起、吸血的第三幕起
         for seed in 0..600 {for act in 1..=3 {
@@ -240,7 +265,7 @@ mod tests {
             json.as_object_mut().unwrap().remove("boss_affix_rules");
             assert_eq!(Run::decode(&json.to_string()).unwrap().boss_affix_rules,0);
         }}
-        assert_eq!(new_seen.len(),3,"new runs roll the three new affixes");
+        assert_eq!(new_seen.len(),2,"Swift is excluded without its law");
     }
     #[test]
     fn party_members_share_affixes_but_not_reward_seeds() {

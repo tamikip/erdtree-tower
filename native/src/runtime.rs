@@ -364,6 +364,7 @@ impl MaterialAward {
     }
 }
 struct Runtime {
+    suspension:super::suspension::Flow,
     skip_target:Option<erdtree_tower::skip::Target>,
     material_award:Option<MaterialAward>,
     radahn_probe:Option<super::radahn_probe::Probe>,
@@ -436,6 +437,7 @@ struct Runtime {
     /// 跳过本关：传送门一亮就直接领奖（联机由房主通知全队）
     skip_portal:bool,
     retry_ready_since:Option<Instant>,
+    retry_rescue:super::retry_rescue::Rescue,
     member_spawn_gaps:Option<MemberSpawnGaps>,
     /// 徘徊赐福实物道具：背包数量跟随旅程剩余次数
     retry_item:super::retry_item::Sync,
@@ -452,9 +454,11 @@ struct Runtime {
 }
 
 fn fresh_runtime()->Runtime {
+    super::suspension::notice("");super::suspension::REQUEST.store(false,std::sync::atomic::Ordering::Relaxed);
     super::seamless_revival::cancel();
     let (party,party_error)=match super::party::Link::load(){Ok(p)=>(p,None),Err(e)=>(None,Some(e))};
     Runtime {
+        suspension:Default::default(),
         skip_target:None,
         material_award:None,
         radahn_probe:None,
@@ -513,6 +517,7 @@ fn fresh_runtime()->Runtime {
         ailment_cleared:None,
         skip_fight:None,skip_portal:false,
         retry_ready_since:None,
+        retry_rescue:Default::default(),
         member_spawn_gaps:None,
         retry_item:Default::default(),
         action_guard: Default::default(),
@@ -822,7 +827,7 @@ fn diagnostic_stall_victory(enabled:bool,authority:bool,elapsed:Duration)->bool 
 // emergency-end paths. Before, those paths skipped ActionGuard::update, so a dialog that had just
 // disabled attacks (disabled_secondary_actions) could leave the player unable to attack for good.
 fn sync_action_guard(state:&mut Runtime,world:&mut WorldChrMan) {
-    let menu_active=super::input::capture_actions(state.view.shared_event,super::input::active(),
+    let menu_active=state.suspension.prepared.is_some()&&!state.suspension.leave||super::input::capture_actions(state.view.shared_event,super::input::active(),
         state.room.as_ref().is_some_and(|r|r.dialog_active())
         || state.attendant.as_ref().is_some_and(|r|r.dialog_active())
         || state.hub.as_ref().is_some_and(|h|h.dialog_active()));
@@ -848,9 +853,10 @@ fn party_block_reason(state:&Runtime)->String {
     "尚未收到队伍就绪确认，当前无法确定具体原因。请保留 tower-preview.log 进行排查。".into()
 }
 fn tick_auto_party(state:&mut Runtime)->Result<bool,String> {
+    if state.suspension.returning&&state.suspension.committed.is_some(){return Ok(false);}
     use eldenring::cs::{CSSessionManager,LobbyState};
     if state.departure.is_some(){return Ok(false);}
-    if state.hub.as_ref().is_some_and(|h|h.paused||h.settling()){return Ok(false);}
+    if state.hub.as_ref().is_some_and(|h|h.settling()){return Ok(false);}
     if super::party::manual_config().is_some()||!super::seamless::active(){return Ok(false);}
     let Ok(session)=(unsafe {CSSessionManager::instance()}) else{return Ok(state.party_pending.is_some());};
     if let Some(link)=state.party.as_ref().filter(|p|p.roster().is_some()) {
@@ -898,7 +904,7 @@ fn tick_auto_party(state:&mut Runtime)->Result<bool,String> {
             return Err("请在大赐福组队后开始共同旅程；中途加入尚未完成进度衔接".into());
         }
         let nonce=super::party::random_entropy()?.max(1);
-        let seed=state.view.run.as_ref().map(|r|r.seed).unwrap_or(super::party::random_entropy()?);
+        let seed=state.view.run.as_ref().or_else(||state.hub.as_ref().and_then(|h|h.suspended_run())).map(|r|r.initial_seed.unwrap_or(r.seed)).unwrap_or(super::party::random_entropy()?);
         state.party_pending=Some(super::steam_messages::Pending::new(roster,nonce,seed,super::options::local_dlc())?);
         let pending=state.party_pending.as_ref().unwrap();
         super::log(format!("Steam party handshake started: host={} members={}",pending.roster.local==pending.roster.host,pending.roster.members.len()));
@@ -949,6 +955,7 @@ fn tick_party(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->Resu
     let orders=state.party.as_mut().unwrap().poll(if present {state.view.run.as_ref()}else{None},alive,at_hub,state.rest_end.requested);
     for order in orders {apply_party_order(state,world,game,order)?;}
     sync_merchant_reward(state)?;
+    if state.party.as_ref().is_some_and(|p|p.event.pause.ticket.is_some()){return Ok(());}
     if QUICK_END.load(std::sync::atomic::Ordering::Relaxed){return Ok(());}
     tick_revival(state,world,game)?;
     if state.party.as_ref().unwrap().defeated {return Ok(());}
@@ -1111,14 +1118,34 @@ fn begin_death_retry(state:&mut Runtime,world:&mut WorldChrMan,next:Run) {
     state.command=None;state.view.room=None;state.view.enemy_hp=None;
     state.view.ready=false;state.view.busy=true;state.view.travelling=true;
     state.death_retry=true;state.retry_ready_since=None;
+    state.retry_rescue=Default::default();
     let left=next.retries;record(&next);state.view.run=Some(next);
     report(state,lingering_message(left));
 }
 
 fn return_to_retry_room(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->bool {
-    let Some(node)=state.view.run.as_ref().and_then(|r|r.retry_node) else {state.retry_ready_since=None;return false;};
+    let Some(node)=state.view.run.as_ref().and_then(|r|r.retry_node) else {state.retry_ready_since=None;state.retry_rescue=Default::default();return false;};
     if state.party.is_some()||state.travel.is_some()||state.pending.is_some()||state.room.is_some(){return false;}
     state.command=None;state.view.busy=true;state.view.travelling=true;
+    let falling=!game.warp_requested&&world.main_player.as_ref().is_some_and(|p|
+        p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()
+        &&p.chr_ins.modules.physics.is_falling&&!p.chr_ins.modules.physics.standing_on_solid_ground);
+    match state.retry_rescue.tick(falling) {
+        super::retry_rescue::Step::Request=>{
+            let block=world.main_player.as_ref().map(|p|i32::from(p.current_block_id));
+            super::log(format!("TOWER_RETRY_VOID_RESCUE node={node} block={block:?} target=hub entry=11102691"));
+            game.move_map_target=BlockId::from(super::hub::BLOCK);
+            game.initial_area_entity_id=11102691;game.warp_requested=true;
+            state.retry_ready_since=None;
+            return true;
+        },
+        super::retry_rescue::Step::Exhausted=>{
+            super::log_repeating("TOWER_RETRY_VOID_RESCUE exhausted; retry state preserved");
+            report(state,"复活安全传送未完成，请退出游戏并保留日志；本次重试进度已保留。");
+            return true;
+        },
+        super::retry_rescue::Step::Wait=>{},
+    }
     let ready=!game.warp_requested&&world.main_player.as_ref().is_some_and(|p|
         i32::from(p.current_block_id)>=0&&p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()
         &&p.chr_ins.modules.physics.standing_on_solid_ground&&!p.chr_ins.modules.physics.is_falling&&!p.chr_ins.chr_flags1c5.is_invincible());
@@ -1294,6 +1321,118 @@ fn solo_session()->bool {
     unsafe {CSSessionManager::instance()}.ok().is_some_and(|s|s.lobby_state==LobbyState::None
         ||super::seamless::roster(s).is_ok_and(|r|r.local==r.host&&r.members.len()==1))
 }
+fn suspend_snapshot(state:&mut Runtime,world:&WorldChrMan,game:&GameMan)->Result<Run,String> {
+    let player=world.main_player.as_ref().ok_or("等待角色加载")?;
+    if game.save_slot<0||game.warp_requested||player.chr_ins.modules.data.hp<=0||player.chr_ins.chr_flags1c5.death_flag(){return Err("请等待传送或复活结束后暂退".into());}
+    let owner=(unsafe {player.player_game_data.as_ref()}.character_id,game.save_slot);
+    if state.identity!=Some(owner)||state.hub.as_ref().is_none_or(|h|h.owner!=owner){return Err("等待当前角色与旅程绑定完成".into());}
+    if state.material_award.is_some()||state.command.is_some()||state.reward_wait.is_some()||state.travel.is_some()
+        ||state.room.as_ref().is_some_and(|r|r.dialog_active())||state.attendant.as_ref().is_some_and(|r|r.dialog_active())
+        ||state.view.travelling||!state.ash_refunds.is_empty()||super::run_screen::active()
+        ||super::hub::path(owner,"party-award").exists(){return Err("等待当前交易、领奖或传送完成".into());}
+    let run=state.view.run.as_ref().ok_or("当前没有正在进行的旅程")?;
+    let mut saved=erdtree_tower::suspension::prepare(run,unsafe {player.player_game_data.as_ref()}.rune_count,state.flasks.as_ref().map(|f|f.total()))?;
+    saved.hp=(i64::from(saved.max_hp)*i64::from(player.chr_ins.modules.data.hp)/i64::from(player.chr_ins.modules.data.max_hp.max(1))).clamp(1,i64::from(saved.max_hp.max(1))) as u32;
+    SESSION_PATH.lock().map_err(|_|"存档锁不可用")?.replace(super::hub::path(owner,"json"));
+    super::suspension::save(owner,&saved)?;record_checked(&saved)?;
+    Ok(saved)
+}
+fn return_suspended_to_hub(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan,saved:Run)->Result<(),String> {
+    let player=world.main_player.as_ref().ok_or("等待角色加载")?;
+    let owner=(unsafe {player.player_game_data.as_ref()}.character_id,game.save_slot);
+    if state.hub.is_none(){state.hub=Some(super::hub::Hub::new(owner,unsafe {player.player_game_data.as_ref()}.archetype)?);}
+    stop_map_combat(state,world);
+    if let Some(room)=state.room.take(){room.retire(world);}
+    if let Some(scene)=state.party_scene.take(){scene.retire(world);}
+    if let Some(pending)=state.pending.take(){retire_group(&pending,world);}
+    state.hub.as_mut().unwrap().pause(saved);
+    state.command=None;state.view.run=None;state.view.room=None;state.view.shared_event=false;state.view.busy=false;state.view.travelling=false;
+    state.travel=None;state.reward_wait=None;state.flasks=None;state.identity=None;state.party_error=None;state.party_pending=None;
+    state.rest_end=Default::default();state.host_death=Default::default();state.party_death=Default::default();
+    state.event_start=None;state.descent=None;state.stormveil=None;state.chariot_clock=None;let _=clear_chariot();
+    super::seamless_revival::cancel();super::spirits::refund::close();state.ash_tracking=false;
+    world.summon_buddy_manager.disappear_requested=true;
+    state.suspension.returning=true;state.suspension.committed=Some(Instant::now());state.suspension.requested=false;
+    game.save_requested=true;
+    super::suspension::notice("旅程已暂存，正在返回大赐福。请勿强制关闭游戏。");
+    super::log("SUSPEND committed; returning to safe hub without ending the run");Ok(())
+}
+fn tick_suspension(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->Result<bool,String> {
+    use std::sync::atomic::Ordering;
+    if state.view.run.as_ref().is_some_and(|r|matches!(r.phase,Phase::Dead|Phase::Won))&&state.suspension.prepared.is_none() {
+        state.suspension=Default::default();if let Some(link)=state.party.as_mut(){link.event.pause.queued=false;}
+        super::suspension::notice("");super::suspension::REQUEST.store(false,Ordering::Release);return Ok(false);
+    }
+    let role=state.party.as_ref().map_or(0,|p|if p.host(){1}else{2});super::suspension::ROLE.store(role,Ordering::Release);
+    if super::suspension::REQUEST.swap(false,Ordering::AcqRel)&&!state.suspension.returning {
+        if state.suspension.requested&&state.suspension.prepared.is_none()&&state.party.as_ref().is_none_or(|p|p.event.pause.ticket.is_none()) {
+            state.suspension.requested=false;if let Some(link)=state.party.as_mut(){link.event.pause.queued=false;}
+            super::suspension::notice("已取消等待暂退。");return Ok(false);
+        }
+        state.suspension.requested=true;
+        if let Some(link)=state.party.as_mut().filter(|p|p.host()){link.event.pause.queued=true;}
+        super::suspension::notice(if role==0{"正在准备暂存旅程。"}else{"等待当前房间结束并完成领奖，随后保存暂退。"});
+    }
+    if let Some(link)=state.party.as_mut(){link.event.pause.resume=state.hub.as_ref().and_then(|h|h.suspended_run()).and_then(erdtree_tower::suspension::Point::of);}
+    if state.suspension.returning {
+        let grounded=!game.warp_requested&&world.main_player.as_ref().is_some_and(|p|i32::from(p.current_block_id)==super::hub::BLOCK&&p.chr_ins.modules.physics.standing_on_solid_ground);
+        if grounded&&state.suspension.committed.is_some_and(|t|t.elapsed()>Duration::from_secs(5)) {
+            game.save_requested=true;state.suspension.committed=None;state.party=None;state.party_error=None;
+            super::suspension::notice("已返回大赐福。请从游戏菜单正常退出；重进后与小红帽交互继续旅程。");
+        }
+        return Ok(false);
+    }
+    if state.suspension.leave&&solo_session() {
+        if game.warp_requested{return Ok(true);}
+        if let (Some(flasks),Some(player))=(state.flasks.as_mut(),world.main_player.as_mut()){flasks.observe(unsafe {player.player_game_data.as_mut()},false)?;}
+        let saved=suspend_snapshot(state,world,game)?;state.suspension.prepared=None;
+        state.party=None;state.party_error=None;return_suspended_to_hub(state,world,game,saved)?;return Ok(false);
+    }
+    let ticket=state.party.as_ref().and_then(|p|p.event.pause.ticket);
+    if state.suspension.requested&&ticket.is_none()&&state.suspension.prepared.is_none() {
+        if role==0&&!solo_session(){return Err("等待联机握手完成，暂不按单人方式退出".into());}
+        let Some(run)=state.view.run.as_ref() else{state.suspension.requested=false;return Err("当前没有正在进行的旅程".into());};
+        if role!=0&&erdtree_tower::suspension::Point::of(run).is_none(){return Ok(false);}
+        if role==0&&matches!(run.phase,Phase::Node{id} if !matches!(run.nodes[id].kind,erdtree_tower::NodeKind::Camp|erdtree_tower::NodeKind::Shop)){return Ok(false);}
+        if state.room.as_ref().is_some_and(|r|r.hunter.is_some()||r.scarabs.active()){return Ok(false);}
+        if role==1 {
+            if state.party.as_ref().is_some_and(|p|p.gate.pause_ready()){state.party.as_mut().unwrap().prepare_pause()?;}
+        } else {
+            let saved=suspend_snapshot(state,world,game)?;
+            if role==0 {return_suspended_to_hub(state,world,game,saved)?;return Ok(false);}
+            state.suspension.prepared=Some(saved);state.suspension.leave=true;
+            state.party.as_mut().unwrap().event.pause.leaving=true;game.save_requested=true;
+        }
+    }
+    let ticket=state.party.as_ref().and_then(|p|p.event.pause.ticket);
+    if ticket.is_some()&&state.suspension.prepared.is_none() {
+        if state.view.run.as_ref().is_none_or(|r|r.phase!=Phase::Map){return Err("等待本机回到路线图后确认整队暂退".into());}
+        state.suspension.prepared=Some(suspend_snapshot(state,world,game)?);
+        state.party.as_mut().unwrap().event.pause.saved=true;game.save_requested=true;
+    }
+    if state.suspension.prepared.is_none(){return Ok(false);}
+    state.view.busy=true;state.view.ready=false;state.command=None;
+    state.view.room=state.suspension.leave.then(||super::rooms::RoomView{message:"正在保存暂退进度".into(),loading:false,completed:false});
+    super::input::CAPTURE.store(!state.suspension.leave,Ordering::Relaxed);state.pad_capture.update(!state.suspension.leave);
+    let alive=world.main_player.as_ref().is_some_and(|p|p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag());
+    let orders=state.party.as_mut().ok_or("暂退队伍通道已断开")?.poll(state.view.run.as_ref(),alive,false,false);
+    for order in orders {apply_party_order(state,world,game,order)?;}
+    let link=state.party.as_mut().unwrap();
+    if state.suspension.leave {
+        super::suspension::notice(if link.event.pause.leave_ready{"离队已确认。请使用“分离迷雾”断开无缝房间，随后自动返回大赐福。"}else{"进度已暂存，等待房主确认离队；请勿强退。"});return Ok(true);
+    }
+    if link.host(){link.commit_pause()?;}
+    if link.event.pause.committed {
+        let saved=state.suspension.prepared.take().unwrap();return_suspended_to_hub(state,world,game,saved)?;return Ok(false);
+    }
+    if link.host()&&link.event.pause.started.is_some_and(|t|t.elapsed()>Duration::from_secs(30)){link.abort_pause()?;}
+    if link.event.pause.ticket.is_none() {
+        if let Some(hub)=&state.hub{super::suspension::clear(hub.owner)?;}
+        state.suspension=Default::default();state.view.room=None;state.view.busy=false;
+        super::suspension::notice("整队暂退未获全员确认，已取消；旅程仍在进行。");return Ok(false);
+    }
+    super::suspension::notice("本机进度已暂存，等待全员保存确认。任一人失败都不会结束旅程。");Ok(true)
+}
 fn ended_progress(run:&Run)->Run {
     let mut ended=run.clone();ended.end_on_death();ended
 }
@@ -1391,10 +1530,14 @@ fn emergency_end(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->R
     Ok(true)
 }
 pub fn tick() {
+    if let Ok(world)=unsafe {WorldChrMan::instance_mut()}{super::frost_shackle::begin_frame(world);}
     if let Ok(mut state)=STATE.try_lock(){sync_map(&mut state);}
     tick_locked();
     if let Ok(mut state)=STATE.try_lock() {
-        if let Ok(world)=unsafe {WorldChrMan::instance_mut()}{sync_action_guard(&mut state,world);}
+        if let Ok(world)=unsafe {WorldChrMan::instance_mut()}{
+            sync_action_guard(&mut state,world);
+            super::frost_shackle::finish_frame(world,state.view.travelling||state.view.run.is_none());
+        }
         sync_map(&mut state);
         super::mausoleum::sync_visibility(state.view.run.as_ref());
         let scope=state.view.run.as_ref().map(|run|(run.seed,run.act));
@@ -1472,10 +1615,13 @@ fn tick_locked() {
         &&state.view.run.as_ref().is_some_and(|r|r.regional_event.chariot&&r.regional_event.stormveil==Some(erdtree_tower::stormveil::Progress::Running));
     let Runtime{chariot_chase,party,..}=&mut *state;
     if let Err(error)=chariot_chase.tick(world,party.as_mut(),chase_enabled){super::log(error);}
-    if state.hub.is_none()&&world.main_player.as_ref().is_some_and(|p|{
-        let owner=(unsafe {p.player_game_data.as_ref()}.character_id,game.save_slot);
-        game.save_slot>=0&&super::hub::path(owner,"paused").exists()
-    }) {QUICK_END.store(true,std::sync::atomic::Ordering::Relaxed);}
+    if state.hub.is_none()&&let Some(p)=world.main_player.as_ref().filter(|_|game.save_slot>=0) {
+        let data=unsafe {p.player_game_data.as_ref()};let owner=(data.character_id,game.save_slot);
+        if super::hub::path(owner,"paused").exists(){match super::hub::Hub::new(owner,data.archetype){
+            Ok(hub)=>{state.hub=Some(hub);if let Ok(mut path)=SESSION_PATH.lock(){*path=Some(super::hub::path(owner,"json"));}},
+            Err(e)=>{report(&mut state,e);return;},
+        }}
+    }
     if QUICK_END.load(std::sync::atomic::Ordering::Relaxed) {
         match emergency_end(&mut state,world,game) {
             Ok(true)=>{QUICK_END.store(false,std::sync::atomic::Ordering::Relaxed);},
@@ -1490,6 +1636,22 @@ fn tick_locked() {
             report(&mut state,error);
         }
         sync_action_guard(&mut state,world);return;
+    }
+    match tick_suspension(&mut state,world,game) {
+        Ok(true)=>{sync_action_guard(&mut state,world);return;},Ok(false)=>{},
+        Err(e)=>{
+            super::suspension::notice(format!("暂退尚未完成：{e}"));
+            let current=state.view.run.clone();
+            let alive=world.main_player.as_ref().is_some_and(|p|p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag());
+            if let Some(link)=state.party.as_mut().filter(|p|p.event.pause.ticket.is_some()) {
+                let orders=link.poll(current.as_ref(),alive,false,false);
+                for order in orders {let _=link.accept(&order);}
+                if link.host()&&link.event.pause.started.is_some_and(|t|t.elapsed()>Duration::from_secs(30)){let _=link.abort_pause();}
+                if link.event.pause.ticket.is_some(){state.view.busy=true;state.command=None;return;}
+                if let Some(hub)=&state.hub{let _=super::suspension::clear(hub.owner);}
+                state.suspension=Default::default();state.view.busy=false;state.view.room=None;
+            }
+        },
     }
     if state.view.run.is_none()&&!game.warp_requested&&state.hub.as_ref().is_some_and(|h|h.ready_for_party_restart()) {
         if let Some(player)=world.main_player.as_ref().filter(|p|i32::from(p.current_block_id)==super::hub::BLOCK) {
@@ -1694,15 +1856,15 @@ fn tick_locked() {
     // 武器强化基准 = 本局历史最高（Run::weapon_peak，只升不降）：每帧把记录交给 smith；背包里出现更高的武器时（强化、拿到奖励）
     // 每秒检查一次，不在战斗流程里就立刻记进存档，之后卖掉、丢掉或存进仓库都不会让基准掉下来
     {
-        let recorded=state.view.run.as_ref().filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)).and_then(|r|r.weapon_peak).unwrap_or(0);
+        let recorded=state.view.run.as_ref().filter(|r|!matches!(r.phase,Phase::Dead|Phase::Won)).map_or(0,erdtree_tower::rewards::shared_upgrade_peak);
         super::smith::set_run_peak(recorded);
         static CHECKED:std::sync::Mutex<Option<Instant>>=std::sync::Mutex::new(None);
         let due=CHECKED.lock().is_ok_and(|mut at|{let due=at.is_none_or(|t|t.elapsed()>=Duration::from_secs(1));if due{*at=Some(Instant::now());}due});
         let steady=state.pending.is_none()&&!state.view.travelling&&state.view.run.as_ref().is_some_and(|r|matches!(r.phase,Phase::Map|Phase::Node{..}));
         if due&&steady&&let Some(player)=world.main_player.as_ref()&&let Ok(params)=unsafe {SoloParamRepository::instance()} {
-            let live=super::smith::inventory_peak(unsafe {player.player_game_data.as_ref()},params).clamp(0,i32::from(erdtree_tower::contracts::MAX_PEAK)) as u8;
-            if live>recorded&&let Some(run)=state.view.run.as_ref() {
-                let mut next=run.clone();next.weapon_peak=Some(live);
+            let live=super::smith::effective_peak(unsafe {player.player_game_data.as_ref()},params).clamp(0,i32::from(erdtree_tower::contracts::MAX_PEAK)) as u8;
+            if let Some(run)=state.view.run.as_ref().filter(|r|live>r.weapon_peak.unwrap_or(0)||live/5>r.spirit_peak.unwrap_or(0)) {
+                let mut next=run.clone();next.weapon_peak=Some(live);next.spirit_peak=Some(next.spirit_peak.unwrap_or(0).max(live/5));
                 match record_checked(&next) {
                     Ok(())=>{super::log(format!("Weapon peak recorded: {recorded} -> {live}"));super::smith::set_run_peak(live);state.view.run=Some(next);},
                     Err(error)=>super::log_repeating(format!("Weapon peak not recorded: {error}")),
@@ -1752,6 +1914,7 @@ fn tick_locked() {
         let flasks=state.flasks.as_ref().map(|f|f.total());
         // Practice never forwards combat rewards or persistent stack gains.
         let _=state.ember_practice.tick(world,key,&held,&foes,true,false,flasks,keeper);
+        super::frost_shackle::observe(world,key,&foes,held.contains(&erdtree_tower::embers::Ember::FrostShackle));
         super::embers::clear_practice_critical();
     } else {
         if state.ember_practice.active() {super::embers::clear_practice_critical();}
@@ -1814,6 +1977,7 @@ fn tick_locked() {
     };
     let player_data = unsafe { &mut *player.player_game_data.as_ptr() };
     state.view.runes = player_data.rune_count;
+    if let Err(error)=super::spell_affixes::sync(player_data){super::log_repeating(format!("Spell affix sync: {error}"));}
     if state.build_checked.is_none_or(|t|t.elapsed()>=Duration::from_secs(1)) {
         state.build_checked=Some(Instant::now());state.view.build=equipped_build(player_data);
         state.view.stats=super::stats::collect(&player.chr_ins);
@@ -1955,8 +2119,8 @@ fn tick_locked() {
         state.command=None;state.view.ready=false;state.pad_capture.update(false);
         super::input::CAPTURE.store(false,std::sync::atomic::Ordering::Relaxed);
         let mut hub=state.hub.take().unwrap();
-        let paused_party=hub.paused&&!solo_session();
-        let blocked=(paused_party||party_waiting||state.party.as_ref().is_some_and(|p|p.needs_new_run())).then(||if paused_party {"本机仍在旧联机房间，请退出房间后继续保留的旅程。".into()}else{party_block_reason(&state)});
+        let paused_party=hub.paused&&!solo_session()&&!state.party.as_ref().is_some_and(|p|p.event.pause.resume_ready);
+        let blocked=(paused_party||party_waiting||state.party.as_ref().is_some_and(|p|p.needs_new_run())).then(||if paused_party {"等待全员在大赐福载入同一暂存旅程（种子、幕数、路线和律法需一致）。".into()}else{party_block_reason(&state)});
         let result=hub.poll(world,game,blocked.as_deref());
         state.view.room=Some(hub.view());state.hub=Some(hub);
         match result {
@@ -1982,6 +2146,7 @@ fn tick_locked() {
                     }
                 }
                 state.view.room=None;state.view.run=Some(run);state.identity=None;state.flasks=None;
+                state.suspension=Default::default();super::suspension::notice("");
                 state.view.busy=false;state.view.prompt=state.view.prompt.wrapping_add(1);
                 report(&mut state,"旅程已开启，请选择路线。");
             },
@@ -2894,6 +3059,12 @@ fn host_embers(state:&mut Runtime,world:&mut WorldChrMan) {
     // 鲜血骑士的破势：自己持有，或联机时任一在场队员持有，都由房主（单人即自己）执行
     let breaker=erdtree_tower::embers::Ember::Breaker;
     if authority&&(embers.contains(&breaker)||state.party.as_ref().is_some_and(|p|p.gate.held_embers().contains(&breaker))) {state.ember_fight.break_on_bursts(world,&foes);}
+    if authority {
+        let frost=erdtree_tower::embers::Ember::FrostShackle;
+        let enabled=embers.contains(&frost)||state.party.as_ref().is_some_and(|p|p.gate.held_embers().contains(&frost));
+        super::frost_shackle::observe(world,key,&foes,enabled);
+        if let Some(link)=state.party.as_mut(){link.frost_shackles(super::frost_shackle::snapshot());}
+    }
     // 房主：执行成员发来的敌人侧余烬效果
     if let Some(link)=state.party.as_ref().filter(|p|p.host()) {
         for (member,held,requests) in link.gate.strikes() {state.ember_fight.apply_remote(world,&foes,member,&held,&requests);}
@@ -2969,7 +3140,6 @@ fn member_embers(state:&mut Runtime,world:&mut WorldChrMan) {
     let Some(run)=state.view.run.as_ref() else{return};
     let Phase::Combat{id}=run.phase else{return};
     let embers=super::embers::held(Some(run));
-    if embers.is_empty() {return;}
     let roster=super::enemies::node_roster(run,id);
     let Ok(ids)=super::enemies::map_entities(&roster) else{return};
     let foes:Vec<_>=roster.iter().enumerate().filter_map(|(slot,spec)|{
@@ -2978,6 +3148,7 @@ fn member_embers(state:&mut Runtime,world:&mut WorldChrMan) {
         Some((chr.field_ins_handle,super::enemies::bar_rank(spec),slot as u8))
     }).collect();
     let key=(run.seed,run.act,id);
+    if let Some(link)=state.party.as_ref(){super::frost_shackle::receive(world,key,&foes,&link.event.frost_shackles);}
     let keeper=run.ember_stacks.level(erdtree_tower::embers::Ember::SpiritKeeper);
     let flasks=state.flasks.as_ref().map(|f|f.total());
     let events=state.ember_fight.tick(world,key,&embers,&foes,false,true,flasks,keeper);
@@ -3290,6 +3461,12 @@ fn tick_room(state: &mut Runtime, world: &mut WorldChrMan, game: &mut GameMan, d
         let trial_order=state.view.run.as_ref().filter(|r|r.regional_event.trial)
             .and_then(|_|state.party.as_ref().and_then(|p|p.event.trial_decision));
         if storm_order.is_none()&&trial_order.is_none(){room.poll(world, game)?;}
+        if let Some((angry,dead))=room.patches_state()&&let Some(run)=state.view.run.as_ref()
+            &&(run.regional_event.patches_angry!=angry||run.regional_event.patches_dead!=dead) {
+            let mut next=run.clone();next.regional_event.patches_angry=angry;next.regional_event.patches_dead=dead;
+            record_checked(&next)?;state.view.run=Some(next);
+            super::log(format!("PATCHES_EVENT angry={angry} dead={dead}"));
+        }
         state.command = None;
         if room.view.loading&&storm_order.is_none()&&trial_order.is_none() {
             return Ok(false);
@@ -3658,6 +3835,11 @@ fn tick_regional_event(state:&mut Runtime,world:&mut WorldChrMan,room:&mut super
         set_flag(45010965,false)?;set_flag(45010960,false)?;
         set_flag(45010941,true)?;set_flag(45010940,true)?;
         set_flag(45010942,false)?;set_flag(45010995,true)?;
+        if index==erdtree_tower::events::DICE&&(run.regional_event.patches_angry||run.regional_event.patches_dead) {
+            room.suspend_dialogues()?;let _=room.take_event_request();
+            room.view.message=if run.regional_event.patches_dead {"帕琪已死亡，使用传送门继续旅程。"}else{"帕琪被激怒了，不再接受赌博。可以战斗或使用传送门离开。"}.into();
+            return Ok(());
+        }
         let title=erdtree_tower::events::STORIES[index].title;
         let wins=erdtree_tower::events::dice_wins(run,room.node);
         if index==erdtree_tower::events::FURNACE {

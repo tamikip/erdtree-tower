@@ -83,6 +83,7 @@ impl Run {
         self.validate()
     }
     pub fn debug_ember(&mut self,ember:Ember,held:bool)->RuleResult<()> {
+        if held&&ember.retired(){return Err("该余烬已停用".into());}
         self.debug_begin()?;
         self.ember_rewards=true;self.embers.retain(|e|*e!=ember);
         if held {self.embers.push(ember);}

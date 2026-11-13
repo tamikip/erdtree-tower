@@ -22,8 +22,8 @@ struct Tuning {
     /// 黄金律法：护盾间隔（秒）；不屈：回复到最大生命的百分比；傲慢：多久没挨打后触发（秒）
     shield_every:u64,reborn_percent:i64,proud_after:u64,
 }
-const NORMAL:Tuning=Tuning{rot_per_hit:1,leech_permille:15,thorn_percent:10,swift_speed:1.1,shield_every:20,reborn_percent:40,proud_after:8};
-const STRONG:Tuning=Tuning{rot_per_hit:2,leech_permille:25,thorn_percent:12,swift_speed:1.3,shield_every:15,reborn_percent:60,proud_after:6};
+const NORMAL:Tuning=Tuning{rot_per_hit:1,leech_permille:10,thorn_percent:10,swift_speed:1.1,shield_every:25,reborn_percent:40,proud_after:8};
+const STRONG:Tuning=Tuning{rot_per_hit:2,leech_permille:15,thorn_percent:12,swift_speed:1.3,shield_every:25,reborn_percent:60,proud_after:6};
 /// 荆棘：一次反弹最多扣这么多生命（同一帧打出的伤害合算一次）
 const THORN_CAP:i64=200;
 const BAR_MARKER:i32=FIRST+99;
@@ -67,8 +67,22 @@ pub fn elite_bar_name(affixes:&[Affix],name:i32)->i32 {
 /// 整场挂着的效果；强化版的编号是原编号 +1
 fn resident(affix:Affix,empowered:bool)->Option<i32> {
     let strong=i32::from(empowered);
-    match affix {Affix::Stalwart=>Some(FIRST+strong),Affix::Bulwark=>Some(FIRST+10+strong),Affix::Frenzied=>Some(FIRST+20+strong),Affix::Regenerating=>Some(FIRST+30+strong),
+    match affix {Affix::Stalwart=>Some(FIRST+strong),Affix::Bulwark=>Some(FIRST+10+strong),Affix::Frenzied=>Some(FIRST+20+strong),
         Affix::Rot=>Some(FIRST+40),Affix::Swift=>Some(SWIFT),Affix::Thorned=>Some(THORNED),_=>None}
+}
+fn regeneration_effect(empowered:bool,authority:bool,quiet:Duration)->Option<i32> {
+    (authority&&quiet>=Duration::from_secs(3)).then_some(FIRST+30+i32::from(empowered))
+}
+#[test]
+fn regeneration_waits_three_seconds_and_only_the_authority_heals() {
+    for empowered in [false,true] {
+        assert_eq!(resident(Affix::Regenerating,empowered),None);
+        for ms in [0,1000,2999] {assert_eq!(regeneration_effect(empowered,true,Duration::from_millis(ms)),None);}
+        assert_eq!(regeneration_effect(empowered,true,Duration::from_secs(3)),Some(FIRST+30+i32::from(empowered)));
+        assert_eq!(regeneration_effect(empowered,false,Duration::from_secs(60)),None);
+        let start=Instant::now();let next_hit=start+Duration::from_secs(2);
+        assert_eq!(regeneration_effect(empowered,true,(start+Duration::from_secs(4)).duration_since(next_hit)),None);
+    }
 }
 pub fn validate(empowered:bool)->Result<(),String> {
     let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"Boss 词条参数未加载")?;
@@ -95,7 +109,7 @@ impl Fight {
         if !self.affixes.contains(&Affix::Golden) {return None;}
         let now=Instant::now();
         if let Some(until)=self.shield_until.filter(|until|now<*until) {
-            return Some((format!("黄金护盾展开中 · 受到的伤害 -70% · 剩 {} 秒",until.duration_since(now).as_secs()+1),false));
+            return Some((format!("黄金护盾展开中 · 受到的伤害 -60% · 剩 {} 秒",until.duration_since(now).as_secs()+1),false));
         }
         self.shield_at.filter(|at|*at>now&&at.duration_since(now)<=Duration::from_secs(2)).map(|_|("黄金护盾即将展开".to_owned(),true))
     }
@@ -132,12 +146,19 @@ impl Fight {
             let (hp,max)=(chr.modules.data.hp,chr.modules.data.max_hp);
             // 荆棘：单人按 Boss 受到的伤害；联机只按自己与自己召唤物打的（看 last_hit_by），由各自在本机反弹给自己
             if hp<foe.hp&&self.affixes.contains(&Affix::Thorned)&&(!party||own.contains(&chr.last_hit_by)) {reflected+=i64::from(foe.hp-hp)*tuning.thorn_percent/100;}
-            // 常驻词条效果（减伤、攻击、再生等）房主和成员都在本机挂上：效果不随网络同步，只有房主挂时成员那边的 Boss 更“软”，
+            if hp<foe.hp {foe.hurt=now;}
+            // 减伤、攻击等效果房主和成员都在本机挂上：效果不随网络同步，只有房主挂时成员那边的 Boss 更“软”，
             // 成员算出的伤害偏高，本机副本先被打到 0、卡住不倒。护盾、吸血、涅槃这些改 Boss 状态的仍只由房主做
             let present:Vec<i32>=chr.special_effect.entries().map(|e|e.param_id).collect();
             for id in self.affixes.iter().filter_map(|a|resident(*a,self.empowered)) {if !present.contains(&id){chr.apply_speffect(id,false);}}
+            let regeneration=self.affixes.contains(&Affix::Regenerating)
+                .then(||regeneration_effect(self.empowered,authority,now.duration_since(foe.hurt))).flatten();
+            for id in [FIRST+30,FIRST+31] {
+                if regeneration==Some(id) {if !present.contains(&id){chr.apply_speffect(id,false);}}
+                else if present.contains(&id){chr.remove_speffect(id);}
+            }
             if !authority {foe.hp=hp;continue;}
-            if hp<foe.hp {foe.hurt=now;if foe.proud{chr.remove_speffect(pride);foe.proud=false;}}
+            if hp<foe.hp&&foe.proud {chr.remove_speffect(pride);foe.proud=false;}
             if self.affixes.contains(&Affix::Leeching)&&team_taken>0&&max>0 {
                 chr.modules.data.hp=(i64::from(hp)+i64::from(max)*tuning.leech_permille/1000).min(i64::from(max)) as i32;
                 chr.apply_speffect(LEECH_FLASH,false);

@@ -16,6 +16,13 @@ type Spawn=unsafe extern "C" fn(*mut c_void,*mut i32,*const SpawnData,*mut i32);
 type PointTarget=unsafe extern "C" fn(*mut u8,*const [f32;4])->*mut u8;
 
 fn channeling(id:i32)->bool {matches!(id,407045010|407045012|407045110|407045112)}
+fn comet_bullet(id:i32)->bool {
+    static ORIGINALS:std::sync::LazyLock<std::collections::HashMap<i32,i32>>=std::sync::LazyLock::new(||
+        include_str!("../../scene-assets/spell-affix-bullets.tsv").lines().map(|line|{
+            let (id,base)=line.split_once('\t').unwrap();(id.parse().unwrap(),base.parse().unwrap())
+        }).collect());
+    (10420000..=10420004).contains(&ORIGINALS.get(&id).copied().unwrap_or(id))
+}
 fn direction(vector:[f32;3])->Option<[f32;3]> {
     let length=vector.iter().map(|v|v*v).sum::<f32>().sqrt();
     (length.is_finite()&&length>0.001).then(||vector.map(|v|v/length))
@@ -25,7 +32,7 @@ fn horizontal_aim(vector:[f32;3])->Option<[f32;3]> {direction([vector[0],0.0,vec
 fn redirect(data:&mut SpawnData,aim:Aim)->bool {
     let owner=u64::from_le_bytes(data.0[0..8].try_into().unwrap());
     let bullet=i32::from_le_bytes(data.0[0x14..0x18].try_into().unwrap());
-    if owner!=aim.owner||!(10420000..=10420004).contains(&bullet) {return false;}
+    if owner!=aim.owner||!comet_bullet(bullet) {return false;}
     let Some(dir)=direction(aim.direction)else{return false;};
     data.0[0x20..0x28].fill(0xff);
     let right=direction([dir[2],0.0,-dir[0]]).unwrap_or([1.0,0.0,0.0]);
@@ -108,6 +115,16 @@ mod tests {
     fn only_comet_emission_animations_can_turn() {
         for id in [407045010,407045012,407045110,407045112] {assert!(channeling(id));}
         for id in [0,45012,407045000,407045011,407045111,407145010,492045010,-1] {assert!(!channeling(id));}
+    }
+    #[test]
+    fn affixed_comet_bullets_keep_star_stream_without_redirecting_other_spells() {
+        let mut count=0;
+        for line in include_str!("../../scene-assets/spell-affix-bullets.tsv").lines() {
+            let(id,base)=line.split_once('\t').unwrap();let base:i32=base.parse().unwrap();
+            let comet=(10420000..=10420004).contains(&base);
+            assert_eq!(comet_bullet(id.parse().unwrap()),comet);count+=usize::from(comet);
+        }
+        assert!(count>0);
     }
     #[test]
     fn redirects_only_local_comet_and_preserves_every_other_spawn_field() {

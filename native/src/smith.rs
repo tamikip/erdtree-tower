@@ -68,7 +68,7 @@ static RUN_PEAK:std::sync::atomic::AtomicU8=std::sync::atomic::AtomicU8::new(0);
 pub fn set_run_peak(peak:u8) {RUN_PEAK.store(peak,Ordering::Relaxed);}
 /// 强化与获得武器的基准：本局历史最高与当前背包最高中较高的——卖掉、丢掉或存进仓库的高等级武器不会让基准掉下来
 pub fn effective_peak(data:&PlayerGameData,params:&SoloParamRepository)->i32 {
-    inventory_peak(data,params).max(i32::from(RUN_PEAK.load(Ordering::Relaxed)))
+    inventory_peak(data,params).max(i32::from(super::spirit_tune::inventory_peak(data))*5).max(i32::from(RUN_PEAK.load(Ordering::Relaxed)))
 }
 pub fn inventory_peak(data:&PlayerGameData,params:&SoloParamRepository)->i32 {
     data.equipment.equip_inventory_data.items_data.items()

@@ -2,7 +2,7 @@ use erdtree_tower::law::{Law,NODES};
 
 #[test]
 fn resistance_paths_are_independent_and_preserve_old_codes() {
-    assert_eq!(NODES.len(),35);
+    assert_eq!(NODES.len(),36);
     let elements=Law::default().toggle(27).toggle(28);
     let status=Law::default().toggle(29).toggle(30);
     assert_eq!(elements.selected(),vec![27,28]);

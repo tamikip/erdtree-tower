@@ -1,4 +1,4 @@
-// 六个武器装备栏与四件防具均计入词条。按原版已经挂上的效果补足份数，卸装时撤下补充效果。
+// 六个武器栏、四件防具与四枚护符计入词条；卸装时撤下补充效果。
 use eldenring::cs::{ChrIns,ChrInsExt,EquipParamProtector,EquipParamWeapon,PlayerGameData,SoloParamRepository,SpEffectParam};
 use fromsoftware_shared::FromStatic;
 
@@ -6,7 +6,7 @@ const AFFIX_FIRST:i32=9850000;
 const AFFIX_SPAN:i32=210;
 const FIRST:i32=9880000;
 const SPAN:i32=1000;
-const COPIES:usize=9;
+const COPIES:usize=13;
 pub const WEAPON_SLOTS:[usize;6]=[0,1,2,3,4,5];
 fn affix(id:i32)->bool {(AFFIX_FIRST..AFFIX_FIRST+AFFIX_SPAN).contains(&id)}
 fn ours(id:i32)->bool {(FIRST..FIRST+SPAN*(COPIES as i32+1)).contains(&id)&&(id-FIRST)%SPAN<AFFIX_SPAN}
@@ -20,7 +20,7 @@ fn wanted(effects:&[i32],native:&[i32])->Vec<i32> {
         (first..count.min(COPIES+1)).map(move |n|copy(effect,n))
     }).collect()
 }
-/// 装备栏中的武器与防具，不包括背包、箭矢和护符。
+/// 只计算装备栏，不包括背包和箭矢；护符的原有效果仍由游戏处理。
 fn equipped(data:&PlayerGameData,params:&SoloParamRepository)->Vec<i32> {
     let asm=&data.equipment.chr_asm;
     let mut effects=Vec::new();
@@ -33,6 +33,9 @@ fn equipped(data:&PlayerGameData,params:&SoloParamRepository)->Vec<i32> {
         let Some(id)=asm.equipment_param_ids.get(slot).copied().filter(|id|*id>0) else {continue};
         let Some(armor)=params.get::<EquipParamProtector>(id as u32) else {continue};
         effects.extend([armor.resident_sp_effect_id(),armor.resident_sp_effect_id2(),armor.resident_sp_effect_id3()]);
+    }
+    for slot in 17..=20 {
+        if let Some(&id)=asm.equipment_param_ids.get(slot).filter(|id|**id>0) {effects.extend_from_slice(erdtree_tower::talisman_passives::effects(0x20000000|id as u32));}
     }
     effects
 }
@@ -63,7 +66,7 @@ mod tests {
     #[test]
     fn switching_hands_and_removing_equipment_do_not_duplicate_bonuses() {
         let effect=9850041;
-        for count in 1..=10 {
+        for count in 1..=14 {
             let equipped=vec![effect;count];
             let held=super::wanted(&equipped,&[effect,effect]);
             let sheathed=super::wanted(&equipped,&[]);
@@ -81,8 +84,8 @@ mod tests {
         assert_eq!(super::wanted(&[attack_rare,attack_rare],&[attack_rare]),vec![9881041]);
         assert_eq!(super::wanted(&[attack_rare;3],&[attack_rare]),vec![9881041,9882041]);
         assert_eq!(super::wanted(&[attack_rare,attack_rare+1],&[attack_rare,attack_rare+1]),Vec::<i32>::new(),"different qualities already stack natively");
-        assert_eq!(super::wanted(&[hp_common;12],&[hp_common]).len(),super::COPIES,"capped at ten equipment slots");
+        assert_eq!(super::wanted(&[hp_common;14],&[hp_common]).len(),super::COPIES,"fourteen equipment slots");
         assert!(super::wanted(&[7000,7000,12345,12345],&[]).is_empty(),"only tower affix effects");
-        assert!(super::ours(9880041)&&super::ours(9881041)&&super::ours(9889209)&&!super::ours(9880250)&&!super::ours(9890000));
+        assert!(super::ours(9880041)&&super::ours(9881041)&&super::ours(9893209)&&!super::ours(9880250)&&!super::ours(9894000));
     }
 }

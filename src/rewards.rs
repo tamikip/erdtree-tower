@@ -49,7 +49,7 @@ pub(crate) fn before_custom_spirits(run:&Run,node:usize)->Vec<Reward> {
 static SPIRIT_LEVELS:LazyLock<Vec<Item>>=LazyLock::new(||CATALOG.iter().filter(|i|i.kind==ItemKind::Spirit).flat_map(|i|(1..=u32::from(SPIRIT_MAX)).map(move |level|Item{
     id:i.id+level,name:Box::leak(format!("{} +{level}",i.name).into_boxed_str()),kind:ItemKind::Spirit,
 })).collect());
-pub fn lookup(id:u32)->Option<&'static Item> {crate::affixes::lookup(id).or_else(||crate::talismans::lookup(id)).or_else(||CATALOG.iter().find(|item|item.id==id)).or_else(||SPIRIT_LEVELS.iter().find(|item|item.id==id))}
+pub fn lookup(id:u32)->Option<&'static Item> {crate::spell_affixes::variant(id).map(|v|&v.item).or_else(||crate::affixes::lookup(id)).or_else(||crate::talismans::lookup(id)).or_else(||CATALOG.iter().find(|item|item.id==id)).or_else(||SPIRIT_LEVELS.iter().find(|item|item.id==id))}
 pub fn spirit_base(id:u32)->u32 {
     let base=id-(id&0x0fffffff)%1000;
     if id-base<=u32::from(SPIRIT_MAX)&&CATALOG.iter().any(|i|i.id==base&&i.kind==ItemKind::Spirit){base}else{id}
@@ -66,8 +66,21 @@ pub fn spirit_cap(run:&Run)->u32 {
 }
 /// 当前骨灰等级：持有过的骨灰最高等级与武器的失色等效强化等级中较大的，最高 +39。
 pub fn spirit_level_now(run:&Run)->u8 {
-    let weapon=run.weapon_peak.map_or(0,|peak|crate::contracts::reinforcement_level(peak,10));
-    run.spirit_peak.unwrap_or(0).max(weapon).min(SPIRIT_MAX)
+    crate::contracts::reinforcement_level(shared_upgrade_peak(run),10).min(SPIRIT_MAX)
+}
+pub fn shared_upgrade_peak(run:&Run)->u8 {
+    run.weapon_peak.unwrap_or(0).max(run.spirit_peak.unwrap_or(0).min(SPIRIT_MAX).saturating_mul(5)).min(crate::contracts::MAX_PEAK)
+}
+#[test]
+fn shared_upgrade_progress_converts_both_ways_without_rounding_growth() {
+    let mut run=Run::new(5,Class::Confessor);
+    run.spirit_peak=Some(10);assert_eq!(shared_upgrade_peak(&run),50);
+    assert_eq!(crate::contracts::reinforcement_level(shared_upgrade_peak(&run),25),25);
+    run.weapon_peak=Some(56);assert_eq!(spirit_level_now(&run),11);
+    run.spirit_peak=Some(11);assert_eq!(shared_upgrade_peak(&run),56);
+    run.spirit_peak=Some(39);assert_eq!(shared_upgrade_peak(&run),195);
+    run.weapon_peak=Some(198);assert_eq!(spirit_level_now(&run),39);
+    assert_eq!(shared_upgrade_peak(&Run::decode(&run.encode().unwrap()).unwrap()),198);
 }
 /// 骨灰等级（+0～+39）；不是骨灰时为 None
 pub fn spirit_level(id:u32)->Option<u8> {

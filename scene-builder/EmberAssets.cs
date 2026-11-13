@@ -38,6 +38,7 @@ static class EmberAssets {
     }
     static List<PARAM.Row> Build(PARAM p) {
         var rows=new List<PARAM.Row>();
+        rows.Add(FrostShackle(p));
         // 无声处刑：常驻（stateInfo 288）→ 触发 → 致命一击后 10 秒精力消耗减半
         var resident=new PARAM.Row(p.Rows.Single(r=>r.ID==350500)){ID=First,Name="Tower ember execution"};
         Set(resident,"iconId",-1);Set(resident,"spCategory",0);Set(resident,"categoryPriority",0);rows.Add(resident);
@@ -129,6 +130,12 @@ static class EmberAssets {
         if(new[]{"changeHpRate","changeHpPoint","changeMpRate","changeMpPoint","invocationConditionsStateChange1","replaceSpEffectId","cycleOccurrenceSpEffectId"}.Any(f=>Convert.ToDouble(relief[f].Value)!=(f is "replaceSpEffectId" or "cycleOccurrenceSpEffectId"?-1:0)))
             throw new Exception("Execution relief must only cut stamina cost");
         if(new[]{First+80,First+81}.Any(id=>Convert.ToInt32(p.Rows.Single(r=>r.ID==id)["throwAttackParamChange"].Value)!=1))throw new Exception("Chain stacks must only boost critical hits");
+    }
+    public static PARAM.Row FrostShackle(PARAM p) {
+        var row=Enemy(p,First+28,"Tower ember frost shackles",10f);
+        Set(row,"effectTargetSelfTarget",1);
+        foreach(var element in new[]{"physics","magic","fire","thunder","dark"})Set(row,element+"AttackPowerRate",0.8f);
+        return row;
     }
     public static void Patch(string input,string output) {
         if(Path.GetFullPath(input)==Path.GetFullPath(output))throw new Exception("Separate staging output required");

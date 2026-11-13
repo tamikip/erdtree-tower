@@ -1,7 +1,7 @@
 //! 联机大厅：房主由启动器“开房”启动游戏，启动器把房间信息写进模组目录的 tower-lobby.json，
 //! 游戏里的 DLL 读到后用 Steam 大厅公开这个房间（游戏开着房间就在，关掉游戏 Steam 自动解散）；
 //! 其他人在启动器里浏览房间，点“加入”时启动器把这个房间的无缝联机密码写好再启动游戏，玩家不用看也不用填密码。
-//! 公开房间把无缝联机密码直接放在大厅数据里；私密房间只放一段盐，密码由启动器按“盐 + 房间密码”算出，
+//! 公开房间把无缝联机密码直接放在大厅数据里；私密房间发布盐和密码摘要，密码由启动器按“盐 + 房间密码”算出，
 //! 不知道房间密码的人算不出来（算法见 launcher/Tower.Launcher/SteamLobby.cs）。
 use serde::Deserialize;
 
@@ -12,7 +12,7 @@ pub const STATUS_FILE:&str="tower-lobby-status.txt";
 /// 大厅筛选标记：只列出爬塔的房间
 pub const TAG_KEY:&str="tower";
 pub const TAG:&str="erdtree-tower";
-pub const MAX_PLAYERS:u8=8;
+pub const MAX_PLAYERS:u8=6;
 
 #[derive(Debug,Clone,PartialEq,Eq,Deserialize)]
 pub struct HostRoom {
@@ -22,6 +22,7 @@ pub struct HostRoom {
     #[serde(default)] pub salt:String,
     /// 公开房间的无缝联机密码；私密房间为空
     #[serde(default)] pub password:String,
+    #[serde(default)] pub password_sha256:String,
     /// 模组版本（启动器的安装记录），版本不同的房间在启动器里不能加入
     pub version:String,
 }
@@ -34,7 +35,8 @@ impl HostRoom {
     pub fn validate(&self)->Result<(),String> {
         let name=self.name.trim();
         if name.is_empty()||name.chars().count()>32||name.chars().any(char::is_control) {return Err("房间名应为 1–32 个字".into());}
-        if !(2..=MAX_PLAYERS).contains(&self.max) {return Err("房间人数应为 2–8".into());}
+        if !(2..=MAX_PLAYERS).contains(&self.max) {return Err("房间人数应为 2–6".into());}
+        if !self.password_sha256.is_empty()&&(self.password_sha256.len()!=64||!self.password_sha256.bytes().all(|b|b.is_ascii_hexdigit())) {return Err("房间密码校验信息无效".into());}
         if self.version.is_empty()||self.version.len()>32||self.version.chars().any(char::is_control) {return Err("房间版本无效".into());}
         if self.locked {
             if !token(&self.salt,16,64)||!self.password.is_empty() {return Err("私密房间应只有盐、没有密码".into());}
@@ -47,6 +49,7 @@ impl HostRoom {
         let host:String=host.chars().filter(|c|!c.is_control()).take(32).collect();
         let state:String=state.chars().filter(|c|!c.is_control()).take(32).collect();
         vec![(TAG_KEY,TAG.into()),("v",self.version.clone()),("name",self.name.trim().into()),("host",host),
+            ("pwd_sha256",self.password_sha256.clone()),
             ("max",self.max.to_string()),("players",players.clamp(1,self.max).to_string()),("state",state),
             ("lock",if self.locked{"1"}else{"0"}.into()),("salt",self.salt.clone()),("pwd",self.password.clone()),("open",if open{"1"}else{"0"}.into()),("started",if started{"1"}else{"0"}.into())]
     }
@@ -55,6 +58,16 @@ impl HostRoom {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn private_verifier_is_published_and_room_capacity_is_six() {
+        let mut room=HostRoom::parse(r#"{"name":"private","max":6,"locked":true,"salt":"0123456789abcdef","version":"v116","password_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#).unwrap();
+        let data=room.data("host",1,"hub",true,false);
+        assert!(data.contains(&("pwd_sha256","a".repeat(64))));
+        assert!(data.contains(&("pwd",String::new())));
+        for size in [1,7,8] {room.max=size;assert!(room.validate().is_err());}
+        room.max=6;room.password_sha256="z".repeat(64);assert!(room.validate().is_err());
+        room.password_sha256="a".repeat(63);assert!(room.validate().is_err());
+    }
     #[test]
     fn host_room_files_are_validated_and_become_lobby_data() {
         let public=HostRoom::parse(r#"{"name":"一起爬塔","max":4,"password":"Ab12Cd34Ef56","version":"v104"}"#).unwrap();

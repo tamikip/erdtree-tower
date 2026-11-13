@@ -26,6 +26,7 @@ static class EventHostAssets {
             var part=(MSBE.Part.Enemy)donor.DeepCopy();part.Name=$"tower_event_host_{row[0]}";part.EntityID=id;
             part.InstanceID=map.Parts.Enemies.Where(e=>e.ModelName=="c0000").Select(e=>e.InstanceID).DefaultIfEmpty(9800).Max()+1;
             part.CharaInitID=int.Parse(row[2]);part.Position=new(0,.1f,0);part.Rotation=new(0,180,0);part.Scale=Vector3.One;
+            if(row[0]=="Dice")part.ThinkParamID=523090010;
             part.CollisionPartName=old.CollisionPartName;part.TalkID=-1;part.EntityGroupIDs=new uint[8];part.WalkRouteName=null;part.BackupEventAnimID=-1;part.ChrActivateCondParamID=0;
             PartyPlacement.Prepare(part);map.Parts.Enemies.Add(part);
             if(!map.Models.GetEntries().Any(m=>m.Name=="c0000"))map.Models.Players.Add(new MSBE.Model.Player{Name="c0000"});

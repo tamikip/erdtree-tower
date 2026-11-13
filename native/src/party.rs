@@ -18,6 +18,9 @@ struct Steam {
 }
 #[derive(Default)]
 pub struct EventSync {
+    pub pause:super::suspension::LinkState,
+    pub frost_shackles:Vec<(u8,Instant)>,
+    frost_sent:Option<Instant>,
     pub forced_skip:Option<erdtree_tower::skip::Target>,
     pub descent_complete:bool,
     pub mausoleum_open:bool,
@@ -128,6 +131,24 @@ impl Departure {
     }
 }
 impl Link {
+    pub fn prepare_pause(&mut self)->Result<(),String> {
+        if !self.host()||self.event.pause.ticket.is_some()||!self.event.pause.departed.is_empty()||!self.gate.pause_ready(){return Err("等待全员完成当前房间、领奖并回到路线图".into());}
+        let ticket=random_entropy()?.max(1);
+        let order=Order::PausePrepare{epoch:self.epoch,ticket};self.send(Send::Broadcast(order.clone()))?;self.accept(&order)?;Ok(())
+    }
+    pub fn commit_pause(&mut self)->Result<bool,String> {
+        let Some(ticket)=self.event.pause.ticket else{return Ok(false)};
+        if !self.host()||!self.gate.pause_saved(ticket){return Ok(false);}
+        let order=Order::PauseCommit{epoch:self.epoch,ticket};self.send(Send::Broadcast(order.clone()))?;self.accept(&order)?;Ok(true)
+    }
+    pub fn abort_pause(&mut self)->Result<(),String> {
+        if !self.host(){return Err("等待房主取消暂退".into());}
+        if let Some(ticket)=self.event.pause.ticket {let order=Order::PauseAbort{epoch:self.epoch,ticket};self.send(Send::Broadcast(order.clone()))?;self.accept(&order)?;}Ok(())
+    }
+    pub fn frost_shackles(&mut self,remaining:Vec<(u8,u16)>) {
+        if !self.host()||self.event.frost_sent.is_some_and(|t|t.elapsed()<Duration::from_millis(250)){return;}
+        if self.send(Send::Broadcast(Order::FrostShackles{epoch:self.epoch,remaining})).is_ok(){self.event.frost_sent=Some(Instant::now());}
+    }
     pub fn skip_node(&mut self,target:erdtree_tower::skip::Target)->Result<(),String> {
         if !self.host(){return Err("只有房主可以跳过节点".into());}
         if let Some(error)=&self.stopped{return Err(error.clone());}
@@ -196,6 +217,7 @@ impl Link {
         for &id in &gone {self.gate.remove(id);}
         self.config.peers.retain(|p|!gone.contains(&p.player));
         self.last_seen.retain(|(id,_)|!gone.contains(id));
+        self.event.pause.departed.retain(|id|!gone.contains(id));
         self.ballots.retain(|b|!gone.contains(&b.player));
         steam.roster=next.clone();steam.transport.set_roster(next.clone());
         Some(gone)
@@ -327,11 +349,34 @@ impl Link {
         if self.host()&&!self.rewards&&self.gate.rewards().is_some() {self.send(Send::Broadcast(Order::Rewards{epoch:self.epoch}))?;self.rewards=true;}Ok(())
     }
     pub fn accept(&mut self,order:&Order)->Result<bool,String> {
+        match order {
+            Order::PausePrepare{epoch,ticket} if *epoch==self.epoch&&*ticket!=0=>{
+                if self.event.pause.ticket.is_none(){self.event.pause.ticket=Some(*ticket);self.event.pause.started=Some(Instant::now());self.selected=None;self.ballots.clear();}
+                return Ok(false);
+            },
+            Order::PauseCommit{epoch,ticket} if *epoch==self.epoch&&self.event.pause.ticket==Some(*ticket)&&self.event.pause.saved=>{self.event.pause.committed=true;return Ok(false);},
+            Order::PauseAbort{epoch,ticket} if *epoch==self.epoch&&self.event.pause.ticket==Some(*ticket)&&!self.event.pause.committed=>{self.event.pause.ticket=None;self.event.pause.queued=false;self.event.pause.saved=false;return Ok(false);},
+            Order::LeaveReady{epoch,player} if *epoch==self.epoch&&*player!=self.config.host=>{
+                if *player==self.config.player {if self.event.pause.leaving{self.event.pause.leave_ready=true;}}
+                else {self.gate.remove(*player);self.last_seen.retain(|(p,_)|p!=player);self.ballots.retain(|b|b.player!=*player);self.peer_faults.retain(|(p,_)|p!=player);if !self.event.pause.departed.contains(player){self.event.pause.departed.push(*player);}}
+                return Ok(false);
+            },
+            Order::ResumeReady{epoch,point} if *epoch==self.epoch&&self.event.pause.resume.as_ref()==Some(point)=>{self.event.pause.resume_ready=true;return Ok(false);},
+            Order::PausePrepare{..}|Order::PauseCommit{..}|Order::PauseAbort{..}|Order::LeaveReady{..}|Order::ResumeReady{..}=>return Ok(false),
+            _=>{},
+        }
+        if self.event.pause.ticket.is_some()&&!matches!(order,Order::ForceEnd|Order::Stop(_)){return Ok(false);}
         if let Order::MapDrawing(canvas)=order {return Ok(!self.host()&&self.drawing.receive(canvas.clone(),self.config.player));}
         if matches!(order,Order::ForceEnd){return Ok(!self.host());}
         if let Some(error)=&self.stopped {return Err(error.clone());}
         if self.event.forced_skip.is_some()&&!matches!(order,Order::SkipNode{..}|Order::Enter{..}|Order::BossTest{..}|Order::EventTest{..}|Order::NewRun{..}|Order::Votes{..}|Order::Law{..}|Order::Stop(_)|Order::Titles(_)) {return Ok(false);}
         if let Order::Titles(list)=order {if !self.host(){self.titles=list.iter().take(erdtree_tower::party_roster::MAX_PLAYERS).copied().collect();}return Ok(false);}
+        if let Order::FrostShackles{epoch,remaining}=order {
+            if !self.host()&&*epoch==self.epoch&&remaining.len()<=64&&remaining.iter().all(|(_,ms)|*ms<=10000) {
+                let now=Instant::now();self.event.frost_shackles=remaining.iter().map(|(slot,ms)|(*slot,now+Duration::from_millis(u64::from(*ms)))).collect();
+            }
+            return Ok(false);
+        }
         if self.defeated&&!matches!(order,Order::NewRun{..}|Order::Stop(_)){return Ok(false);}
         match order {
             Order::SkipNode{epoch,target} if *epoch==self.epoch=>{
@@ -519,6 +564,9 @@ impl Link {
             self.last_report=Instant::now();
             if let Some(run)=run {
                 let mut report=Report::new(run,self.epoch,self.arrived,self.bound,alive);
+                report.pause_saved=self.event.pause.ticket.filter(|_|self.event.pause.saved);
+                if report.pause_saved.is_some(){report.resume=erdtree_tower::suspension::Point::of(run);}
+                report.leaving=self.event.pause.leaving;
                 report.testing=super::debug_menu::enabled();report.event_testing=true;
                 report.scarab_claim=self.event.scarab_claim;
                 report.mausoleum_open=run.regional_event.mausoleum.as_ref().filter(|c|c.accepted)
@@ -539,11 +587,23 @@ impl Link {
             }else {
                 self.selected=None;
                 let mut report=if at_hub&&alive {Report::at_hub(self.epoch)}else{Report::unavailable(self.epoch)};
+                report.pause_saved=self.event.pause.ticket.filter(|_|self.event.pause.saved);
+                report.resume=self.event.pause.resume.clone();
                 report.rest_end=rest_end;report.title=self.title;
                 if self.host(){let _=self.gate.report(self.config.player,report);}else if let Err(e)=self.send(Send::Report(report)){self.stop(e);}
             }
         }
         if self.host()&&self.stopped.is_none() {
+            let leaving=self.gate.leaving();
+            for player in leaving {if player==self.config.host{continue;}
+                let order=Order::LeaveReady{epoch:self.epoch,player};
+                if self.send(Send::Broadcast(order.clone())).is_ok(){let _=self.accept(&order);}
+            }
+            if let Some(point)=self.event.pause.resume.clone().filter(|p|self.gate.resume_ready(p)) {
+                let order=Order::ResumeReady{epoch:self.epoch,point};
+                if !self.event.pause.resume_ready&&self.send(Send::Broadcast(order.clone())).is_ok(){let _=self.accept(&order);}
+            }
+            if !self.event.pause.departed.is_empty()||self.event.pause.ticket.is_some()||self.event.pause.queued&&self.gate.pause_ready(){return orders;}
             let mut stale=false;
             for (player,request) in self.gate.drawing_requests() {
                 if !self.drawing.apply(player,&request) {stale|=self.drawing.canvas.as_ref().is_some_and(|c|c.scope==request.scope&&c.acknowledged.iter().any(|a|a.0==player&&a.1>=request.sequence));}
@@ -653,6 +713,54 @@ pub fn random_entropy()->Result<u64,String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn pause_host_cannot_commit_until_every_saved_ack_matches() {
+        use super::*;
+        let (mut host,_,commands)=test_link(1);let run=Run::new(42,erdtree_tower::Class::Samurai);
+        host.gate.epoch=host.epoch;
+        let mut report=Report::new(&run,host.epoch,false,false,true);
+        for player in [1,2]{host.gate.report(player,report.clone()).unwrap();}
+        host.prepare_pause().unwrap();let ticket=host.event.pause.ticket.unwrap();
+        assert!(matches!(commands.try_recv().unwrap(),Send::Broadcast(Order::PausePrepare{..})));
+        host.event.pause.saved=true;report.pause_saved=Some(ticket);report.resume=erdtree_tower::suspension::Point::of(&run);
+        host.gate.report(1,report.clone()).unwrap();assert!(!host.commit_pause().unwrap());assert!(commands.try_recv().is_err());
+        host.gate.report(2,report).unwrap();assert!(host.commit_pause().unwrap());assert!(host.event.pause.committed);
+        assert!(matches!(commands.try_recv().unwrap(),Send::Broadcast(Order::PauseCommit{..})));
+    }
+    #[test]
+    fn pause_requires_matching_ticket_and_durable_ack_then_rejects_late_orders() {
+        use super::*;
+        let (mut guest,_,_)=test_link(2);let epoch=guest.epoch;
+        guest.accept(&Order::PausePrepare{epoch,ticket:99}).unwrap();
+        guest.accept(&Order::PauseCommit{epoch,ticket:99}).unwrap();assert!(!guest.event.pause.committed);
+        guest.event.pause.saved=true;
+        guest.accept(&Order::PauseCommit{epoch:epoch+1,ticket:99}).unwrap();assert!(!guest.event.pause.committed);
+        guest.accept(&Order::PauseCommit{epoch,ticket:98}).unwrap();assert!(!guest.event.pause.committed);
+        guest.accept(&Order::PauseCommit{epoch,ticket:99}).unwrap();assert!(guest.event.pause.committed);
+        assert!(!guest.accept(&Order::Enter{epoch:epoch+1,act:1,visited:vec![],node:0,has_stonesword_key:false}).unwrap());
+        assert_eq!(guest.epoch,epoch);
+        guest.accept(&Order::PauseAbort{epoch,ticket:99}).unwrap();assert!(guest.event.pause.committed);
+    }
+    #[test]
+    fn aborted_pause_unblocks_and_old_commit_cannot_reactivate_it() {
+        use super::*;
+        let (mut guest,_,_)=test_link(2);let epoch=guest.epoch;
+        guest.accept(&Order::PausePrepare{epoch,ticket:99}).unwrap();guest.event.pause.saved=true;
+        guest.accept(&Order::PauseAbort{epoch,ticket:99}).unwrap();
+        assert!(guest.event.pause.ticket.is_none());assert!(!guest.event.pause.saved);
+        guest.accept(&Order::PauseCommit{epoch,ticket:99}).unwrap();assert!(!guest.event.pause.committed);
+    }
+    #[test]
+    fn confirmed_leave_removes_waiters_and_late_failure_cannot_stop_host() {
+        use super::*;
+        let (mut host,_,_)=test_link(1);let epoch=host.epoch;
+        host.last_seen.push((2,Instant::now()));host.defer_peer_fault(2);
+        host.accept(&Order::LeaveReady{epoch,player:2}).unwrap();
+        assert!(!host.gate.members().contains(&2));assert!(host.last_seen.iter().all(|p|p.0!=2));assert!(host.peer_faults.is_empty());
+        host.defer_peer_fault(2);assert!(host.peer_faults.is_empty());
+        let (mut guest,_,_)=test_link(2);guest.accept(&Order::LeaveReady{epoch,player:2}).unwrap();assert!(!guest.event.pause.leave_ready);
+        guest.event.pause.leaving=true;guest.accept(&Order::LeaveReady{epoch,player:2}).unwrap();assert!(guest.event.pause.leave_ready);
+    }
+    #[test]
     fn skip_before_spawn_is_host_only_idempotent_and_drops_late_combat_orders() {
         use super::*;
         let run=Run::new(42,erdtree_tower::Class::Samurai);
@@ -735,6 +843,26 @@ mod tests {
         link.accept(&Order::EventDone{epoch:4,wave:2,killed:2,owners:[0;3]}).unwrap();
         link.accept(&Order::Enter{epoch:5,act:1,visited:vec![],node:0,has_stonesword_key:false}).unwrap();
         assert!(!link.event.guards_cleared);
+    }
+    #[test]
+    fn frost_shackles_sync_without_local_ownership_and_clear_on_new_room() {
+        use super::*;
+        let (mut guest,_,_)=test_link(2);let epoch=guest.epoch;
+        guest.accept(&Order::FrostShackles{epoch,remaining:vec![(2,10000)]}).unwrap();
+        assert_eq!(guest.event.frost_shackles.len(),1);
+        assert_eq!(guest.event.frost_shackles[0].0,2);
+        guest.accept(&Order::FrostShackles{epoch:epoch+1,remaining:vec![]}).unwrap();
+        assert_eq!(guest.event.frost_shackles.len(),1);
+        guest.accept(&Order::FrostShackles{epoch,remaining:vec![(3,10001)]}).unwrap();
+        assert_eq!(guest.event.frost_shackles[0].0,2);
+        guest.accept(&Order::FrostShackles{epoch,remaining:vec![]}).unwrap();
+        assert!(guest.event.frost_shackles.is_empty());
+        guest.accept(&Order::FrostShackles{epoch,remaining:vec![(2,1000)]}).unwrap();
+        guest.accept(&Order::Enter{epoch:epoch+1,act:1,visited:vec![],node:0,has_stonesword_key:false}).unwrap();
+        assert!(guest.event.frost_shackles.is_empty());
+        let (mut host,_,_)=test_link(1);
+        host.accept(&Order::FrostShackles{epoch:host.epoch,remaining:vec![(2,1000)]}).unwrap();
+        assert!(host.event.frost_shackles.is_empty());
     }
     #[test]
     fn host_broadcasts_law_until_guest_acknowledges_and_rejects_wrong_epoch() {

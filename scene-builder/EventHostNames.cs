@@ -17,7 +17,9 @@ static class EventHostNames {
         var npc=PARAM.Read(file.Bytes);npc.ApplyParamdef(def);var template=npc.Rows.Single(r=>r.ID==523200079);
         var own=rows.Select(Npc).ToHashSet();
         foreach(var row in rows) {
-            var named=new PARAM.Row(template){ID=Npc(row),Name="Tower event host "+row[0]};
+            var basis=row[0]=="Dice"?original.Rows.Single(r=>r.ID==523090010):template;
+            var named=new PARAM.Row(basis){ID=Npc(row),Name="Tower event host "+row[0]};
+            if(row[0]=="Dice")named["teamType"].Value=Convert.ChangeType(26,basis["teamType"].Value.GetType());
             named["nameId"].Value=int.Parse(row[5]);
             int index=npc.Rows.FindIndex(r=>r.ID==named.ID);
             if(index>=0) {
@@ -45,7 +47,8 @@ static class EventHostNames {
             if(!Equal(cell.Value,actual[row.ID][cell.Def.InternalName].Value))throw new Exception($"Unrelated NPC changed: {row.ID}");
         foreach(var row in rows) {
             var entry=actual[Npc(row)];
-            foreach(var cell in template.Cells)if(!Equal(entry[cell.Def.InternalName].Value,cell.Def.InternalName=="nameId"?(object)int.Parse(row[5]):cell.Value))throw new Exception("Named host differs beyond nameId");
+            var basis=row[0]=="Dice"?original.Rows.Single(r=>r.ID==523090010):template;
+            foreach(var cell in basis.Cells)if(!Equal(entry[cell.Def.InternalName].Value,cell.Def.InternalName=="nameId"?(object)int.Parse(row[5]):row[0]=="Dice"&&cell.Def.InternalName=="teamType"?Convert.ChangeType(26,cell.Value.GetType()):cell.Value))throw new Exception("Named host differs from its template");
             Console.WriteLine($"{row[0]}: {row[3]} (name={row[5]}, npc={entry.ID})");
         }
         var restored=MSBE.Read(Path.Combine(output,mapPath));

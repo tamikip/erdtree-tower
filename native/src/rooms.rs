@@ -11,6 +11,17 @@ fn merchant_collision(flags:&mut eldenring::cs::ChrCtrlFlags,down:bool) {
     flags.set_disable_player_collision(down);
     flags.set_disable_character_capsule_collision(down);
 }
+fn patches_reaction(angry:bool,dead:bool,before:Option<i32>,hp:i32)->(bool,bool) {
+    (angry||hp<=0||before.is_some_and(|old|hp<old),dead||hp<=0)
+}
+#[test]
+fn patches_remains_hostile_after_healing_and_dead_after_reload() {
+    assert_eq!(patches_reaction(false,false,None,1551),(false,false));
+    assert_eq!(patches_reaction(false,false,Some(1551),1500),(true,false));
+    assert_eq!(patches_reaction(true,false,Some(1500),1551),(true,false));
+    assert_eq!(patches_reaction(false,false,Some(1551),0),(true,true));
+    assert_eq!(patches_reaction(true,true,None,1551),(true,true));
+}
 
 fn first_stale<T>(bindings:&[(T,usize)],mut lookup:impl FnMut(&T)->Option<usize>)->Option<usize> {
     bindings.iter().position(|(handle,address)|lookup(handle)!=Some(*address))
@@ -74,6 +85,9 @@ pub struct Room {
     event_host:usize,
     /// 三重宝匣不放引导 NPC：直接开箱，房间里只有三个箱子
     event_hostless:bool,
+    patches_angry:bool,
+    patches_dead:bool,
+    patches_hp:Option<i32>,
     pub node: usize,
     pub kind: NodeKind,
     pub block: i32,
@@ -96,6 +110,8 @@ pub struct Room {
     pub chest_attempt:Option<Instant>,
 }
 impl Room {
+    fn patches_host(&self)->bool {self.kind==NodeKind::Event&&!self.event_hostless&&super::event_hosts::HOSTS[self.event_host].draw==erdtree_tower::events::Draw::Dice}
+    pub fn patches_state(&self)->Option<(bool,bool)> {self.patches_host().then_some((self.patches_angry,self.patches_dead))}
     pub fn merchant_dead(&self,world:&WorldChrMan)->bool {
         self.kind==NodeKind::Shop&&self.handles.first().is_some_and(|(handle,address)|world.chr_ins_by_handle(handle)
             .is_some_and(|c|std::ptr::from_ref(c) as usize==*address&&!c.debug_flags.character_disabled()
@@ -128,6 +144,7 @@ impl Room {
         }
         self.event_host=super::event_hosts::index(if run.regional_event.mausoleum.is_some(){erdtree_tower::events::Draw::Altar}else{run.event_draw(self.node)});
         let progress=&run.regional_event;
+        self.patches_angry|=progress.patches_angry;self.patches_dead|=progress.patches_dead;
         self.event_hostless=progress.mausoleum.is_none()&&!progress.trial&&progress.stormveil.is_none()&&!progress.descent&&!progress.recovery
             &&!progress.scarabs&&!progress.locked&&run.gamble(self.node).filter(|_|solo).is_none()&&!run.altar(self.node);
         // 死亡重试回到已结束的事件：引导者不再提供任何选项
@@ -138,7 +155,7 @@ impl Room {
         }
         let menu=super::native_talk::EventMenu{mausoleum_offer:progress.mausoleum.is_some(),gamble:run.gamble(self.node).filter(|_|solo).map(|g|g as u8),trial:progress.trial,chariot:progress.chariot,stormveil:progress.stormveil.is_some(),descent:progress.descent,recovery:progress.recovery,scarabs:progress.scarabs,locked:progress.locked,
             altar:run.altar(self.node),used:progress.opened!=0||progress.stormveil.is_some_and(|s|s!=erdtree_tower::stormveil::Progress::Choosing),
-            busy:progress.guards||self.scarabs.active()||party_busy,ready:self.scarabs.ready()||party_ready,attempts:progress.attempts};
+            busy:progress.guards||self.scarabs.active()||party_busy||self.patches_angry||self.patches_dead,ready:self.scarabs.ready()||party_ready,attempts:progress.attempts};
         for talk in &mut self.talks {talk.set_event_menu(menu);}
     }
     pub fn take_event_request(&mut self)->Option<super::native_talk::EventRequest> {
@@ -210,7 +227,7 @@ impl Room {
             merchant_down:false,shop_refresh_pending:false,shop_counters:None,hunter:None,merchant_hit_logged:false,
             scarabs:Default::default(),
             chest_attempt:None,
-            hub,event_host:0,event_hostless:false,
+            hub,event_host:0,event_hostless:false,patches_angry:false,patches_dead:false,patches_hp:None,
             node,
             kind,
             block,
@@ -289,6 +306,18 @@ impl Room {
             }
             self.view.loading=false;
             self.talks[0].poll()?;return Ok(());
+        }
+        if self.patches_host() {
+            if let Some((handle,address))=self.handles.first()&&let Some(chr)=world.chr_ins_by_handle(handle).filter(|c|std::ptr::from_ref(*c) as usize==*address) {
+                (self.patches_angry,self.patches_dead)=patches_reaction(self.patches_angry,self.patches_dead,self.patches_hp,chr.modules.data.hp);
+                self.patches_hp=Some(chr.modules.data.hp);
+            }
+            if self.patches_angry||self.patches_dead {self.suspend_dialogues()?;for talk in &mut self.talks {let _=talk.take_event_request();}}
+            if self.patches_dead {
+                super::native_talk::set_flag(super::event_hosts::HOSTS[self.event_host].flag,false)?;
+                super::native_talk::set_flag(self.base()+993,true)?;
+                self.view.loading=false;return Ok(());
+            }
         }
         let specs = if self.hub {vec![(0,[-329.5,-21.9,-309.0]),(0,[-329.5,-21.9,-302.0])]} else if self.kind==NodeKind::Event&&self.event_hostless {vec![]} else {npcs(self.kind)};
         if let Some(index)=first_stale(&self.handles,|handle|world.chr_ins_by_handle(handle)
@@ -420,12 +449,15 @@ impl Room {
                 .filter(|c| std::ptr::from_ref(*c) as usize == address)
                 .ok_or("服务 NPC 已卸载")?;
             let merchant=self.kind==NodeKind::Shop&&index==0;
-            chr.team_type = if merchant {6}else{0};
-            chr.chr_flags1c5.set_is_invincible(!merchant);
-            chr.debug_flags.set_disabled_hit(!merchant||self.merchant_down);
+            let patches=self.patches_host()&&index==0;
+            let vulnerable=merchant||patches;
+            chr.team_type = if patches&&!self.patches_angry {26}else if vulnerable {6}else{0};
+            chr.chr_flags1c5.set_is_invincible(!vulnerable);
+            chr.debug_flags.set_disabled_hit(!vulnerable||self.merchant_down);
             if merchant&&self.merchant_down {chr.debug_flags.set_character_disabled(true);}
-            chr.debug_flags.set_disabled_movement(true);
-            chr.debug_flags.set_disabled_secondary_actions(true);
+            chr.debug_flags.set_disabled_movement(!(patches&&self.patches_angry));
+            chr.debug_flags.set_disabled_secondary_actions(!(patches&&self.patches_angry));
+            if patches {merchant_collision(&mut chr.chr_ctrl.flags,false);}
             if merchant {
                 let before=chr.chr_ctrl.flags;
                 merchant_collision(&mut chr.chr_ctrl.flags,self.merchant_down);
@@ -433,7 +465,7 @@ impl Room {
                     super::log(format!("MERCHANT_HIT entity={} hp={} team={} invincible={} debug_hit_disabled={} ctrl_before={before:?} ctrl_after={:?}",chr.event_entity_id,chr.modules.data.hp,chr.team_type,chr.chr_flags1c5.is_invincible(),chr.debug_flags.disabled_hit(),chr.chr_ctrl.flags));
                     self.merchant_hit_logged=true;
                 }
-            }else{
+            }else if !patches{
                 chr.chr_ctrl.flags.set_disable_player_collision(true);
                 chr.chr_ctrl.flags.set_disable_character_capsule_collision(true);
             }
@@ -463,7 +495,7 @@ impl Room {
             }
         }
         for talk in &mut self.talks {talk.set_camp_used(self.view.completed);}
-        let skip=usize::from(self.merchant_down);
+        let skip=usize::from(self.merchant_down||self.patches_host()&&self.patches_angry);
         if self.merchant_down&&let Some(talk)=self.talks.first_mut(){talk.suspend()?;}
         if let Some((index,_)) = self.talks.iter().enumerate().skip(skip).find(|(_,talk)|talk.active()) {
             self.talks[index].poll()?;

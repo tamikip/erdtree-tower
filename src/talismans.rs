@@ -15,10 +15,14 @@ static GROUPS:LazyLock<Vec<Vec<usize>>>=LazyLock::new(||{
     }
     map.into_values().collect()
 });
-pub fn lookup(id:u32)->Option<&'static Item>{INDEX.get(&id).map(|i|&CATALOG[*i])}
-pub fn tier(id:u32)->Option<u8>{INDEX.get(&id).map(|i|VARIANTS[*i].tier)}
+pub fn lookup(id:u32)->Option<&'static Item>{crate::talisman_passives::variant(id).map(|v|&v.item).or_else(||INDEX.get(&id).map(|i|&CATALOG[*i]))}
+pub fn tier(id:u32)->Option<u8>{crate::talisman_passives::variant(id).map(|v|v.tier).or_else(||INDEX.get(&id).map(|i|VARIANTS[*i].tier))}
 pub fn roll(run:&Run,original:u32,entropy:u64,repeat:bool)->u32 {
+    roll_min(run,original,entropy,repeat,0)
+}
+pub fn roll_min(run:&Run,original:u32,entropy:u64,repeat:bool,min:u8)->u32 {
     if !run.talisman_affixes||original>>28!=2||lookup(original).is_some(){return original;}
+    if run.talisman_passives&&let Some(id)=crate::talisman_passives::roll(run,original,entropy,repeat,min){return id;}
     let seed=crate::mix(run.reward_seed()^entropy^u64::from(original)^0x74616c69736d616e);
     if seed%2==0{return original;}
     let start=(seed>>8) as usize%GROUPS.len();

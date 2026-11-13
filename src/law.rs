@@ -3,7 +3,7 @@
 pub struct Node {pub name:&'static str,pub branch:usize,pub parent:Option<usize>,pub points:u32,pub effect:&'static str,pub art:u8,pub col:u8,pub row:u8}
 pub const BRANCHES:[&str;4]=["敌人","我方","经济","规则"];
 const fn n(name:&'static str,branch:usize,parent:Option<usize>,points:u32,effect:&'static str,art:u8,col:u8,row:u8)->Node {Node{name,branch,parent,points,effect,art,col,row}}
-pub const NODES:[Node;35]=[
+pub const NODES:[Node;36]=[
     n("强敌 I",0,None,10,"敌人强度 +1 档：生命 +10%，攻击 +6%",0,1,0),
     n("强敌 II",0,Some(0),20,"再 +1 档：累计生命 +21%，攻击 +13%",0,2,0),
     n("强敌 III",0,Some(1),30,"再 +2 档：累计生命 +45%，攻击 +28%",0,3,0),
@@ -40,6 +40,7 @@ pub const NODES:[Node;35]=[
     n("精英成双 I",0,None,20,"精英战第一只精英生命降到一半时，第二只上场（默认第一只倒下后才出来）",17,4,0),
     n("精英成双 II",0,Some(32),40,"精英战里的两只精英同时上场",17,5,0),
     n("精英横行",0,None,20,"从第 6 个点起，普通战斗房有 25% 概率替换为精英房，路线结果固定",18,5,1),
+    n("迅猛",0,None,20,"Boss 必带迅猛；开启精英词条时，精英战有 25% 概率带迅猛。未选此项时不会随机出现迅猛",19,6,0),
 ];
 /// 停用的节点：位置与编号保留（存档、旅程档案与律法码里的位不变），界面不再显示，新开局选不上；
 /// 已经带着它开局的旅程照旧生效。14 孤狼（2026-11-06 移除）
@@ -59,6 +60,7 @@ impl Law {
     pub fn affix_budget(self,base:u8,max:u8)->u8 {match self.chain(&[3,4]) {0=>base,1=>(base+2).min(max),_=>max}}
     pub fn elite_affixes(self)->bool {self.has(5)}
     pub fn elite_pressure(self)->bool {self.has(34)}
+    pub fn swift_affixes(self)->bool {self.has(35)}
     /// 词条强化：Boss 词条使用强化后的数值
     pub fn empowered_affixes(self)->bool {self.has(31)}
     /// 精英成双：精英战里精英怪池的精英怎么上场
@@ -124,12 +126,13 @@ impl Law {
     pub fn code(self)->String {
         const DIGITS:&[u8]=b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
         let value=(self.0<<5)|checksum(self.0);
-        (0..if value<(1u64<<35){7}else{8}).rev().map(|i|DIGITS[((value>>(i*5))&31) as usize] as char).collect()
+        let width=((64-value.leading_zeros()+4)/5).max(7);
+        (0..width).rev().map(|i|DIGITS[((value>>(i*5))&31) as usize] as char).collect()
     }
     pub fn parse(code:&str)->Option<Self> {
         const DIGITS:&str="0123456789ABCDEFGHJKMNPQRSTVWXYZ";
         let code=code.trim().to_ascii_uppercase().replace(['O'],"0").replace(['I','L'],"1");
-        if code.is_empty()||code.len()>8 {return None;}
+        if code.is_empty()||code.len()>9 {return None;}
         let value=code.chars().try_fold(0u64,|v,c|DIGITS.find(c).map(|d|v<<5|d as u64))?;
         let law=Law(value>>5);
         (value&31==checksum(law.0)&&law.valid()).then_some(law.current())
@@ -172,7 +175,7 @@ mod tests {
     #[test]
     fn every_route_has_its_own_icon() {
         // 18 个图集图标，加上由精英徽记与上升箭头组成的精英横行图标。
-        const ICONS:u8=19;
+        const ICONS:u8=20;
         let stem=|n:&Node|n.name.trim_end_matches(['I',' ']);
         assert!(NODES.iter().all(|n|n.art<ICONS));
         assert_eq!(NODES.iter().map(|n|n.art).collect::<std::collections::BTreeSet<_>>().len(),usize::from(ICONS),"every icon is used");
@@ -185,7 +188,7 @@ mod tests {
             if let Some(p)=node.parent {if Law::listed(id){assert_eq!(node.art,NODES[p].art,"different rules must not be chained");}}
             assert!(NODES.iter().enumerate().all(|(o,other)|o==id||(other.col,other.row)!=(node.col,node.row)));
         }
-        assert_eq!(Law((1u64<<NODES.len())-1).score(),570);
+        assert_eq!(Law((1u64<<NODES.len())-1).score(),590);
     }
     #[test]
     fn selection_follows_paths_and_cascades() {
@@ -196,7 +199,7 @@ mod tests {
         let law=Law::default().toggle(0).toggle(1).toggle(2);assert_eq!(law.score(),60);
         assert_eq!(law.toggle(1),Law::default().toggle(0),"removing a node removes its successors");
         let all=(0..NODES.len()).fold(Law::default(),|l,id|l.toggle(id));
-        assert_eq!(all.score(),540,"everything except the retired lone wolf");assert_eq!(all.grade(),Some("危机"));assert!(all.valid());
+        assert_eq!(all.score(),560,"everything except the retired lone wolf");assert_eq!(all.grade(),Some("危机"));assert!(all.valid());
         assert_eq!(Law::default().grade(),None);assert_eq!(Law::default().toggle(24).toggle(25).toggle(26).toggle(23).grade(),Some("老练"));
         assert!(!Law(1<<1).valid());
     }
@@ -258,7 +261,7 @@ mod tests {
     #[test]
     fn codes_round_trip_and_reject_typos() {
         let laws=[Law::default(),Law::default().toggle(0).toggle(8).toggle(9),(0..NODES.len()).fold(Law::default(),|l,id|l.toggle(id))];
-        for law in laws {let code=law.code();assert!((7..=8).contains(&code.len()));assert_eq!(Law::parse(&code),Some(law));assert_eq!(Law::parse(&code.to_lowercase()),Some(law));}
+        for law in laws {let code=law.code();assert!((7..=9).contains(&code.len()));assert_eq!(Law::parse(&code),Some(law));assert_eq!(Law::parse(&code.to_lowercase()),Some(law));}
         let code=laws[1].code();let mut broken:Vec<char>=code.chars().collect();broken[6]=if broken[6]=='0'{'1'}else{'0'};
         assert_eq!(Law::parse(&broken.into_iter().collect::<String>()),None);
         assert_eq!(Law::parse(""),None);assert_eq!(Law::parse("ZZZZZZZZ"),None);
