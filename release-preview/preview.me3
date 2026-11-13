@@ -6,7 +6,7 @@ start_online = false
 game = "eldenring"
 
 [[natives]]
-path = 'erdtree_tower_preview_v117.dll'
+path = 'erdtree_tower_preview_v118.dll'
 
 [[packages]]
 path = 'scene-assets'
