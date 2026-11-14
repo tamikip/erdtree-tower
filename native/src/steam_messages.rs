@@ -59,33 +59,50 @@ pub struct Pending {
     hello:std::time::Instant,
     started:std::time::Instant,
     packets:Vec<(u64,erdtree_tower::party_handshake::Payload)>,
+    failure:Option<String>,
+}
+fn handshake_responses(handshake:&mut erdtree_tower::party_handshake::Handshake,failure:&mut Option<String>,peer:u64,message:erdtree_tower::party_handshake::Message)->Vec<(u64,erdtree_tower::party_handshake::Message)> {
+    if let Some(error)=failure {return handshake.rejections(peer,&message,error);}
+    match handshake.receive_lobby(peer,message.clone()) {
+        Ok(responses)=>responses,
+        Err(error)=>{
+            let reason=format!("队员 {peer}：{error}");let responses=handshake.rejections(peer,&message,&reason);
+            *failure=Some(reason);responses
+        }
+    }
 }
 impl Pending {
-    pub fn waiting_reason(&self)->String {self.handshake.waiting_reason()}
-    pub fn new(roster:Roster,nonce:u64,seed:u64,dlc:bool)->Result<Self,String> {
-        let handshake=erdtree_tower::party_handshake::Handshake::new(roster.clone(),nonce,seed)?.with_dlc(dlc);
-        Ok(Self{transport:Transport::load(roster.clone())?,roster,handshake,hello:std::time::Instant::now()-std::time::Duration::from_secs(1),started:std::time::Instant::now(),packets:vec![]})
+    pub fn waiting_reason(&self)->String {self.failure.clone().unwrap_or_else(||self.handshake.waiting_reason())}
+    pub fn new(roster:Roster,nonce:u64,seed:u64,dlc:bool,profile:erdtree_tower::party_compat::Compatibility)->Result<Self,String> {
+        let handshake=erdtree_tower::party_handshake::Handshake::new(roster.clone(),nonce,seed)?.with_dlc(dlc).with_compatibility(profile)?;
+        Ok(Self{transport:Transport::load(roster.clone())?,roster,handshake,hello:std::time::Instant::now()-std::time::Duration::from_secs(1),started:std::time::Instant::now(),packets:vec![],failure:None})
     }
     pub fn poll(&mut self)->Result<Option<(u64,u64)>,String> {
         use erdtree_tower::party_handshake::Payload;
-        if self.hello.elapsed()>=std::time::Duration::from_secs(1) {
+        if self.failure.is_none()&&self.hello.elapsed()>=std::time::Duration::from_secs(1) {
             self.hello=std::time::Instant::now();
             if let Some((peer,message))=self.handshake.hello(){self.transport.send(peer,&Payload::Handshake(message).encode()?)?;}
         }
         for (peer,bytes) in self.transport.receive()? {
-            match Payload::decode(&bytes).map_err(|error|format!("队员 {peer}：{error}"))? {
+            let packet=match Payload::decode(&bytes) {
+                Ok(packet)=>packet,
+                Err(error)=>{self.failure.get_or_insert_with(||format!("队员 {peer}：{error}"));continue;}
+            };
+            match packet {
                 Payload::Handshake(message)=>{
-                    for (target,response) in self.handshake.receive_lobby(peer,message)? {
+                    let responses=handshake_responses(&mut self.handshake,&mut self.failure,peer,message);
+                    for (target,response) in responses {
                         self.transport.send(target,&Payload::Handshake(response).encode()?)?;
                     }
                 },
                 packet=>{
-                    if self.handshake.ready().is_none() {continue;}
+                    if self.failure.is_some()||self.handshake.ready().is_none() {continue;}
                     if self.packets.len()>=64 {return Err("队伍握手缓存已满".into());}
                     self.packets.push((peer,packet));
                 },
             }
         }
+        if self.failure.is_some(){return Ok(None);}
         let ready=self.handshake.ready();
         if ready.is_none()&&handshake_expired(self.started.elapsed()) {
             super::log(format!("Party handshake still waiting: host={} peers={}; retaining nonce and retrying",self.roster.local==self.roster.host,self.roster.members.len()-1));
@@ -217,6 +234,20 @@ impl Drop for Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_preflight_answers_late_peers_without_offering_a_session() {
+        use erdtree_tower::{party_handshake::{Handshake,Message as HandshakeMessage},party_compat::Compatibility};
+        let profile=Compatibility{tower_build:"0123456789abcdef".into(),seamless_version:"2.0.3".into(),seamless_hash:"123456789abcdef0".into(),assets:"23456789abcdef01".into(),rules:[0,0,1,1,100,20,30,100,20,80]};
+        let make=|id,profile|Handshake::new(Roster{local:id,host:1,members:vec![1,2,3]},100+id,42).unwrap().with_compatibility(profile).unwrap();
+        let mut host=make(1,profile.clone());let mut late=make(3,profile.clone());let mut bad=profile;bad.rules[4]=35;
+        let bad=make(2,bad);let mut failure=None;
+        let first=handshake_responses(&mut host,&mut failure,2,bad.hello().unwrap().1);assert_eq!(first.len(),1);
+        assert!(failure.as_ref().unwrap().contains("队员 2"));
+        let responses=handshake_responses(&mut host,&mut failure,3,late.hello().unwrap().1);assert_eq!(responses.len(),1);
+        assert!(matches!(&responses[0].1,HandshakeMessage::Reject{nonce:103,..}));
+        assert!(late.receive_lobby(1,responses[0].1.clone()).unwrap_err().contains("队员 2"));
+        assert!(host.ready().is_none());assert!(late.ready().is_none());
+    }
     #[test]
     fn connection_info_matches_steamworks_abi() {
         assert_eq!(std::mem::size_of::<ConnInfo>(),696);

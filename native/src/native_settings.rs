@@ -7,13 +7,13 @@ static CONFIG: OnceLock<std::path::PathBuf> = OnceLock::new();
 static SAVED: Mutex<[u8; 8]> = Mutex::new([0; 8]);
 static LIVE_KEYS: OnceLock<[AtomicU8; 5]> = OnceLock::new();
 /// 游戏设置页（外部 tower_native_settings.dll，接口 v3 固定 5 个按键槽）管的键；「跳过本关」只在启动器里改键，由 imgui 读
-const NATIVE: [Hotkey; 5] = [Hotkey::Settle, Hotkey::Overlay, Hotkey::Archive, Hotkey::Build, Hotkey::Debug];
+pub(crate) const NATIVE: [Hotkey; 5] = [Hotkey::Settle, Hotkey::Overlay, Hotkey::Archive, Hotkey::Build, Hotkey::Debug];
 static BINDINGS: AtomicBool = AtomicBool::new(false);
 static PENDING: AtomicU8 = AtomicU8::new(0);
 static FRAME: AtomicU8 = AtomicU8::new(0);
 pub fn begin_frame() {FRAME.store(PENDING.swap(0,Ordering::AcqRel),Ordering::Release);}
 pub fn take_pressed(key:Hotkey)->Option<bool> {(BINDINGS.load(Ordering::Acquire)&&NATIVE.contains(&key)).then(||FRAME.fetch_and(!(1 << key as u8),Ordering::AcqRel)&(1 << key as u8)!=0)}
-unsafe extern "C" fn activate(slot:u32) {if slot<5 && !crate::input::active() {PENDING.fetch_or(1 << slot,Ordering::AcqRel);}}
+unsafe extern "C" fn activate(slot:u32) {if slot<5 && crate::input::foreground() && !crate::input::active() {PENDING.fetch_or(1 << slot,Ordering::AcqRel);}}
 pub fn live_key(key: Hotkey) -> Option<&'static str> { LIVE_KEYS.get().filter(|_|NATIVE.contains(&key)).and_then(|keys| KEYS.get(keys.get(key as usize)?.load(Ordering::Acquire) as usize).copied()) }
 const NAMES: [&str; 8] = ["debug", "sfx", "dlc", "key.settle", "key.overlay", "key.archive", "key.build", "key.debug"];
 

@@ -31,6 +31,9 @@ pub struct TitleFont(pub hudhook::imgui::FontId);
 unsafe impl Send for TitleFont {}
 unsafe impl Sync for TitleFont {}
 static TITLE_FONT:std::sync::Mutex<Option<TitleFont>>=std::sync::Mutex::new(None);
+pub fn reset_fonts() {
+    for font in [&TITLE_FONT,&BUTTON_FONT,&DISPLAY_FONT,&HEADING_FONT] {if let Ok(mut slot)=font.lock(){*slot=None;}}
+}
 pub fn set_title_font(font:TitleFont) {if let Ok(mut slot)=TITLE_FONT.lock(){*slot=Some(font);}}
 pub fn title_font()->Option<hudhook::imgui::FontId> {TITLE_FONT.lock().ok().and_then(|f|*f).map(|f|f.0)}
 /// 结算页黑体：思源黑体粗体的子集（scene-builder/button_font.py），结算页的文字、按钮与大号数字用

@@ -9,6 +9,7 @@ pub mod party_law;
 pub mod party_vote;
 pub mod party_roster;
 pub mod party_handshake;
+pub mod party_compat;
 pub mod party_latency;
 pub mod skip;
 pub mod party_events;

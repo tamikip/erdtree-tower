@@ -10,6 +10,7 @@ name = "erdtree_tower_preview"
 crate-type = ["cdylib"]
 
 [dependencies]
+windows = { version = "0.62", features = ["Win32_Graphics_DirectComposition"] }
 pinyin = { version = "=0.11.0", default-features = false, features = ["plain","heteronym"] }
 erdtree-tower = { path = ".." }
 eldenring = { path = "vendor/fromsoftware-rs/crates/eldenring" }

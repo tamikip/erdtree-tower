@@ -11,6 +11,7 @@ pub fn init(dll:Option<PathBuf>) {
     let options=&*OPTIONS;
     erdtree_tower::localization::set(options.language);
     // 单人按本机设置；联机时由房主在握手里定下整队模式（都有 DLC 才按有 DLC，见 sync_dlc）
+    crate::log(format!("OPTIONS renderer={}",options.renderer.id()));
     let dlc=options.dlc;
     erdtree_tower::dlc::set(dlc);
     crate::log(format!("OPTIONS file={:?} debug={} dlc={} prompts={} keys={}",path(),options.debug,dlc.id(),options.prompts.id(),
@@ -53,6 +54,7 @@ fn no_dlc_settings_are_never_promoted_by_unknown_party_state() {
 pub fn label(hotkey:Hotkey)->&'static str {crate::native_settings::live_key(hotkey).unwrap_or_else(||OPTIONS.key(hotkey))}
 pub fn key(hotkey:Hotkey)->Key {to_key(label(hotkey)).unwrap_or_else(||to_key(hotkey.default_key()).unwrap_or(Key::Home))}
 pub fn pressed(ui:&hudhook::imgui::Ui,hotkey:Hotkey)->bool {
+    if !crate::input::foreground() {return false;}
     if label(hotkey)=="None" {return false;}
     if let Some(pressed)=crate::native_settings::take_pressed(hotkey) {
         return pressed || (crate::input::active() && ui.is_key_pressed_no_repeat(key(hotkey)));

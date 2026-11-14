@@ -12,6 +12,15 @@
 
 pub const FILE: &str = "tower-options.ini";
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Renderer { #[default] Game, Window }
+impl Renderer {
+    pub fn id(self) -> &'static str { match self { Self::Game => "game", Self::Window => "window" } }
+    pub fn parse(value: &str) -> Option<Self> {
+        [Self::Game, Self::Window].into_iter().find(|mode| mode.id().eq_ignore_ascii_case(value.trim()))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Hotkey {
     Settle,
@@ -21,10 +30,11 @@ pub enum Hotkey {
     Debug,
     /// 跳过本关：视为本场战斗胜利，直接到三选一（联机只有房主能用）
     Skip,
+    Recover,
 }
 
 impl Hotkey {
-    pub const ALL: [Hotkey; 6] = [Hotkey::Settle, Hotkey::Overlay, Hotkey::Archive, Hotkey::Build, Hotkey::Debug, Hotkey::Skip];
+    pub const ALL: [Hotkey; 7] = [Hotkey::Settle, Hotkey::Overlay, Hotkey::Archive, Hotkey::Build, Hotkey::Debug, Hotkey::Skip, Hotkey::Recover];
     pub fn id(self) -> &'static str {
         match self {
             Hotkey::Settle => "settle",
@@ -33,6 +43,7 @@ impl Hotkey {
             Hotkey::Build => "build",
             Hotkey::Debug => "debug",
             Hotkey::Skip => "skip",
+            Hotkey::Recover => "recover",
         }
     }
     pub fn default_key(self) -> &'static str {
@@ -43,6 +54,7 @@ impl Hotkey {
             Hotkey::Build => "C",
             Hotkey::Debug => "Delete",
             Hotkey::Skip => "End",
+            Hotkey::Recover => "F7",
         }
     }
 }
@@ -80,10 +92,11 @@ impl Prompts {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
+    pub renderer: Renderer,
     pub language:crate::localization::Language,
     pub debug: bool,
     pub dlc: crate::dlc::Mode,
-    keys: [&'static str; 6],
+    keys: [&'static str; 7],
     /// 界面音效音量（0–100）
     pub sfx: u8,
     pub prompts: Prompts,
@@ -91,7 +104,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Options { language:Default::default(), debug: false, dlc: crate::dlc::Mode::Full, keys: Hotkey::ALL.map(Hotkey::default_key), sfx: 70, prompts: Prompts::Keyboard }
+        Options { renderer:Renderer::Game, language:Default::default(), debug: false, dlc: crate::dlc::Mode::Full, keys: Hotkey::ALL.map(Hotkey::default_key), sfx: 70, prompts: Prompts::Keyboard }
     }
 }
 
@@ -114,7 +127,9 @@ pub fn parse(text: &str) -> Options {
         }
         let Some((name, value)) = line.split_once('=') else { continue };
         let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
-        if name == "language" {
+        if name == "renderer" {
+            if let Some(renderer) = Renderer::parse(value) { options.renderer = renderer; }
+        } else if name == "language" {
             if let Some(language)=crate::localization::Language::parse(value){options.language=language;}
         } else if name == "debug" {
             options.debug = matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes");
@@ -145,6 +160,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn renderer_is_opt_in_and_recovery_does_not_use_page_up() {
+        assert_eq!(parse("").renderer, Renderer::Game);
+        assert_eq!(parse("renderer=window").renderer, Renderer::Window);
+        assert_eq!(parse("renderer=unknown").renderer, Renderer::Game);
+        assert_eq!(parse("").key(Hotkey::Recover), "F7");
+        assert_eq!(parse("key.recover=F8").key(Hotkey::Recover), "F8");
+    }
+
+    #[test]
     fn language_selection_follows_the_game_and_preserves_other_options() {
         use crate::localization::Language;
         assert_eq!(parse("").language,Language::Auto);
@@ -156,7 +180,7 @@ mod tests {
     fn missing_or_empty_file_keeps_the_original_keys() {
         let options = parse("");
         assert!(!options.debug);
-        assert_eq!(Hotkey::ALL.map(|h| options.key(h)), ["Home", "Insert", "J", "C", "Delete", "End"]);
+        assert_eq!(Hotkey::ALL.map(|h| options.key(h)), ["Home", "Insert", "J", "C", "Delete", "End", "F7"]);
     }
 
     #[test]

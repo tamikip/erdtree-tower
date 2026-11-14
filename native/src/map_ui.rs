@@ -82,8 +82,10 @@ mod tests {
     }
     #[test]
     fn legend_names_each_voter_and_marks_the_local_player() {
-        assert_eq!(super::legend_line(0,Some("Tarnished".into()),true,false),"1  Tarnished（你）  ·  未选");
-        assert_eq!(super::legend_line(2,None,false,true),"3  队员 3  ·  已选");
+        assert_eq!(super::legend_line(0,Some("Tarnished".into()),true,false,false),"1  Tarnished（你）  ·  未选");
+        assert_eq!(super::legend_line(2,None,false,true,false),"3  队员 3  ·  已选");
+        assert_eq!(super::legend_line(0,Some("Tarnished".into()),true,true,true),"1  Tarnished（你）  ·  已准备");
+        assert_eq!(super::legend_line(1,None,false,false,true),"2  队员 2  ·  待选路线");
         assert_eq!(super::VOTER_COLORS.len(),erdtree_tower::party_roster::MAX_PLAYERS);
     }
     #[test]
@@ -255,7 +257,7 @@ pub fn draw(ui: &Ui, run: &Run, view: &View, vitals: &str) {
                     Phase::Reward { .. } => { ui.text(crate::i18n::t("选择战利品以继续旅程。")); }
                     Phase::Dead => { ui.text(crate::i18n::t("旅程结束")); crate::fancy_text::text_wrapped(ui,"角色死亡。重新启动游戏可开始新一局。"); }
                     Phase::Won => { ui.text(crate::i18n::t("登顶 · 本局通关")); }
-                    Phase::Map => {route(ui, run, view.ready && !view.busy,&view.ballots);party_legend(ui,&view.ballots,&view.latencies);},
+                    Phase::Map => {route(ui, run, view.ready && !view.busy,&view.ballots);party_legend(ui,&view.ballots,&view.latencies,run.act==1&&run.visited.is_empty());},
                     Phase::Node { id } => {
                         match run.nodes[*id].kind {
                             NodeKind::Camp | NodeKind::Chest | NodeKind::Shop => { ui.text(crate::i18n::t("使用房间内的原生交互继续。")); }
@@ -402,32 +404,36 @@ pub(crate) fn reward_description(run: &Run, reward: &Reward) -> String {
 /// 投票标记的颜色，按队伍名单（Steam ID 排序）的序号取
 const VOTER_COLORS:[[u8;3];8]=[[62,114,185],[173,67,68],[53,135,86],[154,102,179],[180,126,42],[52,139,142],[171,91,129],[99,103,114]];
 /// 图例里一行的文字：序号、名字（没有 Steam 名字时写“队员 N”）、“你”、是否已选路线
-fn legend_line(index:usize,name:Option<String>,local:bool,voted:bool)->String {
-    format!("{}  {}{}  ·  {}",index+1,name.unwrap_or_else(||crate::i18n::t(format!("队员 {}",index+1))),crate::i18n::t(if local{"（你）"}else{""}),crate::i18n::t(if voted{"已选"}else{"未选"}))
+fn legend_line(index:usize,name:Option<String>,local:bool,voted:bool,preparing:bool)->String {
+    let status=match (preparing,voted){(true,true)=>"已准备",(true,false)=>"待选路线",(false,true)=>"已选",(false,false)=>"未选"};
+    format!("{}  {}{}  ·  {}",index+1,name.unwrap_or_else(||crate::i18n::t(format!("队员 {}",index+1))),crate::i18n::t(if local{"（你）"}else{""}),crate::i18n::t(status))
 }
 /// 联机时路线图右上角的队员图例：投票标记上的序号对应谁
 fn latency_label(status:&erdtree_tower::party_latency::Status)->String {
     use erdtree_tower::party_latency::Status;
     match status {Status::Host=>"房主".into(),Status::Measured(ms)=>format!("{ms} ms"),Status::Waiting=>"检测中".into(),Status::Unavailable=>"暂无响应".into(),Status::Unsupported=>"暂不支持".into()}
 }
-fn party_legend(ui:&Ui,ballots:&[erdtree_tower::party_vote::Ballot],latencies:&[erdtree_tower::party_latency::Row]) {
+fn party_legend(ui:&Ui,ballots:&[erdtree_tower::party_vote::Ballot],latencies:&[erdtree_tower::party_latency::Row],preparing:bool) {
     let players:Vec<_>=if latencies.is_empty(){ballots.iter().map(|b|b.player).collect()}else{latencies.iter().map(|r|r.player).collect()};
     if players.len()<2 {return;}
     let local=crate::seamless::local_player();
     let lines:Vec<_>=players.iter().enumerate().map(|(i,&player)|{
-        let mut line=legend_line(i,crate::seamless::player_name(player),local==Some(player),ballots.iter().any(|b|b.player==player&&b.node.is_some()));
+        let mut line=legend_line(i,crate::seamless::player_name(player),local==Some(player),ballots.iter().any(|b|b.player==player&&b.node.is_some()),preparing);
         if let Some(row)=latencies.iter().find(|r|r.player==player){line.push_str(&format!("  ·  {}",latency_label(&row.status)));}
         line
     }).collect();
-    let header=if latencies.is_empty(){"队伍"}else{"队伍 · 至房主延迟（RTT）"};
+    let header=if preparing {
+        let ready=players.iter().filter(|&&id|ballots.iter().any(|b|b.player==id&&b.node.is_some())).count();
+        format!("开局准备 {ready}/{} · 选路即准备",players.len())
+    }else{if latencies.is_empty(){"队伍"}else{"队伍 · 至房主延迟（RTT）"}.into()};
     let row=ui.text_line_height()+6.0;
-    let width=lines.iter().map(|l|ui.calc_text_size(crate::i18n::t(l))[0]).fold(ui.calc_text_size(crate::i18n::t(header))[0],f32::max)+46.0;
+    let width=lines.iter().map(|l|ui.calc_text_size(crate::i18n::t(l))[0]).fold(ui.calc_text_size(crate::i18n::t(&header))[0],f32::max)+46.0;
     let (pos,size)=(ui.window_pos(),ui.window_size());
     let (x,y)=(pos[0]+size[0]-width-10.0,pos[1]+10.0);
     let draw=ui.get_window_draw_list();
     draw.add_rect([x,y],[x+width,y+row*(lines.len()+1) as f32+10.0],ImColor32::from_rgba(233,222,196,230)).filled(true).rounding(5.0).build();
     draw.add_rect([x,y],[x+width,y+row*(lines.len()+1) as f32+10.0],ImColor32::from_rgb(143,95,22)).rounding(5.0).build();
-    draw.add_text([x+12.0,y+5.0],ImColor32::from_rgb(64,54,38),crate::i18n::t(header));
+    draw.add_text([x+12.0,y+5.0],ImColor32::from_rgb(64,54,38),crate::i18n::t(&header));
     for (i,line) in lines.iter().enumerate() {
         let cy=y+5.0+row*(i+1) as f32+row*0.5;let c=VOTER_COLORS[i%VOTER_COLORS.len()];
         draw.add_circle([x+16.0,cy],7.0,ImColor32::from_rgb(c[0],c[1],c[2])).filled(true).build();

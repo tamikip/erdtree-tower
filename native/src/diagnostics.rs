@@ -78,10 +78,11 @@ pub fn watchdog() {
         std::thread::sleep(Duration::from_secs(30));
         let now=START.elapsed().as_millis() as u64;
         let frame=FRAME.load(Ordering::Relaxed);let task=TASK.load(Ordering::Relaxed);
-        let render_stalled=stalled(now,frame);let task_stalled=stalled(now,task);
+        let render_paused=super::overlay_gpu::ACTIVE.load(Ordering::Acquire)&&!super::input::foreground();
+        let render_stalled=!render_paused&&stalled(now,frame);let task_stalled=stalled(now,task);
         if verbose()||render_stalled||task_stalled {
             super::log(format!("HEALTH uptime_ms={now} render_last_ms={frame} task_last_ms={task} render_stalled={render_stalled} task_stalled={task_stalled}"));
-        } else {super::log("HEALTH render=ok task=ok");}
+        } else {super::log(if render_paused {"HEALTH render=background task=ok"}else{"HEALTH render=ok task=ok"});}
     });
 }
 #[derive(Default)]

@@ -95,6 +95,10 @@ fn locate(memory:&impl Memory,base:usize,world:usize,build:&Build)->Option<Spect
 }
 struct Pending {player:usize,owner:u32,origin:Position,block_goal:Option<Position>,relocate:bool,fp:i32,started:Instant,sent:bool,stable:u8,reported_lookup:bool}
 pub fn available()->bool {BASE.load(Ordering::Acquire)!=0}
+pub fn verified_module()->Option<(&'static str,std::path::PathBuf)> {
+    let base=BASE.load(Ordering::Acquire);if base==0{return None;}
+    Some((BUILDS.get(PROFILE.load(Ordering::Acquire))?.version,super::diagnostics::module_path(base)?))
+}
 pub fn finished(player:usize)->bool {player!=0&&FINISHED.load(Ordering::Acquire)==player}
 pub fn owned_address<T>(player:&fromsoftware_shared::OwnedPtr<T>)->usize {player.as_ptr() as usize}
 pub fn cancel(){if let Ok(mut p)=PENDING.lock(){*p=None;}FINISHED.store(0,Ordering::Release);}
@@ -128,6 +132,18 @@ fn recovered(origin:Position,current:Position,alive:bool,sent:bool,target:usize,
 fn safe_landing(goal:Position,current:Position,grounded:bool,falling:bool)->bool {
     grounded&&!falling&&goal.block==current.block
         &&goal.xyz.iter().zip(current.xyz).map(|(a,b)|(a-b).powi(2)).sum::<f32>()<=4.0
+}
+#[derive(Debug,PartialEq)]
+enum Placement {Wait,Move,Ready}
+fn placement(initial:bool,goal:Option<Position>,current:Position,grounded:bool,falling:bool,proxy_pending:bool)->Placement {
+    if proxy_pending{return Placement::Wait;}
+    let Some(goal)=goal else{return if initial{Placement::Move}else{Placement::Ready};};
+    if goal.block<0||goal.block!=current.block||!goal.xyz.iter().chain(&current.xyz).all(|v|v.is_finite()){return Placement::Wait;}
+    let distance=goal.xyz.iter().zip(current.xyz).map(|(a,b)|(a-b).powi(2)).sum::<f32>();
+    if !distance.is_finite(){return Placement::Wait;}
+    if initial||distance>4.0{return Placement::Move;}
+    // Near the destination, let physics settle instead of resetting its position every tick.
+    if safe_landing(goal,current,grounded,falling){Placement::Ready}else{Placement::Wait}
 }
 pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
     let Ok(mut queue)=PENDING.try_lock() else{return;};
@@ -165,9 +181,10 @@ pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
         super::log(format!("PARTY_REVIVE native request submitted without detour target={:#x}",spectator.target));
         return;
     }
-    let landing=pending.block_goal.is_none_or(|goal|safe_landing(goal,positions(player).0,
-        player.chr_ins.modules.physics.standing_on_solid_ground,player.chr_ins.modules.physics.is_falling));
-    if (pending.relocate||!landing)&&alive&&pending.sent&&spectator.target==usize::MAX&&spectator.key==0 {
+    let placement=placement(pending.relocate,pending.block_goal,positions(player).0,
+        player.chr_ins.modules.physics.standing_on_solid_ground,player.chr_ins.modules.physics.is_falling,
+        player.chr_ins.modules.physics.chr_proxy_pos_update_requested);
+    if placement==Placement::Move&&alive&&pending.sent&&spectator.target==usize::MAX&&spectator.key==0 {
         if let Some(goal)=pending.block_goal {
             let (block,physics)=positions(player);
             let Some(origin)=goal.in_physics_space(block,physics) else{return;};
@@ -182,7 +199,7 @@ pub fn tick(world:&mut WorldChrMan,game:&GameMan) {
     }
     let (block,physics)=positions(player);
     let (origin,current)=pending.block_goal.map_or((pending.origin,physics),|goal|(goal,block));
-    if !landing||!recovered(origin,current,alive,pending.sent,spectator.target,spectator.key){pending.stable=0;return;}
+    if placement!=Placement::Ready||!recovered(origin,current,alive,pending.sent,spectator.target,spectator.key){pending.stable=0;return;}
     player.chr_ins.modules.data.hp=1;
     player.chr_ins.modules.data.fp=pending.fp.min(player.chr_ins.modules.data.max_fp);
     pending.stable+=1;
@@ -218,6 +235,38 @@ fn validate(memory:&impl Memory,base:usize,build:&Build)->Result<(),String> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    #[test]
+    fn placement_waits_for_proxy_ack_then_allows_natural_landing() {
+        let goal=Position{block:0x0d000000,xyz:[21.85,1009.5,300.43]};
+        let remote=Position{xyz:[0.0,900.0,0.0],..goal};
+        assert_eq!(placement(true,Some(goal),remote,false,false,true),Placement::Wait);
+        assert_eq!(placement(true,Some(goal),remote,false,false,false),Placement::Move);
+        for _ in 0..120 {
+            assert_eq!(placement(false,Some(goal),remote,false,false,true),Placement::Wait);
+        }
+        let airborne=Position{xyz:[21.85,1010.0,300.43],..goal};
+        assert_eq!(placement(false,Some(goal),airborne,false,true,false),Placement::Wait);
+        assert_eq!(placement(false,Some(goal),airborne,false,false,false),Placement::Wait);
+        assert_eq!(placement(false,Some(goal),goal,true,false,false),Placement::Ready);
+        assert_eq!(placement(false,Some(goal),remote,false,true,false),Placement::Move);
+    }
+    #[test]
+    fn placement_never_finishes_from_stale_ground_while_proxy_update_is_pending() {
+        let goal=Position{block:45,xyz:[1.0,2.0,3.0]};
+        for target in [None,Some(goal)] {
+            assert_eq!(placement(false,target,goal,true,false,true),Placement::Wait);
+            assert_eq!(placement(false,target,goal,true,false,false),Placement::Ready);
+        }
+    }
+    #[test]
+    fn placement_rejects_unloaded_or_invalid_coordinates_before_moving() {
+        let goal=Position{block:45,xyz:[1.0,2.0,3.0]};
+        for current in [Position{block:-1,..goal},Position{block:46,..goal},
+            Position{xyz:[f32::NAN,0.0,0.0],..goal},Position{xyz:[f32::INFINITY,0.0,0.0],..goal}] {
+            assert_eq!(placement(true,Some(goal),current,false,false,false),Placement::Wait);
+        }
+        assert_eq!(placement(false,None,goal,false,true,false),Placement::Ready);
+    }
     #[test]
     fn safe_goal_waits_for_loaded_ground_and_rejects_falling() {
         let goal=Position{block:0x0a000000,xyz:[-202.71,81.864,314.077]};

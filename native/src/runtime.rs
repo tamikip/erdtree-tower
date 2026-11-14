@@ -44,6 +44,7 @@ fn flag_resource_alert(state:&mut Runtime,error:&str) {
     state.view.resource_alert=Some((id+1,files));
 }
 /// 「跳过本关」键：渲染线程置位，游戏任务线程处理
+pub static RECOVER:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
 pub static SKIP:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
 pub static PLAYER_READY:std::sync::atomic::AtomicBool=std::sync::atomic::AtomicBool::new(false);
 fn can_end_run(phase:Option<&Phase>,host:bool,blocked:bool)->bool {
@@ -850,7 +851,7 @@ fn party_block_reason(state:&Runtime)->String {
     if let Some(pending)=&state.party_pending{return pending.waiting_reason();}
     if state.hub.as_ref().is_some_and(|h|h.paused){return "本机保留了暂停进度，但仍在无缝房间中。请先退出旧房间，再继续旅程。".into();}
     if state.party.as_ref().is_some_and(|p|p.needs_new_run()){return "上一局已经结束，尚未收到全员存活并返回大赐福的确认。请所有玩家完成结算并回到大赐福。".into();}
-    "尚未收到队伍就绪确认，当前无法确定具体原因。请保留 tower-preview.log 进行排查。".into()
+    "正在核对本机关键资源与联机配置，完成后等待队伍兼容确认。".into()
 }
 fn tick_auto_party(state:&mut Runtime)->Result<bool,String> {
     if state.suspension.returning&&state.suspension.committed.is_some(){return Ok(false);}
@@ -900,12 +901,16 @@ fn tick_auto_party(state:&mut Runtime)->Result<bool,String> {
     if roster.members.len()<2 {state.party_pending=None;return Ok(false);}
     if state.party_pending.as_ref().is_some_and(|p|p.roster!=roster){state.party_pending=None;}
     if state.party_pending.is_none() {
+        let Some(resources)=resource_check() else{return Ok(true);};
+        if let Some(file)=resources.first(){return Err(format!("本机场地资源缺失或不匹配：{file}。请校验整合包后重启游戏。"));}
+        let Some(profile)=super::party_compat::profile() else{return Ok(true);};
+        let profile=profile.clone()?;
         if state.view.run.as_ref().is_some_and(|r|r.act!=1||!r.visited.is_empty()||r.phase!=Phase::Map) {
             return Err("请在大赐福组队后开始共同旅程；中途加入尚未完成进度衔接".into());
         }
         let nonce=super::party::random_entropy()?.max(1);
         let seed=state.view.run.as_ref().or_else(||state.hub.as_ref().and_then(|h|h.suspended_run())).map(|r|r.initial_seed.unwrap_or(r.seed)).unwrap_or(super::party::random_entropy()?);
-        state.party_pending=Some(super::steam_messages::Pending::new(roster,nonce,seed,super::options::local_dlc())?);
+        state.party_pending=Some(super::steam_messages::Pending::new(roster,nonce,seed,super::options::local_dlc(),profile)?);
         let pending=state.party_pending.as_ref().unwrap();
         super::log(format!("Steam party handshake started: host={} members={}",pending.roster.local==pending.roster.host,pending.roster.members.len()));
     }
@@ -998,7 +1003,7 @@ fn tick_party(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->Resu
             if in_arena {
                 let roster=super::enemies::node_roster(run,id);
                 let ids=super::enemies::map_entities(&roster)?;
-                // 精英成双：与房主同一规则，前面的精英还没倒下（或没到半血）时，后面的精英先不放出来，也不等它
+                // 与房主使用相同普通房波次和精英节奏，未到出场时机的敌人不计入就绪等待。
                 let held=member_held(&mut state.member_spawn_gaps,(link.config.session,link.epoch,run.act,id),world,run,id,&roster,&ids);
                 let mut ready=vec![false;roster.len()];
                 for (slot,&entity) in ids.iter().enumerate() {
@@ -1593,6 +1598,10 @@ fn tick_locked() {
         return;
     };
     PLAYER_READY.store(world.main_player.is_some()&&game.save_slot>=0,std::sync::atomic::Ordering::Relaxed);
+    if let Some(player)=world.main_player.as_ref().filter(|_|game.save_slot>=0) {
+        super::smith::trace(unsafe{player.player_game_data.as_ref()},||format!("tick save={} block={:?} warp={} party={} room={:?} run={:?}",
+            game.save_slot,player.current_block_id,game.warp_requested,state.party.is_some(),state.room.as_ref().map(|r|(r.kind,r.node,r.view.loading)),state.view.run.as_ref().map(|r|(r.seed,r.act,&r.phase))),false);
+    }
     clear_ailments_under_overlay(&mut state,world,game);
     super::debug_menu::tick_enemies(world);
     if state.view.resource_alert.is_none()&&let Some(bad)=resource_check().filter(|bad|!bad.is_empty()) {
@@ -1601,6 +1610,10 @@ fn tick_locked() {
     }
     // 内置死亡不掉卢恩（祭品树枝的效果常驻）
     if let Some(player)=world.main_player.as_mut().filter(|_|!game.warp_requested) {super::keep_runes::tick(&mut player.chr_ins);}
+    if RECOVER.swap(false,std::sync::atomic::Ordering::Relaxed) {
+        let message=match recover_entry(&mut state,world,game) {Ok(())=>"正在重新载入当前入场点，路线与奖励保持不变。".to_string(),Err(error)=>error};
+        super::log(format!("ENTRY_RECOVERY {message}"));report(&mut state,message);
+    }
     if SKIP.swap(false,std::sync::atomic::Ordering::Relaxed) {
         let message=request_skip(&mut state);super::log(format!("SKIP requested: {message}"));report(&mut state,message);
     }
@@ -3164,8 +3177,9 @@ fn member_gaps(delays:&mut Option<MemberSpawnGaps>,key:(u64,u64,u8,usize),count:
     gaps.resize_with(count,Default::default);gaps
 }
 fn member_held(delays:&mut Option<MemberSpawnGaps>,key:(u64,u64,u8,usize),world:&WorldChrMan,run:&Run,id:usize,roster:&[super::enemies::Enemy],ids:&[u32])->Vec<bool> {
-    use erdtree_tower::encounter::{Outcome as Spawn,Pacing,Role};
+    use erdtree_tower::encounter::{Outcome as Spawn,Pacing};
     let elite=run.nodes.get(id).is_some_and(|n|n.kind==erdtree_tower::NodeKind::Elite);
+    let monster=run.nodes.get(id).is_some_and(|n|n.kind==erdtree_tower::NodeKind::Monster);
     let pacing=if elite {run.law.elite_pacing()}else{Pacing::Together};
     let roles:Vec<_>=roster.iter().map(super::enemies::role).collect();
     let gaps=member_gaps(delays,key,roster.len());
@@ -3178,12 +3192,14 @@ fn member_held(delays:&mut Option<MemberSpawnGaps>,key:(u64,u64,u8,usize),world:
             .map(|chr|(chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(),chr.modules.data.hp,chr.modules.data.max_hp))
     }).collect();
     (0..roster.len()).map(|i|{
-        let earlier:Vec<_>=(0..i).filter(|&j|roles[j]==Role::Strong).map(|j|match state[j] {
+        let earlier:Vec<_>=(0..i).filter(|&j|super::enemies::elite_combatant(&roster[j])).map(|j|match state[j] {
             Some((true,_,_))=>(Spawn::Victory,None),
             Some((false,hp,max))=>(Spawn::Waiting,Some((hp,max))),
             None=>(Spawn::Waiting,None),
         }).collect();
-        let eligible=erdtree_tower::encounter::may_spawn_paced(true,false,pacing.waits(&earlier),&roles,i,&[]);
+        let previous:Vec<_>=state[..i].iter().map(|s|if matches!(s,Some((true,_,_))){Spawn::Victory}else{Spawn::Waiting}).collect();
+        let held=super::enemies::elite_combatant(&roster[i])&&pacing.waits(&earlier);
+        let eligible=erdtree_tower::encounter::may_spawn_paced(true,monster,held,&roles,i,&previous);
         !gaps[i].allows(now,eligible)
     }).collect()
 }
@@ -4129,7 +4145,6 @@ fn request_spawn(state: &mut Runtime, world: &mut WorldChrMan, id: usize) -> Res
         // 斗蛐蛐实验：两只都按 Boss 角色处理，同时出场且保持红方、蓝方的顺序
         if let Some(setup)=super::debug_menu::take_bout() {state.bout.begin(setup);for e in &mut roster {e.kind=erdtree_tower::NodeKind::Boss;}}
     }}
-    if state.party.is_none()&&!state.bout.active()&&run.nodes[id].kind==erdtree_tower::NodeKind::Monster {roster.sort_by_key(|e|super::enemies::role(e)!=erdtree_tower::encounter::Role::Weak);}
     if !erdtree_tower::dlc::enemies_allowed()&&roster.iter().any(|e|e.dlc){return Err("需要启用 DLC 敌人资源".into());}
     let params = unsafe { SoloParamRepository::instance() }.map_err(|_| "游戏参数未就绪")?;
     for spec in &roster {
@@ -4203,11 +4218,11 @@ fn poll_group(pending: &mut Pending, world: &mut WorldChrMan, dead: bool, block:
     let mut untouched=Vec::new();
     let now=spawn_clock();
     for i in 0..count {
-        let earlier:Vec<_>=(0..i).filter(|&j|roles[j]==erdtree_tower::encounter::Role::Strong).map(|j|{
+        let earlier:Vec<_>=(0..i).filter(|&j|super::enemies::elite_combatant(&pending.foes[j].spec)).map(|j|{
             let health=pending.foes[j].fight.handle().and_then(|h|world.chr_ins_by_handle(&h)).map(|c|(c.modules.data.hp,c.modules.data.max_hp));
             (outcomes[j],health)
         }).collect();
-        let held=pacing.waits(&earlier);
+        let held=super::enemies::elite_combatant(&pending.foes[i].spec)&&pacing.waits(&earlier);
         let eligible=erdtree_tower::encounter::may_spawn_paced(pending.networked,monster_node,held,&roles,i,&outcomes);
         if !pending.foes[i].spawn_gap.allows(now,eligible) {
             outcomes.push(Outcome::Waiting);
@@ -4288,7 +4303,7 @@ fn poll_group(pending: &mut Pending, world: &mut WorldChrMan, dead: bool, block:
         // 后续波次刚出场的敌人先停 WAVE_GRACE 不出招（只禁攻击等动作，可以移动；敌人由房主或单人这边的 AI 控制）
         if authority&&!foe.graced&&foe.spawn_gap.later_wave() && let Some(chr)=foe.fight.handle().and_then(|h|world.chr_ins_by_handle_mut(&h)) {
             let started=*foe.grace.get_or_insert_with(Instant::now);
-            let holding=started.elapsed()<erdtree_tower::encounter::WAVE_GRACE;
+            let holding=foe.spawn_gap.holds_attacks(started.elapsed());
             chr.debug_flags.set_disabled_secondary_actions(holding);
             if !holding {foe.graced=true;foe.grace=None;}
         }
@@ -4688,6 +4703,31 @@ fn tick_descent(state:&mut Runtime,world:&mut WorldChrMan,game:&GameMan)->Result
     }
     Ok(())
 }
+fn recover_entry(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->Result<(),String> {
+    let travel=state.travel.as_ref();
+    let run=state.view.run.as_ref();
+    let remote=game.event_world_type==EventWorldType::Remote;
+    let session_clear=unsafe{eldenring::cs::CSSessionManager::instance()}.is_ok_and(|s|s.players.len()<=1);
+    super::recovery::Check {
+        solo:state.party.is_none()&&state.party_pending.is_none()&&!remote&&session_clear,
+        alive:world.main_player.as_ref().is_some_and(|p|p.chr_ins.modules.data.hp>0&&!p.chr_ins.chr_flags1c5.death_flag()),
+        idle:state.pending.is_none()&&state.reward_wait.is_none()&&state.room.is_none()&&state.command.is_none()&&!game.warp_requested
+            &&run.is_some_and(|r|matches!(r.phase,Phase::Map)),
+        preparing:travel.is_some_and(|(t,..)|t.is_preparing()),
+        kind:travel.and_then(|(t,..)|run?.nodes.get(t.node).map(|n|n.kind)),
+        elapsed:travel.map_or(Duration::ZERO,|(_,start,..)|start.elapsed()),
+    }.allowed().map_err(str::to_owned)?;
+    // Only repeat the already selected solo combat entry. Do not consume/clear rewards or change epochs.
+    let arena=super::arenas::for_run(run.unwrap(),false);
+    for (id,value) in [(45007991,false),(45007992,false),(45007993,false),(45007994,false),(45007990,true)] {super::native_talk::set_flag(id,value)?;}
+    let (travel,started,_,_)=state.travel.as_mut().unwrap();
+    let restored=travel.resources_restored;
+    *travel=super::travel::Travel::new(travel.node);travel.resources_restored=restored;
+    *started=Instant::now();
+    game.move_map_target=BlockId::from(arena.block);game.initial_area_entity_id=arena.combat_entry();game.warp_requested=true;
+    Ok(())
+}
+
 fn request_travel(
     state: &mut Runtime,
     world: &mut WorldChrMan,
@@ -4704,6 +4744,9 @@ fn request_travel(
         state.travel.is_some() || state.pending.as_ref().is_some_and(|p| !p.completed),
     )?;
     let kind = run.nodes[id].kind;
+    if let Some(player)=world.main_player.as_ref() {
+        super::smith::trace(unsafe{player.player_game_data.as_ref()},||format!("departure act={} node={id} kind={kind:?} party={}",run.act,state.party.is_some()),true);
+    }
     if let Some(test)=run.boss_test.filter(|t|run.debug&&t.act==run.act&&kind==erdtree_tower::NodeKind::Boss) {
         super::enemies::boss_test_roster(test.encounter,state.party.is_some(),erdtree_tower::dlc::enemies_allowed())?;
     }
@@ -4808,13 +4851,13 @@ mod tests {
         let mut delays=None;let key=(7,1,1,3);
         assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::ZERO,false));
         assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::from_secs(1),true));
-        assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::from_millis(2999),true));
-        assert!(super::member_gaps(&mut delays,key,2)[1].allows(D::from_secs(3),true));
+        assert!(!super::member_gaps(&mut delays,key,2)[1].allows(D::from_millis(3999),true));
+        assert!(super::member_gaps(&mut delays,key,2)[1].allows(D::from_secs(4),true));
         let next=super::member_gaps(&mut delays,(7,2,1,3),2);
         assert!(!next[1].allows(D::from_secs(5),false));
         assert!(!next[1].allows(D::from_secs(6),true));
-        assert!(!next[1].allows(D::from_millis(7999),true));
-        assert!(next[1].allows(D::from_secs(8),true));
+        assert!(!next[1].allows(D::from_millis(8999),true));
+        assert!(next[1].allows(D::from_secs(9),true));
         assert!(super::member_gaps(&mut delays,(8,2,1,3),2)[0].allows(D::from_secs(10),true));
     }
     #[test]

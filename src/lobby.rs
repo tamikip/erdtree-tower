@@ -17,6 +17,7 @@ pub const MAX_PLAYERS:u8=6;
 #[derive(Debug,Clone,PartialEq,Eq,Deserialize)]
 pub struct HostRoom {
     pub name:String,
+    #[serde(default)] pub code:String,
     pub max:u8,
     #[serde(default)] pub locked:bool,
     #[serde(default)] pub salt:String,
@@ -35,6 +36,7 @@ impl HostRoom {
     pub fn validate(&self)->Result<(),String> {
         let name=self.name.trim();
         if name.is_empty()||name.chars().count()>32||name.chars().any(char::is_control) {return Err("房间名应为 1–32 个字".into());}
+        if !self.code.is_empty()&&(self.code.len()!=17||!self.code.starts_with('T')||!self.code[1..].bytes().all(|b|b.is_ascii_digit()||(b'A'..=b'F').contains(&b))) {return Err("房间码格式无效".into());}
         if !(2..=MAX_PLAYERS).contains(&self.max) {return Err("房间人数应为 2–6".into());}
         if !self.password_sha256.is_empty()&&(self.password_sha256.len()!=64||!self.password_sha256.bytes().all(|b|b.is_ascii_hexdigit())) {return Err("房间密码校验信息无效".into());}
         if self.version.is_empty()||self.version.len()>32||self.version.chars().any(char::is_control) {return Err("房间版本无效".into());}
@@ -48,7 +50,7 @@ impl HostRoom {
     pub fn data(&self,host:&str,players:u8,state:&str,open:bool,started:bool)->Vec<(&'static str,String)> {
         let host:String=host.chars().filter(|c|!c.is_control()).take(32).collect();
         let state:String=state.chars().filter(|c|!c.is_control()).take(32).collect();
-        vec![(TAG_KEY,TAG.into()),("v",self.version.clone()),("name",self.name.trim().into()),("host",host),
+        vec![(TAG_KEY,TAG.into()),("v",self.version.clone()),("name",self.name.trim().into()),("code",self.code.clone()),("host",host),
             ("pwd_sha256",self.password_sha256.clone()),
             ("max",self.max.to_string()),("players",players.clamp(1,self.max).to_string()),("state",state),
             ("lock",if self.locked{"1"}else{"0"}.into()),("salt",self.salt.clone()),("pwd",self.password.clone()),("open",if open{"1"}else{"0"}.into()),("started",if started{"1"}else{"0"}.into())]
@@ -58,6 +60,17 @@ impl HostRoom {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn room_code_is_a_discovery_identifier_not_the_connection_secret() {
+        let mut room=HostRoom::parse(r#"{"name":"tower","code":"T0123456789ABCDEF","max":4,"password":"independentSecret","version":"v116"}"#).unwrap();
+        let data=room.data("host",1,"hub",true,false);
+        assert!(data.contains(&("code","T0123456789ABCDEF".into())));
+        assert!(data.contains(&("pwd","independentSecret".into())));
+        for code in ["1234","T0123456789ABCDEG","T0123456789ABCDEF0","T0123456789abcdef","中0123456789ABCDEF"] {
+            room.code=code.into();assert!(room.validate().is_err());
+        }
+        room.code.clear();assert!(room.validate().is_ok());
+    }
     #[test]
     fn private_verifier_is_published_and_room_capacity_is_six() {
         let mut room=HostRoom::parse(r#"{"name":"private","max":6,"locked":true,"salt":"0123456789abcdef","version":"v116","password_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#).unwrap();

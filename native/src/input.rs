@@ -10,6 +10,28 @@ pub static CAPTURE: AtomicBool = AtomicBool::new(false);
 pub fn capture_actions(shared_event:bool,overlay:bool,dialog:bool)->bool {!shared_event&&(overlay||dialog)}
 pub static WINDOW: AtomicIsize = AtomicIsize::new(0);
 static ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+static ORIGINAL_SEND: AtomicUsize = AtomicUsize::new(0);
+static ORIGINAL_CLIP: AtomicUsize = AtomicUsize::new(0);
+
+fn window_capture()->bool {crate::overlay_gpu::ACTIVE.load(Ordering::Acquire)&&active()}
+unsafe extern "system" fn send_input(count:u32,inputs:*const windows::Win32::UI::Input::KeyboardAndMouse::INPUT,size:i32)->u32 {
+    use windows::Win32::UI::Input::KeyboardAndMouse::*;
+    let address=ORIGINAL_SEND.load(Ordering::Acquire);
+    if address==0 {return 0;}
+    let original:unsafe extern "system" fn(u32,*const INPUT,i32)->u32=unsafe{std::mem::transmute(address)};
+    if !window_capture()||inputs.is_null()||size!=std::mem::size_of::<INPUT>() as i32||count>1024 {return unsafe{original(count,inputs,size)};}
+    let mut filtered=unsafe{std::slice::from_raw_parts(inputs,count as usize)}.to_vec();
+    for input in &mut filtered {
+        if input.r#type==INPUT_MOUSE {unsafe {input.Anonymous.mi.dwFlags&= !MOUSEEVENTF_MOVE;}}
+    }
+    unsafe{original(count,filtered.as_ptr(),size)}
+}
+unsafe extern "system" fn clip_cursor(rect:*const windows::Win32::Foundation::RECT)->i32 {
+    let address=ORIGINAL_CLIP.load(Ordering::Acquire);
+    if address==0 {return 0;}
+    let original:unsafe extern "system" fn(*const windows::Win32::Foundation::RECT)->i32=unsafe{std::mem::transmute(address)};
+    unsafe{original(if window_capture(){std::ptr::null()}else{rect})}
+}
 
 #[derive(Default)]
 struct ActionWindow {last_active:Option<std::time::Duration>}
@@ -169,8 +191,10 @@ pub fn desktop_pointer()->Option<[i32;2]> {
 }
 
 pub fn active() -> bool {
-    CAPTURE.load(Ordering::Relaxed)
-        && WINDOW.load(Ordering::Relaxed) != 0
+    CAPTURE.load(Ordering::Relaxed) && foreground()
+}
+pub fn foreground() -> bool {
+    WINDOW.load(Ordering::Relaxed) != 0
         && unsafe { GetForegroundWindow() } == WINDOW.load(Ordering::Relaxed)
 }
 
@@ -212,6 +236,16 @@ pub unsafe fn install() -> Result<(), String> {
     unsafe { MH_EnableHook(address) }
         .ok()
         .map_err(|error| format!("Cursor enable: {error:?}"))?;
+    if crate::options::get().renderer==erdtree_tower::options::Renderer::Window {
+        for (name,callback,original) in [(c"SendInput",send_input as *mut c_void,&ORIGINAL_SEND),(c"ClipCursor",clip_cursor as *mut c_void,&ORIGINAL_CLIP)] {
+            let module=unsafe{GetModuleHandleW("user32.dll\0".encode_utf16().collect::<Vec<_>>().as_ptr())};
+            let address=unsafe{GetProcAddress(module,name.as_ptr())};
+            if address.is_null(){return Err(format!("Input hook export missing: {name:?}"));}
+            let hook=unsafe{MhHook::new(address,callback)}.map_err(|e|format!("Input hook {name:?}: {e:?}"))?;
+            original.store(hook.trampoline() as usize,Ordering::Release);
+            unsafe{MH_EnableHook(address)}.ok().map_err(|e|format!("Input hook enable {name:?}: {e:?}"))?;
+        }
+    }
     Ok(())
 }
 

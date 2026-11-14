@@ -17,6 +17,7 @@ mod tests {
         }
         assert_eq!(super::code("F8"),None);
         assert_eq!(super::code("F10"),None);
-        for hotkey in erdtree_tower::options::Hotkey::ALL {assert!(super::code(hotkey.default_key()).is_some());}
+        for hotkey in crate::native_settings::NATIVE {assert!(super::code(hotkey.default_key()).is_some());}
+        assert!(!crate::native_settings::NATIVE.contains(&erdtree_tower::options::Hotkey::Recover));
     }
 }

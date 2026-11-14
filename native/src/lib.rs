@@ -28,6 +28,10 @@ mod retry_item;
 mod spell_affixes;
 mod retry_rescue;
 mod options;
+mod gpu_engine;
+mod overlay_gpu;
+mod overlay_keys;
+mod recovery;
 mod native_settings;
 mod native_settings_keys;
 mod radahn_probe;
@@ -48,6 +52,7 @@ mod loot;
 mod loadout;
 mod level_cost;
 mod map_ui;
+mod party_compat;
 mod map_ink;
 mod map_art;
 mod oath_art;
@@ -301,6 +306,7 @@ impl ImguiRenderLoop for TowerPreview {
     }
 
     fn initialize(&mut self, ctx: &mut Context, renderer: &mut dyn RenderContext) {
+        fancy_text::reset_fonts();
         log("UI_INIT stage=rewards");
         self.rewards.initialize(renderer);
         log("UI_INIT stage=map_art");
@@ -374,6 +380,7 @@ impl ImguiRenderLoop for TowerPreview {
                 log("Home: quick settlement requested");
             }else{log("Home: ignored before a character is loaded");}
         }
+        if !ui.io().want_text_input&&options::pressed(ui,Hotkey::Recover) {runtime::RECOVER.store(true,Ordering::Relaxed);}
         if options::pressed(ui,Hotkey::Skip) {
             runtime::SKIP.store(true,Ordering::Relaxed);
         }
@@ -493,6 +500,11 @@ impl ImguiRenderLoop for TowerPreview {
     }
 }
 
+fn install_dx12(address:usize)->bool {
+    let result=Hudhook::builder().with::<ImguiDx12Hooks>(TowerPreview::new()).with_hmodule(HINSTANCE(address as _)).build().apply();
+    match result {Ok(())=>{log("DX12 hooks installed");true},Err(error)=>{log(format!("DX12 hook installation failed: {error:?}"));false}}
+}
+
 #[unsafe(no_mangle)]
 /// # Safety
 /// Called by the Windows loader; the module remains loaded while tasks are registered.
@@ -529,17 +541,14 @@ pub unsafe extern "system" fn DllMain(module: HINSTANCE, reason: u32, _: *mut c_
         }
         native_settings::init(diagnostics::module_path(address));
         render_diagnostics::install();
-        log("Executable version accepted; installing DX12 hooks");
-        let result = Hudhook::builder()
-            .with::<ImguiDx12Hooks>(TowerPreview::new())
-            .with_hmodule(HINSTANCE(address as _))
-            .build()
-            .apply();
-        if let Err(error) = result {
-            log(format!("DX12 hook installation failed: {error:?}"));
-            return;
-        }
-        log("DX12 hooks installed; waiting for game systems");
+        if options::get().renderer==erdtree_tower::options::Renderer::Window {
+            use hudhook::mh::{MH_Initialize,MH_STATUS};
+            match unsafe{MH_Initialize()} {
+                MH_STATUS::MH_OK|MH_STATUS::MH_ERROR_ALREADY_INITIALIZED=>overlay_gpu::install(address),
+                error=>{log(format!("Hook initialization failed: {error:?}"));return;}
+            }
+        } else if !install_dx12(address) {return;}
+        log("Renderer selected; waiting for game systems");
         if render_diagnostics::enabled() {
             log("Render-only diagnostic: tower gameplay callbacks and character resets disabled; remain at title screen");
             return;
@@ -564,13 +573,13 @@ pub unsafe extern "system" fn DllMain(module: HINSTANCE, reason: u32, _: *mut c_
                 return;
             }
         };
+        if let Err(error)=unsafe {seamless_revival::install()} {log(format!("PARTY_REVIVE unavailable: {error}"));}
         let recurring = task.run_recurring(
             capture as fn(&FD4TaskData),
             CSTaskGroupIndex::ChrIns_PostPhysics,
         );
         std::mem::forget(recurring);
         log("Character capture task registered");
-        if let Err(error)=unsafe {seamless_revival::install()} {log(format!("PARTY_REVIVE unavailable: {error}"));}
         transmog::initialize(diagnostics::module_path(address));
     });
     1
