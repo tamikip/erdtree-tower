@@ -76,12 +76,12 @@ impl<H: Copy + Eq> Encounter<H> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {Weak,Strong,Boss}
-/// 单人同时在场的敌人上限（Boss 组除外）
+/// 单人精英及事件战同时在场的敌人上限；普通战按固定波次。
 pub const SOLO_CAP:usize=2;
 /// 后续波次：前一波的条件满足后再等这么久才出场
-pub const WAVE_GAP:std::time::Duration=std::time::Duration::from_secs(2);
+pub const WAVE_GAP:std::time::Duration=std::time::Duration::from_secs(3);
 /// 后续波次的敌人出场后这么久内不出招（防止贴脸突袭）；同批、第一波不受影响
-pub const WAVE_GRACE:std::time::Duration=std::time::Duration::from_millis(1500);
+pub const WAVE_GRACE:std::time::Duration=std::time::Duration::from_secs(3);
 #[derive(Clone,Debug,Default)]
 pub struct SpawnGap {
     blocked:bool,
@@ -98,9 +98,9 @@ impl SpawnGap {
     }
     /// 已经放行、而且是等过前批才出场的（后续波次）：出场后有 WAVE_GRACE 的出招保护期
     pub fn later_wave(&self)->bool {self.admitted&&self.blocked}
+    pub fn holds_attacks(&self,since_bound:std::time::Duration)->bool {self.later_wave()&&since_bound<WAVE_GRACE}
 }
-/// 联机与 Boss 组一起出（联机的精英战仍按苦难律法「精英成双」等前面的精英，房主与成员按同一规则各自放出预置实体）；
-/// 其余单人战斗同时在场最多 SOLO_CAP 只，普通战清完弱怪后才出强怪。
+/// 普通战单人和联机统一分波；其他战斗保留原有精英节奏、单人上限和 Boss 组规则。
 /// previous 为本组中排在 index 之前的敌人状态，未生成的敌人记为 Waiting。
 pub fn may_spawn(networked:bool,monster_node:bool,roles:&[Role],index:usize,previous:&[Outcome])->bool {
     may_spawn_paced(networked,monster_node,false,roles,index,previous)
@@ -121,10 +121,14 @@ impl Pacing {
 /// held：这只精英按 Pacing::waits 需要等前面的精英（由运行时按生命算好）
 pub fn may_spawn_paced(networked:bool,monster_node:bool,held:bool,roles:&[Role],index:usize,previous:&[Outcome])->bool {
     if roles.iter().all(|r|*r==Role::Boss) {return true;}
+    if monster_node {
+        let wave_start=if roles.iter().all(|r|*r==Role::Weak) {0}else{index/2*2};
+        return (0..wave_start).all(|i|previous.get(i)==Some(&Outcome::Victory));
+    }
     if held&&roles[index]==Role::Strong {return false;}
     if networked {return true;}
     if previous.iter().filter(|o|**o!=Outcome::Victory).count()>=SOLO_CAP {return false;}
-    !(monster_node&&roles[index]!=Role::Weak&&roles[..index].iter().zip(previous).any(|(r,o)|*r==Role::Weak&&*o!=Outcome::Victory))
+    true
 }
 
 #[cfg(test)]
@@ -132,14 +136,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn later_wave_waits_two_seconds_after_spawn_conditions_clear() {
+    fn later_wave_attacks_wait_three_seconds_from_binding_not_wave_admission() {
+        use std::time::Duration as D;
+        let mut first=SpawnGap::default();assert!(first.allows(D::ZERO,true));
+        assert!(!first.holds_attacks(D::ZERO));
+        let mut later=SpawnGap::default();assert!(!later.allows(D::ZERO,false));
+        assert!(!later.allows(D::from_secs(10),true));
+        assert!(later.allows(D::from_secs(13),true));
+        assert!(later.holds_attacks(D::ZERO));
+        assert!(later.holds_attacks(D::from_millis(2999)));
+        assert!(!later.holds_attacks(D::from_secs(3)));
+        assert!(!later.holds_attacks(D::from_secs(10)));
+    }
+
+    #[test]
+    fn ordinary_rooms_use_the_same_complete_waves_in_solo_and_party() {
+        use Role::*;
+        use Outcome::*;
+        for networked in [false,true] {
+            for roles in [vec![Weak,Weak],vec![Weak,Weak,Weak]] {
+                for i in 0..roles.len() {assert!(may_spawn(networked,true,&roles,i,&vec![Waiting;i]));}
+            }
+            let middle=[Weak,Weak,Strong];
+            assert!(!may_spawn(networked,true,&middle,2,&[Victory,Waiting]));
+            assert!(!may_spawn(networked,true,&middle,2,&[Victory,LostEntity]));
+            assert!(may_spawn(networked,true,&middle,2,&[Victory,Victory]));
+            let late=[Strong,Weak,Strong,Weak];
+            assert!(may_spawn(networked,true,&late,0,&[]));
+            assert!(may_spawn(networked,true,&late,1,&[Waiting]));
+            for prior in [[Waiting,Victory],[Victory,Waiting],[Victory,SpawnTimedOut]] {
+                assert!(!may_spawn(networked,true,&late,2,&prior));
+                assert!(!may_spawn(networked,true,&late,3,&[prior[0],prior[1],Waiting]));
+            }
+            assert!(may_spawn(networked,true,&late,2,&[Victory,Victory]));
+            assert!(may_spawn(networked,true,&late,3,&[Victory,Victory,Waiting]));
+        }
+    }
+
+    #[test]
+    fn later_wave_waits_three_seconds_after_spawn_conditions_clear() {
         use std::time::Duration as D;
         let mut gap=SpawnGap::default();
         assert!(!gap.allows(D::ZERO,false));
         assert!(!gap.allows(D::from_secs(10),false));
         assert!(!gap.allows(D::from_secs(20),true));
-        assert!(!gap.allows(D::from_millis(21999),true));assert!(!gap.later_wave());
-        assert!(gap.allows(D::from_secs(22),true));assert!(gap.later_wave(),"it waited for the earlier wave");
+        assert!(!gap.allows(D::from_millis(22999),true));assert!(!gap.later_wave());
+        assert!(gap.allows(D::from_secs(23),true));assert!(gap.later_wave(),"it waited for the earlier wave");
         assert!(gap.allows(D::from_secs(25),true));
         assert!(gap.allows(D::from_secs(26),false),"an admitted enemy must not be held again while loading or fighting");
     }
@@ -157,7 +199,7 @@ mod tests {
         let mut gap=SpawnGap::default();
         assert!(!gap.allows(D::ZERO,false));assert!(!gap.allows(D::from_secs(1),true));
         assert!(!gap.allows(D::from_secs(2),false));assert!(!gap.allows(D::from_secs(10),true));
-        assert!(!gap.allows(D::from_millis(11999),true));assert!(gap.allows(D::from_secs(12),true));
+        assert!(!gap.allows(D::from_millis(12999),true));assert!(gap.allows(D::from_secs(13),true));
     }
 
     #[test]
@@ -241,7 +283,7 @@ mod tests {
         assert!(!may_spawn_paced(true,false,true,&pair,1,&[Waiting]),"party: the second elite waits");
         assert!(may_spawn_paced(true,false,true,&pair,2,&[Waiting,Waiting]),"escorts never wait");
         assert!(may_spawn_paced(true,false,true,&[Role::Boss,Role::Boss],1,&[Waiting]),"boss groups spawn together");
-        assert!(may_spawn(true,true,&monsters,3,&[Waiting,Waiting,Waiting]),"party keeps group spawning");
+        assert!(!may_spawn(true,true,&monsters,3,&[Waiting,Waiting,Waiting]),"party waits for the previous wave too");
         // 精英战：精英怪池的两只精英一只一只上；苦难律法「精英成双」时一起上；Boss 组（精英版双人组）不受影响
         let pair=[Role::Strong,Role::Strong,Role::Weak];
         assert!(!may_spawn_paced(false,false,true,&pair,1,&[Waiting]),"a held elite waits");
