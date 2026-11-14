@@ -12,11 +12,13 @@ namespace Tower.Launcher
         public const string MirrorFirst = "mirror", GitHubFirst = "github";
 
         public string Mode { get => Seamless; set { } }
+        public string Network { get; set; } = NetworkProfile.Steam;
         public string Loader { get; set; } = Me3;
         /// <summary>优先走哪条下载线路（另一条兜底）</summary>
         public string Route { get; set; } = MirrorFirst;
         public bool AutoCheck { get; set; } = true;
         public bool CloseExit { get; set; }
+        public string WindowSize { get; set; } = LauncherWindowSize.Default;
 
         public static HostSettings Load(string path)
         {
@@ -25,8 +27,10 @@ namespace Tower.Launcher
                 if (File.Exists(path))
                 {
                     var settings = JsonSerializer.Deserialize<HostSettings>(File.ReadAllText(path)) ?? new HostSettings();
+                    settings.Network = NetworkProfile.Normalize(settings.Network);
                     if (settings.Loader != Yafsml) settings.Loader = Me3;
                     if (settings.Route != GitHubFirst) settings.Route = MirrorFirst;
+                    settings.WindowSize = LauncherWindowSize.Normalize(settings.WindowSize);
                     return settings;
                 }
             }

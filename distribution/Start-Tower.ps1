@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Solo', 'Seamless')][string]$Mode = 'Seamless',
     [ValidateSet('ME3', 'YAFSML')][string]$Loader = 'ME3',
+    [ValidateSet('Steam', 'OnlineFix')][string]$Network = 'Steam',
     [string]$GameDir,
     [switch]$CheckOnly,
     [string]$PartyConfig,
@@ -12,7 +13,7 @@ trap {
     if ($ErrorFile) { [IO.File]::WriteAllText($ErrorFile, $_.Exception.Message, (New-Object Text.UTF8Encoding($false))) }
     exit 1
 }
-$pathFile = Join-Path $PSScriptRoot 'GamePath.txt'
+$pathFile = Join-Path $PSScriptRoot $(if ($Network -eq 'OnlineFix') {'GamePath.OnlineFix.txt'} else {'GamePath.txt'})
 if (-not $GameDir -and (Test-Path -LiteralPath $pathFile)) {
     $GameDir = [IO.File]::ReadAllText($pathFile).Trim()
 }
@@ -27,7 +28,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $GameDir 'eldenring.exe') -PathType 
 $GameDir = (Resolve-Path -LiteralPath $GameDir).Path
 $launcher = 'Launch-Seamless-Tower.ps1'
 $entry = Join-Path $PSScriptRoot $launcher
-$options = @{GameDir=$GameDir;Loader=$Loader}
+$options = @{GameDir=$GameDir;Loader=$Loader;Network=$Network}
 if ($PartyConfig) {
     $options.PartyConfig=$PartyConfig
 }

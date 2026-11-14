@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string]$Entry,
     [ValidateSet('Solo','Seamless')][string]$Mode = 'Seamless',
     [ValidateSet('ME3','YAFSML')][string]$Loader = 'ME3',
+    [ValidateSet('Steam','OnlineFix')][string]$Network = 'Steam',
     [Parameter(Mandatory=$true)][string]$GameDir,
     [Parameter(Mandatory=$true)][string]$ErrorFile,
     [Parameter(Mandatory=$true)][string]$LogDirectory
@@ -13,7 +14,7 @@ try {
     & ([ScriptBlock]::Create($bootstrap))
     function Literal([string]$Value) { "'" + $Value.Replace("'", "''") + "'" }
     $command = $bootstrap + '$ProgressPreference = ''SilentlyContinue''; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); & ' + (Literal $Entry) + ' -Mode ' + (Literal $Mode) + ' -GameDir ' + (Literal $GameDir) + ' -ErrorFile ' + (Literal $ErrorFile)
-    $command += ' -Loader ' + (Literal $Loader)
+    $command += ' -Loader ' + (Literal $Loader) + ' -Network ' + (Literal $Network)
     $command += '; $ok = $?; if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }; if (-not $ok) { exit 1 }; exit 0'
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
     $shell = (Get-Process -Id $PID).Path

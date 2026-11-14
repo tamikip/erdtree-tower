@@ -222,6 +222,7 @@ window.HOYO_CONFIG = {
           {
             title: '启动',
             rows: [
+              { type: 'select', key: 'network', label: '联机模式', hint: '分别记住游戏目录；退出游戏后可切换，两种模式的大厅不互通。学习版请选择已安装补丁的目录。', value: '正版无缝', options: ['正版无缝', '学习版无缝（Spacewar）'] },
               { type: 'select', key: 'loader', label: '加载器', hint: '下次启动生效；两种加载器共用原有存档与联机设置', value: 'ME3', options: ['ME3', 'YAFSML'] },
               { type: 'static', label: '游戏目录', key: 'gameDir', value: '（未设置）' },
               { type: 'buttons', label: '目录', items: [{ text: '选择游戏目录…', action: 'chooseGameDir' }] },
@@ -240,6 +241,7 @@ window.HOYO_CONFIG = {
             rows: [
               { type: 'select', key: 'language', label: '语言 / Language', hint: '下次启动生效。英文物品与对话需将游戏本体也设为 English。 Restart required; set the game language to English for English items and dialogue.',
                 value: '跟随游戏 / Follow game', options: ['跟随游戏 / Follow game', '简体中文 / Chinese', 'English'] },
+              { type: 'select', key: 'renderer', label: '界面渲染', hint: '下次启动生效。独立窗口用于插帧兼容，请使用无边框或窗口模式；录制界面需使用显示器捕获。', value: '游戏内渲染', options: ['游戏内渲染', '独立窗口'] },
               { type: 'select', key: 'prompts', label: '按键提示', hint: '界面里的按键提示固定显示所选的一种，不随最近用的手柄或键鼠来回切换',
                 value: '键鼠', options: ['键鼠', '手柄'] },
             ],
@@ -258,6 +260,7 @@ window.HOYO_CONFIG = {
               { type: 'select', key: 'key.archive', label: '旅程档案', value: 'J', options: KEY_CHOICES },
               { type: 'select', key: 'key.build', label: '构筑面板（地图界面）', value: 'C', options: KEY_CHOICES },
               { type: 'select', key: 'key.debug', label: '调试菜单', value: 'Delete', options: KEY_CHOICES },
+              { type: 'select', key: 'key.recover', label: '入场自救', hint: '仅用于单人战斗入场等待；不会跳关或结算奖励', value: 'F7', options: KEY_CHOICES },
               { type: 'select', key: 'key.skip', label: '跳过本关', hint: '战斗中视为胜利，直接到三选一；联机只有房主能用', value: 'End', options: KEY_CHOICES },
             ],
           },
@@ -299,7 +302,7 @@ window.HOYO_CONFIG = {
           {
             title: '联机设置（保存在包内 config，下次启动生效）',
             rows: [
-              { type: 'input', key: 'ersc.cooppassword', label: '联机密码', hint: '双方填同一个；最多 64 字，不能含 ; # =', placeholder: '输入后按回车或点别处保存', value: '' },
+              { type: 'static', label: '加入队伍', value: '通过联机大厅快速加入、选择房间或输入好友分享的房间码，无需设置连接密码' },
               { type: 'static', label: '死亡惩罚', value: '关闭（爬塔固定）' },
             ],
           },
@@ -346,6 +349,7 @@ window.HOYO_CONFIG = {
           {
             title: '界面',
             rows: [
+              { type: 'select', key: 'windowSize', label: '启动器窗口大小', hint: '立即生效并记住选择，随系统缩放；超出屏幕时自动适配。', value: '1280 × 720', options: ['960 × 540', '1280 × 720', '1600 × 900', '1920 × 1080'] },
               { type: 'switch', key: 'closeExit', label: '启动游戏后关闭启动器', value: false },
               { type: 'switch', key: 'reduceMotion', label: '减少界面动效', hint: '关闭呼吸、闪烁等循环动画', value: false },
             ],

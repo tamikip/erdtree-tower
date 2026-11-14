@@ -115,6 +115,8 @@
       list: function (query) { post('lobby', 'list', { query: query || '' }); },
       host: function (room) { post('lobby', 'host', room); },
       join: function (id, password) { post('lobby', 'join', { id: id, password: password || '' }); },
+      quick: function () { post('lobby', 'quick'); },
+      code: function (code) { post('lobby', 'code', { code: code }); },
       close: function () { post('lobby', 'close'); },
     },
     settings: {

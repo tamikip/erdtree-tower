@@ -1,8 +1,16 @@
-﻿param([string]$GameDir = 'F:\SteamLibrary\steamapps\common\ELDEN RING\Game', [switch]$CheckOnly, [string]$PartyConfig, [ValidateSet('ME3','YAFSML')][string]$Loader='ME3')
+﻿param([string]$GameDir = 'F:\SteamLibrary\steamapps\common\ELDEN RING\Game', [switch]$CheckOnly, [string]$PartyConfig, [ValidateSet('ME3','YAFSML')][string]$Loader='ME3', [ValidateSet('Steam','OnlineFix')][string]$Network='Steam')
 $ErrorActionPreference = 'Stop'
 $loaderSupport=Join-Path $PSScriptRoot 'Tower-Loader.ps1'
 if(!(Test-Path -LiteralPath $loaderSupport)){$loaderSupport=Join-Path $PSScriptRoot 'distribution/Tower-Loader.ps1'}
 . $loaderSupport
+$networkSupport = Join-Path (Split-Path $loaderSupport) 'Tower-Network.ps1'
+. $networkSupport
+Assert-TowerNetwork $GameDir $Network
+$otherPath = Join-Path $PSScriptRoot $(if ($Network -eq 'OnlineFix') {'GamePath.txt'} else {'GamePath.OnlineFix.txt'})
+if (Test-Path -LiteralPath $otherPath) {
+    $other = [IO.File]::ReadAllText($otherPath).Trim().Trim('"')
+    if ($other -and [IO.Path]::GetFullPath($other).TrimEnd('\') -ieq [IO.Path]::GetFullPath($GameDir).TrimEnd('\')) { throw 'Network modes must use separate game directories.' }
+}
 function Assert-TowerLobbyPassword([string]$RoomText, [string]$Settings) {
     $room = $RoomText | ConvertFrom-Json
     $entries = [regex]::Matches($Settings, '(?mi)^[ \t]*cooppassword[ \t]*=[ \t]*([^\r\n;#]*)')
@@ -159,7 +167,7 @@ $proxy = Join-Path $GameDir 'dinput8.dll'
 if (Test-Path -LiteralPath $proxy) {throw 'Existing dinput8.dll detected. It will not be overwritten.'}
 $settings = if (Test-Path -LiteralPath $settingsPath) {[IO.File]::ReadAllText($settingsPath)} else {$initial}
 if ([regex]::Matches($settings,'(?m)^save_file_extension\s*=.*$').Count -ne 1) {throw 'Expected one save extension setting.'}
-$saveExtension = if ($PartyConfig) {'ertowerparty'} else {'ertowercoop'}
+$saveExtension = if ($Network -eq 'OnlineFix') {if ($PartyConfig) {'ertowerfixparty'} else {'ertowerfix'}} elseif ($PartyConfig) {'ertowerparty'} else {'ertowercoop'}
 $modified = [regex]::Replace($settings,'(?m)^save_file_extension\s*=.*$',('save_file_extension = '+$saveExtension))
 $modified = [regex]::Replace($modified,'(?m)^allow_invaders\s*=.*$','allow_invaders = 0')
 $preset = Join-Path $root 'seamless-preset.ini'
@@ -182,9 +190,9 @@ if ((Test-Path -LiteralPath $assetMode) -and [IO.File]::ReadAllText($assetMode).
 }
 $native = $base.DllPath
 $assets = Join-Path $root 'scene-assets'
-$runtime = Join-Path $entry $(if ($PartyConfig) {'party-runtime'} else {'runtime'})
+$runtime = Join-Path $entry $(if ($Network -eq 'OnlineFix') {if ($PartyConfig) {'onlinefix-party-runtime'} else {'onlinefix-runtime'}} elseif ($PartyConfig) {'party-runtime'} else {'runtime'})
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
-if (!$PartyConfig) {Copy-TowerSoloData $root $runtime $saveExtension}
+if (!$PartyConfig -and $Network -eq 'Steam') {Copy-TowerSoloData $root $runtime $saveExtension}
 $assetLink = Join-Path $runtime 'scene-assets'
 # The tower DLL checks arena files through this link (its log directory is the runtime folder). A link left behind by
 # a moved or copied installation, or a plain copied folder, keeps serving old files while the game loads the new ones,
@@ -285,6 +293,7 @@ try {
         else { [Environment]::SetEnvironmentVariable($key,$environment[$key]) }
     }
     Write-Host "${Loader}: Seamless + tower. Separate save: $saveExtension."
+    if ($Network -eq 'OnlineFix') { Set-TowerOnlineFixDllList $GameDir }
     Invoke-TowerLoader $root $Loader (Join-Path $GameDir 'eldenring.exe') $configPath
 } finally {
     if ($roomGuard) { $roomGuard.Dispose() }

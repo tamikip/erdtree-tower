@@ -16,6 +16,11 @@ namespace Tower.Update
         Task<byte[]> RangeAsync(string tag, string asset, long offset, long length, CancellationToken cancel);
     }
 
+    public interface IVersionedReleaseSource : IReleaseSource
+    {
+        Task<ReleaseManifest> VersionAsync(string tag, CancellationToken cancel);
+    }
+
     /// <summary>
     /// GitHub Release：最新清单走 releases/latest/download（不经过 API，没有次数限制），
     /// 数据包用 Range 请求只取需要的那几段（GitHub 的下载地址会回 206）。
@@ -23,7 +28,7 @@ namespace Tower.Update
     /// 跳转由这里自己跟（每一跳都带上 Range，不依赖 HttpClient 自动跳转时是否保留请求头；传入的 HttpClient 应关闭 AllowAutoRedirect），
     /// 且不允许从 https 跳到 http。
     /// </summary>
-    public sealed class HttpReleaseSource : IReleaseSource
+    public sealed class HttpReleaseSource : IVersionedReleaseSource
     {
         readonly HttpClient http;
         readonly string baseUrl;
@@ -54,6 +59,14 @@ namespace Tower.Update
             var data = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
             if (data.LongLength != length) throw new IOException($"下载的数据长度不对：{data.LongLength}/{length}");
             return data;
+        }
+
+        public async Task<ReleaseManifest> VersionAsync(string tag, CancellationToken cancel)
+        {
+            VersionSwitch.Build(tag);
+            using var response = await SendAsync($"{baseUrl}/download/{tag}/{ReleaseManifest.FileName}", null, cancel).ConfigureAwait(false);
+            EnsureSuccess(response, "所选版本的更新清单");
+            return VersionSwitch.Check(tag, ReleaseManifest.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false)));
         }
 
         static void EnsureSuccess(HttpResponseMessage response, string what)
@@ -89,10 +102,16 @@ namespace Tower.Update
     }
 
     /// <summary>本地目录（测试或离线更新包）：{root}/{tag}/{asset}，最新清单在 {root}/latest/tower-release.json。</summary>
-    public sealed class DirectoryReleaseSource : IReleaseSource
+    public sealed class DirectoryReleaseSource : IVersionedReleaseSource
     {
         readonly string root;
         public DirectoryReleaseSource(string root) { this.root = root; }
+
+        public async Task<ReleaseManifest> VersionAsync(string tag, CancellationToken cancel)
+        {
+            VersionSwitch.Build(tag); cancel.ThrowIfCancellationRequested();
+            return await Task.FromResult(VersionSwitch.Check(tag, ReleaseManifest.Parse(File.ReadAllText(Path.Combine(root, tag, ReleaseManifest.FileName)))));
+        }
 
         public Task<ReleaseManifest> LatestAsync(CancellationToken cancel) =>
             Task.FromResult(ReleaseManifest.Parse(File.ReadAllText(Path.Combine(root, "latest", ReleaseManifest.FileName))));
@@ -120,7 +139,7 @@ namespace Tower.Update
     /// 这样镜像还没上传新版本时仍能从别的线路拿到新版本；一直连不上的线路不会拖慢检查。
     /// 数据分段：先走选中的线路，失败就换下一条，失败过的线路排到最后。
     /// </summary>
-    public sealed class MultiSource : IReleaseSource
+    public sealed class MultiSource : IVersionedReleaseSource
     {
         readonly IReadOnlyList<KeyValuePair<string, IReleaseSource>> lines;
         readonly object gate = new object();
@@ -170,6 +189,26 @@ namespace Tower.Update
         }
 
         static string Reason(Task task) => task.IsCanceled ? "超时" : task.Exception?.InnerException?.Message ?? "未知错误";
+
+        public async Task<ReleaseManifest> VersionAsync(string tag, CancellationToken cancel)
+        {
+            VersionSwitch.Build(tag);
+            Exception? last = null;
+            foreach (var i in Enumerable.Range(0, lines.Count))
+            {
+                if (!(lines[i].Value is IVersionedReleaseSource versioned)) continue;
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+                timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                try {
+                    var result = await versioned.VersionAsync(tag, timeout.Token).ConfigureAwait(false);
+                    lock (gate) order = new[] { i }.Concat(Enumerable.Range(0, lines.Count).Where(n => n != i)).ToList();
+                    Chosen = lines[i].Key;
+                    return result;
+                } catch (Exception e) when (!cancel.IsCancellationRequested && (e is IOException || e is HttpRequestException || e is OperationCanceledException)) { last = e; }
+            }
+            cancel.ThrowIfCancellationRequested();
+            throw last ?? new IOException("该历史版本没有可用的更新清单");
+        }
 
         public async Task<byte[]> RangeAsync(string tag, string asset, long offset, long length, CancellationToken cancel)
         {

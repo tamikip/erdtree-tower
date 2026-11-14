@@ -22,7 +22,10 @@
     <Compile Include="../Tower.Launcher/DlcLaunchCheck.cs" Link="DlcLaunchCheck.cs" />
     <Compile Include="../Tower.Launcher/LobbyLaunch.cs" Link="LobbyLaunch.cs" />
     <Compile Include="../Tower.Launcher/LobbyBrowse.cs" Link="LobbyBrowse.cs" />
+    <Compile Include="../Tower.Launcher/NetworkProfile.cs" Link="NetworkProfile.cs" />
+    <Compile Include="../Tower.Launcher/LobbyWire.cs" Link="LobbyWire.cs" />
     <Compile Include="../Tower.Launcher/HostSettings.cs" Link="HostSettings.cs" />
+    <Compile Include="../Tower.Launcher/LauncherWindowSize.cs" Link="LauncherWindowSize.cs" />
     <Compile Include="../Tower.Launcher/LauncherData.cs" Link="LauncherData.cs" />
   </ItemGroup>
 </Project>

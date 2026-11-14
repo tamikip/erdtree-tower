@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -8,15 +9,6 @@ using System.Threading.Tasks;
 
 namespace Tower.Launcher
 {
-    /// <summary>大厅里的一个房间（Steam 大厅数据，键见 src/lobby.rs 的 HostRoom::data）</summary>
-    sealed class LobbyRoom
-    {
-        public ulong Id;
-        public string Name = "", Host = "", State = "", Version = "", Salt = "", Password = "", PasswordFingerprint = "";
-        public int Players, Max;
-        public bool Locked, Open, Started;
-    }
-
     /// <summary>
     /// 联机大厅（浏览端）：用游戏目录里的 steam_api64 以艾尔登法环的应用编号临时登录 Steam，列出带爬塔标记的大厅；
     /// 只在浏览时开着，启动游戏前关掉（Steam 上会短暂显示正在玩艾尔登法环）。
@@ -37,6 +29,7 @@ namespace Tower.Launcher
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void VoidFn();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate IntPtr AccessorFn();
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate ulong RequestFn(IntPtr self);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate uint AppIdFn(IntPtr self);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void StringFilterFn(IntPtr self, [MarshalAs(UnmanagedType.LPUTF8Str)] string key, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, int comparison);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void IntFilterFn(IntPtr self, int value);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate ulong ByIndexFn(IntPtr self, int index);
@@ -55,7 +48,7 @@ namespace Tower.Launcher
         readonly ResultFn result;
         bool disposed;
 
-        SteamLobby(IntPtr module)
+        SteamLobby(IntPtr module, string appId)
         {
             T Fn<T>(params string[] names) where T : Delegate
             {
@@ -84,30 +77,52 @@ namespace Tower.Launcher
             data = Fn<DataFn>("SteamAPI_ISteamMatchmaking_GetLobbyData");
             completed = Fn<CompletedFn>("SteamAPI_ISteamUtils_IsAPICallCompleted");
             result = Fn<ResultFn>("SteamAPI_ISteamUtils_GetAPICallResult");
-            Environment.SetEnvironmentVariable("SteamAppId", AppId);
-            Environment.SetEnvironmentVariable("SteamGameId", AppId);
-            if (!init()) throw new InvalidOperationException("无法连接 Steam：请确认 Steam 已启动并登录，且账号拥有艾尔登法环");
+            Environment.SetEnvironmentVariable("SteamAppId", appId);
+            Environment.SetEnvironmentVariable("SteamGameId", appId);
+            if (!init()) throw new InvalidOperationException(appId == "480" ? "无法连接 Spacewar：请确认 Steam 已启动并登录" : "无法连接 Steam：请确认 Steam 已启动并登录，且账号拥有艾尔登法环");
             matchmaking = Interface("SteamAPI_SteamMatchmaking_v009");
             utils = Interface("SteamAPI_SteamUtils_v010", "SteamAPI_SteamUtils_v009");
+            if (Fn<AppIdFn>("SteamAPI_ISteamUtils_GetAppID")(utils).ToString() != appId)
+                throw new InvalidOperationException("Steam 实际应用编号与所选模式不一致，已停止大厅查询");
         }
 
         /// <summary>
         /// 打开大厅连接。gameDir 为 Game 目录（eldenring.exe 所在）。装了无缝联机时原版接口可能改名为 steam_api64_o.dll，
         /// 这时 steam_api64.dll 是转发层，只加载原版那个。
         /// </summary>
-        public static SteamLobby Open(string gameDir)
+        public static SteamLobby Open(string gameDir, string appId = AppId)
         {
             var original = Path.Combine(gameDir, "steam_api64_o.dll");
             var path = File.Exists(original) ? original : Path.Combine(gameDir, "steam_api64.dll");
             if (!File.Exists(path)) throw new InvalidOperationException("游戏目录里没有 steam_api64.dll");
             var module = LoadLibraryW(path);
             if (module == IntPtr.Zero) throw new InvalidOperationException($"无法加载 {Path.GetFileName(path)}（错误 {Marshal.GetLastWin32Error()}）");
-            return new SteamLobby(module);
+            return new SteamLobby(module, appId);
         }
 
         public bool ListLimited { get; private set; }
         public int ListQueries { get; private set; }
         int returnedCount;
+        public Task<List<LobbyRoom>> QuickRoomsAsync(string version) => QueryAsync("", new[] {
+            new KeyValuePair<string,string>("v",version), new KeyValuePair<string,string>("lock","0"),
+            new KeyValuePair<string,string>("open","1"), new KeyValuePair<string,string>("started","0")
+        });
+        public async Task<LobbyRoom?> FindCodeAsync(string code)
+        {
+            var normalized = LobbyLaunch.NormalizeRoomCode(code) ?? throw new InvalidOperationException("房间码格式无效，请粘贴房主分享的完整房间码");
+            var matches = (await QueryAsync("", new[] { new KeyValuePair<string,string>("code",normalized) }))
+                .Where(r => r.Code == normalized).ToArray();
+            if (matches.Length > 1) throw new InvalidOperationException("房间码对应多个房间，请房主重新开房");
+            return matches.FirstOrDefault();
+        }
+        public async Task<LobbyRoom?> RefreshAsync(LobbyRoom room)
+        {
+            if (room.Code.Length > 0) {
+                var current = await FindCodeAsync(room.Code);
+                return current?.Id == room.Id ? current : null;
+            }
+            return (await QueryAsync(room.Name, Array.Empty<KeyValuePair<string,string>>())).FirstOrDefault(r => r.Id == room.Id);
+        }
         /// <summary>饱和列表分组查询并去重；精确房间名条件应用于每次请求。</summary>
         public async Task<List<LobbyRoom>> ListAsync(string exactName = "")
         {
@@ -157,6 +172,7 @@ namespace Tower.Launcher
                         Players = int.TryParse(Read(id, "players"), out var p) ? p : 1, Max = int.TryParse(Read(id, "max"), out var m) ? m : 0,
                         Locked = Read(id, "lock") == "1", Open = Read(id, "open") == "1", Started = Read(id, "started") == "1", Salt = Read(id, "salt"), Password = Read(id, "pwd"),
                         PasswordFingerprint = Read(id, "pwd_sha256"),
+                        Code = LobbyLaunch.NormalizeRoomCode(Read(id, "code")) ?? "",
                     });
                 }
                 return rooms;

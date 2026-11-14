@@ -11,7 +11,7 @@ using Microsoft.Web.WebView2.WinForms;
 namespace Tower.Launcher
 {
     /// <summary>
-    /// 无边框 1280×720 窗口 + WebView2。界面是 launcher/ui 里的静态页面，通过虚拟主机名 https://tower.launcher/ 加载；
+    /// 可选尺寸的无边框窗口 + WebView2。界面是 launcher/ui 里的静态页面，通过虚拟主机名 https://tower.launcher/ 加载；
     /// 页面发来的 {type,action,payload} 交给 TowerHost，宿主推给页面的消息走 Post。
     /// </summary>
     sealed class MainForm : Form
@@ -62,6 +62,7 @@ namespace Tower.Launcher
         protected override async void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            host.RestoreWindowSize();
             try { await InitAsync(); }
             catch (Exception error)
             {
@@ -171,6 +172,16 @@ namespace Tower.Launcher
             if (MouseButtons != MouseButtons.Left) return;
             ReleaseCapture();
             SendMessage(Handle, 0xA1 /* WM_NCLBUTTONDOWN */, (IntPtr)2 /* HTCAPTION */, IntPtr.Zero);
+        }
+
+        public void SetLauncherSize(string value)
+        {
+            var area = Screen.FromControl(this).WorkingArea;
+            var center = new Point(Left + Width / 2, Top + Height / 2);
+            var size = LauncherWindowSize.Fit(value, DeviceDpi, area.Width, area.Height);
+            ClientSize = new Size(size.Width, size.Height);
+            Location = new Point(Math.Max(area.Left, Math.Min(center.X - Width / 2, area.Right - Width)),
+                Math.Max(area.Top, Math.Min(center.Y - Height / 2, area.Bottom - Height)));
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

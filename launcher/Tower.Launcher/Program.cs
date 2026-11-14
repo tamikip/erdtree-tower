@@ -13,6 +13,7 @@ namespace Tower.Launcher
         [STAThread]
         static void Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--lobby-worker") { LobbyClient.RunWorkerAsync().GetAwaiter().GetResult(); return; }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             WaitForPrevious(args);

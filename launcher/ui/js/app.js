@@ -9,6 +9,7 @@
   var bridge = window.hoyoBridge;
   var UI = window.hoyoUI;
   var launchStates = {};
+  var steamReminder = '请先启动并登录 Steam，游戏运行期间保持 Steam 开启。若 Steam 弹出启动确认，请切换到 Steam 完成确认。';
 
   function renderLaunchProgress() {
     var box = document.getElementById('launch-status');
@@ -25,6 +26,7 @@
     box.innerHTML = '<div class="launch-status-head"><strong>' + esc(p.text || '正在启动') + '</strong><span>' +
       Math.floor(seconds / 60) + ':' + ('0' + seconds % 60).slice(-2) + '</span></div>' +
       '<div class="launch-status-detail">' + esc(p.detail || '请稍候，无需重复启动') + '</div>' +
+      (p.active ? '<div class="launch-status-detail" role="note">' + esc(steamReminder) + '</div>' : '') +
       '<div class="launch-status-track" role="progressbar" aria-label="当前启动阶段" aria-valuemin="0" aria-valuemax="100"' +
       (known ? ' aria-valuenow="' + Math.round(percent) + '"' : '') + '><span style="width:' +
       (known ? percent : p.active ? 32 : p.phase === 'finished' ? 100 : 0) + '%"></span></div>' +
@@ -108,8 +110,7 @@
   }
 
   /* ================= 窗口尺寸自适应 =================
-     设计画布固定 1280x720。视口比它小就整体等比缩小并居中，
-     比它大则保持原尺寸（stage 模式下由 stage 规则居中）。
+     设计画布固定 1280x720，随视口整体等比缩放并居中。
      WebView2 的 CSS 视口随系统 DPI 变化，不能假定与窗口像素相同。
      ================================================= */
   function fitCanvas() {
@@ -119,7 +120,7 @@
     if (stage) { app.style.transform = ''; return; }
     var vw = window.innerWidth;
     var vh = window.innerHeight;
-    var s = Math.min(1, vw / 1280, vh / 720);
+    var s = Math.min(vw / 1280, vh / 720);
     app.style.left = Math.max(0, (vw - 1280 * s) / 2) + 'px';
     app.style.top = Math.max(0, (vh - 720 * s) / 2) + 'px';
     app.style.transform = 'scale(' + s + ')';
@@ -527,13 +528,13 @@
     var cta = el('div', 'cta');
     var btn = el('button', 'btn-primary');
     btn.setAttribute('data-game', key);
-    btn.setAttribute('data-action', installed && !game.updateTo ? 'launch' : 'download');
+    btn.setAttribute('data-action', installed ? 'launch' : 'download');
     btn.innerHTML =
-      (installed && !game.updateTo
+      (installed
         ? '<span class="disc">' + CONTROL_PLAY_SVG + '</span>'
         : '<span class="disc"><i class="arrow"></i></span>') +
       '<span class="ring">' + ringSvg() + '</span>' +
-      '<span class="label">' + esc(game.updateTo ? '立即更新' : installed
+      '<span class="label">' + esc(installed
         ? ((game.cta && game.cta.launchText) || '开始游戏')
         : ((game.cta && game.cta.text) || '获取游戏')) + '</span>';
 
@@ -556,7 +557,7 @@
         }
         return;
       }
-      if (!g.installed || g.updateTo) {
+      if (!g.installed) {
         e.stopPropagation();
         e.preventDefault();
         taskStart(key, g.updateTo ? 'update' : 'install');
@@ -827,7 +828,7 @@
     var previous = document.getElementById('releaseHistory');
     if (!data.loading && !previous) return;
     var items = data.items || [];
-    var html = '<section id="releaseHistory">';
+    var html = '<section id="releaseHistory"><p>可回退到历史模组版本，保留当前启动器。请先退出游戏并备份存档，旧版不保证兼容新版进度；联机全队需使用同一版本。</p>';
     if (data.loading || !items.length) html += '<p role="status">' + esc(data.status || '') + '</p>';
     if (!items.length) html += '<p>暂无可显示的更新记录。</p>';
     items.forEach(function (item, index) {
@@ -839,12 +840,20 @@
         '<span class="history-meta">' +
         (date ? '<time>' + esc(date) + '</time>' : '') +
         (index === 0 ? '<span class="history-latest">最新记录</span>' : '') + '</span></summary>' +
-        '<div class="release-notes">' + (notes || '<p>此版本未提供面向玩家的更新说明。</p>') + '</div></details>';
+        '<div class="release-notes">' + (notes || '<p>此版本未提供面向玩家的更新说明。</p>') + '</div>' +
+        (item.current ? '<p>当前安装版本</p>' : item.canRollback ? '<button class="btn-ghost" data-rollback="' + esc(item.tag) + '">回退到此版本</button>' : '') + '</details>';
     });
     openModal('更新日志与历史', html + '</section>');
     var history = document.getElementById('releaseHistory');
     history.closest('.modal').classList.add('release-history-modal');
     history.addEventListener('click', function (event) {
+      var rollback = event.target.closest('[data-rollback]');
+      if (rollback) {
+        event.preventDefault();
+        bridge.settings.action('switchVersion', { tag: rollback.getAttribute('data-rollback') });
+        closeModal();
+        return;
+      }
       var link = event.target.closest('.release-notes a');
       if (!link) return;
       event.preventDefault();
@@ -910,6 +919,10 @@
      房间列表由宿主用 Steam 大厅查询（TowerHost.LobbyListAsync），开房 / 加入时宿主写好无缝联机密码再启动游戏。
      lobbyState.view：'list' 房间列表 | 'host' 开房表单 */
   var lobbyState = { view: 'list', loading: false, error: '', rooms: [], version: '', joining: null, mine: null, query: '' };
+  function roomCode(code) { return String(code || '').replace(/^T(.{4})(.{4})(.{4})(.{4})$/, 'T-$1-$2-$3-$4'); }
+  function shareCode(code) {
+    return code ? '<div class="lobby-code"><span>' + esc(roomCode(code)) + '</span> <button class="btn-ghost" data-lobby="copyCode" data-code="' + esc(code) + '">复制房间码</button></div>' : '';
+  }
 
   function openLobby() {
     closeModal();
@@ -932,7 +945,7 @@
     var matches = [];
     dlg.querySelectorAll('.lobby-room').forEach(function (row, index) {
       var room = lobbyState.rooms[index];
-      var match = !query || [room.name, room.host, room.id].some(function (value) {
+      var match = !query || [room.name, room.host, room.id, room.code].some(function (value) {
         return String(value || '').toLowerCase().indexOf(query) !== -1;
       });
       row.hidden = true;
@@ -978,31 +991,43 @@
     var searchFocused = document.activeElement && document.activeElement.id === 'lobbySearch';
     var searchSelection = searchFocused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
     var L = lobbyState;
+    var draftName = dlg.querySelector('#lobbyName');
+    if (draftName) L.draft = { name: draftName.value, max: dlg.querySelector('#lobbyMax').value, password: dlg.querySelector('#lobbyPassword').value };
+    var draftCode = dlg.querySelector('#lobbyCode');
+    if (draftCode) L.code = draftCode.value;
+    var draft = L.draft || { name: '', max: 4, password: '' };
     var html = '<button class="set-close" data-lobby="close" aria-label="关闭">' +
       '<svg viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.6"/></svg></button>' +
-      '<div class="lobby-body"><div class="card-header">联机大厅</div>';
+      '<div class="lobby-body"><div class="card-header">联机大厅</div>' +
+      '<div class="lobby-hint" role="note">' + esc(steamReminder) + '</div>';
     if (L.view === 'host') {
-      html += '<div class="lobby-hint">开房后启动器会自动设置无缝联机密码并启动游戏；进游戏后照常用无缝联机的道具开启联机，房间就会出现在大厅里，队友不用填密码。</div>' +
-        '<div class="set-row"><div class="label">房间名</div><div class="ctrl"><input class="inp" id="lobbyName" maxlength="32" placeholder="例如：一起爬塔"></div></div>' +
+      html += '<div class="lobby-hint">创建后进入游戏，使用联机道具开放世界。好友可以用房间码找到你，公开队伍也会出现在大厅中。</div>' +
+        '<div class="set-row"><div class="label">房间名</div><div class="ctrl"><input class="inp" id="lobbyName" maxlength="32" placeholder="例如：一起爬塔" value="' + esc(draft.name) + '"></div></div>' +
         '<div class="set-row"><div class="label">人数上限</div><div class="ctrl"><select class="inp" id="lobbyMax">' +
-        [2, 3, 4, 5, 6].map(function (n) { return '<option value="' + n + '"' + (n === 4 ? ' selected' : '') + '>' + n + ' 人</option>'; }).join('') +
+        [2, 3, 4, 5, 6].map(function (n) { return '<option value="' + n + '"' + (n === Number(draft.max) ? ' selected' : '') + '>' + n + ' 人</option>'; }).join('') +
         '</select></div></div>' +
-        '<div class="set-row"><div class="label">房间密码<div class="hint">可不填；填了就是私密房间，只有知道密码的人能进</div></div>' +
-        '<div class="ctrl"><input class="inp" id="lobbyPassword" maxlength="32" type="password" placeholder="不填即公开"></div></div>' +
+        '<details class="lobby-private"' + (draft.password ? ' open' : '') + '><summary>限制加入（可选）</summary><div class="set-row"><div class="label">房间口令<div class="hint">填写后不参与快速加入，好友输入口令后才能加入</div></div>' +
+        '<div class="ctrl"><input class="inp" id="lobbyPassword" maxlength="32" type="password" placeholder="留空则无需口令" value="' + esc(draft.password) + '"></div></div></details>' +
         '<div class="lobby-actions"><button class="btn-ghost" data-lobby="back">返回</button>' +
         '<button class="btn-ghost primary" data-lobby="create">开房并启动游戏</button></div>';
+    } else if (L.view === 'code') {
+      html += '<div class="lobby-hint">粘贴好友分享的完整房间码。房主需要进入游戏并开放联机，房间才能加入。</div>' +
+        '<div class="set-row"><div class="label">房间码</div><div class="ctrl"><input class="inp" id="lobbyCode" maxlength="24" placeholder="T-0123-4567-89AB-CDEF" value="' + esc(L.code || '') + '"></div></div>' +
+        '<div class="lobby-actions"><button class="btn-ghost" data-lobby="back">返回</button><button class="btn-ghost primary" data-lobby="findCode">查找并加入</button></div>';
     } else {
+      html += '<div class="lobby-entry"><button class="btn-ghost primary" data-lobby="quick"' + (L.loading ? ' disabled' : '') + '>快速加入公开队伍</button>' +
+        '<button class="btn-ghost" data-lobby="code">使用好友房间码</button><span class="lobby-hint">自动选择同版本、未开局的公开队伍</span></div>';
       html += '<div class="lobby-toolbar"><span class="lobby-hint">' +
         (L.version ? '你的版本 ' + esc(L.version) + ' · 版本不同的房间不能加入' : '同一版本的队友开的房间会显示在这里') + '</span>' +
         '<span><button class="btn-ghost" data-lobby="refresh"' + (L.loading ? ' disabled' : '') + '>' + (L.loading ? '刷新中…' : '刷新') + '</button> ' +
-        '<button class="btn-ghost primary" data-lobby="host">开房</button></span></div>' +
+        '<button class="btn-ghost primary" data-lobby="host"' + (L.loading ? ' disabled' : '') + '>开房邀请好友</button></span></div>' +
         '<div class="lobby-search"><input class="inp" id="lobbySearch" maxlength="80" aria-label="搜索房间" placeholder="搜索房间名、房主或房间 ID" value="' + esc(L.query || '') + '">' +
         '<button class="btn-ghost" data-lobby="searchRemote"' + (L.loading ? ' disabled' : '') + '>完整房间名查找</button>' +
         '<button class="btn-ghost" data-lobby="clearSearch"' + (L.loading ? ' disabled' : '') + '>清空</button><span id="lobbyResults" class="lobby-hint" aria-live="polite"></span></div>' +
         '<div class="lobby-hint">输入时筛选已加载列表；找不到时，填写完整房间名并点击查找，从 Steam 查询。列表数量不是大厅总数。</div>';
       if (L.mine) {
         html += '<div class="lobby-mine lobby-mine-' + esc(L.mine.state) + (L.mine.state === 'open' && !L.mine.ready ? ' lobby-mine-wait' : '') + '">你开的房间「' + esc(L.mine.name) + '」：' + esc(L.mine.detail) +
-          (L.mine.state === 'open' ? '<span class="lobby-hint">（自己的房间在下面的列表里可能看不到，请让队友刷新确认）</span>' : '') + '</div>';
+          (L.mine.state === 'open' ? '<span class="lobby-hint">（可把房间码发给好友）</span>' + shareCode(L.mine.code) : '') + '</div>';
       }
       if (L.error) {
         html += '<div class="lobby-empty">' + esc(L.error) + '</div>';
@@ -1012,12 +1037,12 @@
         html += '<div class="lobby-empty">暂时没有房间，点「开房」开一个吧</div>';
       } else {
         html += '<ul class="lobby-list">' + L.rooms.map(function (r) {
-          var blocked = !r.sameVersion ? '版本 ' + esc(r.version) : (r.full ? '已满' : (r.started ? '旅程中' : ''));
+          var blocked = !r.sameVersion ? '版本不同' : (r.full ? '已满' : (r.started ? '旅程中' : (!r.open ? '未开放' : (r.joinError ? '不可加入' : ''))));
           var joining = L.joining === r.id;
           return '<li class="lobby-room' + (blocked ? ' off' : '') + '">' +
             '<div class="lobby-main"><div class="lobby-name">' + (r.locked ? '🔒 ' : '') + esc(r.name) + '</div>' +
             '<div class="lobby-meta">房主 ' + esc(r.host || '—') + ' · ' + esc(r.state || '大赐福') +
-            (r.open ? '' : ' · <span class="lobby-wait">等待房主开启联机</span>') + '</div></div>' +
+            (r.open ? '' : ' · <span class="lobby-wait">等待房主开启联机</span>') + '</div>' + shareCode(r.code) + '</div>' +
             '<div class="lobby-count">' + r.players + ' / ' + r.max + '</div>' +
             (joining
               ? '<div class="lobby-join"><input class="inp lobby-pass" id="lobbyJoinPass" type="password" maxlength="32" placeholder="房间密码">' +
@@ -1028,12 +1053,14 @@
         }).join('') + '</ul><div class="lobby-empty" id="lobbyNoMatch" hidden>没有匹配的房间，试试其他关键词或刷新列表</div>';
       }
     }
-    if (L.view !== 'host') html += '<div id="lobbyPages" class="lobby-pages"></div>' +
+    if (L.view === 'list') html += '<div id="lobbyPages" class="lobby-pages"></div>' +
       (L.limited ? '<div class="lobby-hint">部分分组仍达到查询上限，列表可能不完整；找不到时请用完整房间名查找。</div>' : '');
+    if (L.busy) html += '<div class="lobby-hint lobby-progress" role="status">正在确认房间状态，关闭此窗口可取消查找…</div>';
     html += '</div>';
     dlg.innerHTML = html;
+    if (L.busy) dlg.querySelectorAll('button:not([data-lobby="close"]), input, select').forEach(function (node) { node.disabled = true; });
     filterLobby();
-    var focus = (searchFocused && dlg.querySelector('#lobbySearch')) || dlg.querySelector('#lobbyJoinPass') || dlg.querySelector('#lobbyName');
+    var focus = (searchFocused && dlg.querySelector('#lobbySearch')) || dlg.querySelector('#lobbyJoinPass') || dlg.querySelector('#lobbyName') || dlg.querySelector('#lobbyCode');
     if (focus) focus.focus();
     if (focus && focus.id === 'lobbySearch' && searchSelection) focus.setSelectionRange(searchSelection[0], searchSelection[1]);
   }
@@ -1043,6 +1070,21 @@
     if (!b || !document.getElementById('lobbyDialog')) return;
     var act = b.getAttribute('data-lobby');
     var L = lobbyState;
+    if (act === 'close') { closeModal(); return; }
+    if (L.busy || b.disabled) return;
+    if (act === 'copyCode') {
+      var code = roomCode(b.getAttribute('data-code'));
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(function () { toast('房间码已复制', 'success'); }, function () { toast('复制失败，请选中房间码手动复制', 'warn'); });
+      else toast('请选中房间码手动复制', 'info');
+      return;
+    }
+    if (act === 'code') { L.view = 'code'; renderLobby(); return; }
+    if (act === 'quick') { L.busy = true; renderLobby(); bridge.lobby.quick(); return; }
+    if (act === 'findCode') {
+      var code = (document.getElementById('lobbyCode').value || '').trim();
+      if (!/^T[0-9A-F]{16}$/i.test(code.replace(/-/g, ''))) { toast('请粘贴完整房间码', 'warn'); return; }
+      L.busy = true; renderLobby(); bridge.lobby.code(code); return;
+    }
     if (act === 'page') {
       var nextPage = Number(b.getAttribute('data-page'));
       if (!Number.isInteger(nextPage) || nextPage < 0) return;
@@ -1050,7 +1092,6 @@
       var pageList = document.querySelector('.lobby-list'); if (pageList) pageList.scrollTop = 0;
       return;
     }
-    if (act === 'close') { closeModal(); return; }
     if (act === 'searchRemote') {
       if (L.loading) return;
       var query = (L.query || '').trim();
@@ -1072,28 +1113,29 @@
         max: parseInt(document.getElementById('lobbyMax').value, 10) || 4,
         password: document.getElementById('lobbyPassword').value || '',
       });
-      closeModal();
+      L.busy = true; renderLobby();
       return;
     }
     var id = b.getAttribute('data-id');
     var room = L.rooms.filter(function (r) { return r.id === id; })[0];
     if (!room) return;
+    if (!room.sameVersion || room.full || room.started || !room.open || room.joinError) return;
     if (act === 'join') {
       if (room.locked) { L.joining = id; renderLobby(); return; }
       bridge.lobby.join(id, '');
-      closeModal();
+      L.busy = true; renderLobby();
       return;
     }
     if (act === 'joinConfirm') {
       var pass = document.getElementById('lobbyJoinPass').value || '';
       if (!pass) { toast('请输入房间密码', 'warn'); return; }
       bridge.lobby.join(id, pass);
-      closeModal();
+      L.busy = true; renderLobby();
     }
   });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' || e.isComposing || e.target.id === 'lobbySearch' || !document.getElementById('lobbyDialog')) return;
-    var confirm = Array.prototype.find.call(document.querySelectorAll('[data-lobby="joinConfirm"], [data-lobby="create"]'), function (button) { return button.offsetParent !== null; });
+    var confirm = Array.prototype.find.call(document.querySelectorAll('[data-lobby="joinConfirm"], [data-lobby="create"], [data-lobby="findCode"]'), function (button) { return button.offsetParent !== null; });
     if (confirm) confirm.click();
   });
 
@@ -1543,7 +1585,7 @@
     var g = gameOf(key) || {};
     if (g.installed) {
       if (g.updateTo) {
-        return '新版本 ' + esc(g.updateTo);
+        return '新版本 ' + esc(g.updateTo) + ' · <a href="#" data-act="update">立即更新</a>';
       }
       return '';
     }
@@ -1820,12 +1862,12 @@
         var inst = !!g.installed;
         /* 文案按安装状态取：cta.text 是未安装时的（获取/下载），
            cta.launchText 是装好后的（开始游戏） */
-        label.textContent = g.updateTo ? '立即更新' : inst
+        label.textContent = inst
           ? ((g.cta && g.cta.launchText) || '开始游戏')
           : ((g.cta && g.cta.text) || '获取游戏');
-        btn.setAttribute('data-action', inst && !g.updateTo ? 'launch' : 'download');
+        btn.setAttribute('data-action', inst ? 'launch' : 'download');
         var disc = btn.querySelector('.disc');
-        if (disc) disc.innerHTML = inst && !g.updateTo ? CONTROL_PLAY_SVG : '<i class="arrow"></i>';
+        if (disc) disc.innerHTML = inst ? CONTROL_PLAY_SVG : '<i class="arrow"></i>';
         btn.classList.remove('is-busy', 'is-paused', 'entering');
       }
     }
@@ -2052,7 +2094,7 @@
       '<div><div class="nick">' + esc(g.name || key) + '</div>' +
       '<div class="uid">整合包 ' + esc(g.version || '—') + '</div></div></div>';
     if (g.installed) {
-      html += (g.updateTo ? '<button class="pop-item" data-a="download">立即更新</button>' : '<button class="pop-item" data-a="launch">' + esc(T('menu.launch', '启动游戏')) + '</button>') +
+      html += '<button class="pop-item" data-a="launch">' + esc(T('menu.launch', '启动游戏')) + '</button>' + (g.updateTo ? '<button class="pop-item" data-a="download">立即更新</button>' : '') +
         '<button class="pop-item" data-a="locate">' + esc(T('menu.locate', '打开安装目录')) + '</button>' +
         '<button class="pop-item" data-a="verify">' + esc(T('menu.verify', '校验文件完整性')) + '</button>';
     } else {
@@ -2118,6 +2160,12 @@
       }
 
       if (msg.type === 'game' && msg.action === 'progress' && p.game) {
+        if (p.phase === 'cancelled') {
+          delete tasks[p.game];
+          taskRender();
+          if (state.route === 'launcher' && state.game === p.game) renderLauncher(p.game);
+          return;
+        }
         var t = tasks[p.game];
         if (!t) {
           t = tasks[p.game] = {
@@ -2141,6 +2189,18 @@
         return;
       }
 
+      if (msg.type === 'lobby' && (msg.action === 'busy' || msg.action === 'idle')) {
+        lobbyState.busy = msg.action === 'busy'; renderLobby(); return;
+      }
+      if (msg.type === 'lobby' && msg.action === 'launching') {
+        if (document.getElementById('lobbyDialog')) closeModal();
+        return;
+      }
+      if (msg.type === 'lobby' && msg.action === 'resolved' && p.room) {
+        lobbyState.rooms = [p.room]; lobbyState.joining = p.room.id; lobbyState.view = 'list';
+        lobbyState.version = p.version || ''; lobbyState.query = ''; lobbyState.page = 0; lobbyState.error = ''; lobbyState.loading = false;
+        renderLobby(); return;
+      }
       /* 联机大厅的房间列表（或查询失败的原因） */
       if (msg.type === 'lobby' && msg.action === 'rooms') {
         lobbyState.loading = false;
@@ -2266,7 +2326,6 @@
       renderLauncher(wantGame);
     }
 
-    bridge.window.lockSize(1280, 720);
   }
 
   if (document.readyState === 'loading') {

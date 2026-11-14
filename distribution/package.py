@@ -109,7 +109,7 @@ stage_component(project / 'SeamlessCoop', stage / 'SeamlessCoop', project / 'Sea
 copy_file(project / 'SeamlessCoop/README.md', 'SeamlessCoop/README.md')
 for name in ['LICENSE-MIT', 'LICENSE-APACHE']:
     copy_file(source / 'loader' / name, 'loader/' + name)
-for name in ['Start-Tower.ps1', 'Launch-Logged.ps1', 'Tower-Loader.ps1']:
+for name in ['Start-Tower.ps1', 'Launch-Logged.ps1', 'Tower-Loader.ps1', 'Tower-Network.ps1']:
     copy_file(Path(__file__).parent / name, name)
 copy_file(Path(__file__).parent / '安装教程.md', 'docs/安装教程.md')
 for name in ['ErdtreeTowerLauncher.exe', 'ErdtreeTowerLauncher.exe.config']:
@@ -148,9 +148,9 @@ for file in files:
     name = file.relative_to(stage).as_posix()
     if (file.suffix in ['.log', '.sl2', '.co2', '.ertowercoop', '.ertowerparty', '.party-award', '.appearance'] or
             file.suffix.lower() in ['.pdb', '.bak'] or
-            file.name in ['host.json', 'guest.json', 'GamePath.txt', 'tower-options.ini', 'tower-debug.enable', 'ersc_settings.ini'] or
+            file.name in ['host.json', 'guest.json', 'GamePath.txt', 'GamePath.OnlineFix.txt', 'tower-options.ini', 'tower-debug.enable', 'ersc_settings.ini'] or
             (name.startswith('tower-') and file.suffix in ['.json', '.jsonl', '.class', '.fp', '.history']) or
-            '/runtime/' in name or '/party-runtime/' in name):
+            '/runtime/' in name or '/party-runtime/' in name or '/onlinefix-runtime/' in name or '/onlinefix-party-runtime/' in name):
         raise RuntimeError(f'Private runtime file rejected: {name}')
 manifest = ''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(stage).as_posix()}\n' for p in files)
 (stage / 'SHA256SUMS.txt').write_text(manifest, encoding='utf-8')

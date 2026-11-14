@@ -23,6 +23,7 @@ namespace Tower.Launcher
             ("build", "构筑面板", "C"),
             ("debug", "调试菜单", "Delete"),
             ("skip", "跳过本关", "End"),
+            ("recover", "入场自救", "F7"),
         };
 
         /// <summary>DLC 模式：设置页显示的文字 ↔ 文件里的 dlc= 值（src/dlc.rs 的 Mode）</summary>
@@ -38,6 +39,10 @@ namespace Tower.Launcher
             ("keyboard", "键鼠"),
             ("pad", "手柄"),
         };
+
+        public static readonly (string Id, string Label)[] Renderers = { ("game", "游戏内渲染"), ("window", "独立窗口") };
+        public static string RendererLabel(Dictionary<string, string> values) =>
+            Renderers.FirstOrDefault(m => values.TryGetValue("renderer", out var v) && m.Id.Equals(v, StringComparison.OrdinalIgnoreCase)).Label ?? Renderers[0].Label;
 
         public static readonly (string Id, string Label)[] Languages =
         {

@@ -2070,6 +2070,13 @@ html.reduced-motion *::after {
 
 /* ================= 联机大厅（沿用设置对话框的外框） ================= */
 .lobby-dialog { display: block; }
+.lobby-entry { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:14px; }
+.lobby-code { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:5px; font-size:12px; }
+.lobby-code span { user-select:text; font-family:var(--font-num); }
+.lobby-code .btn-ghost { padding:3px 7px; font-size:11px; }
+.lobby-private { margin:16px 0; color:var(--c-text-faint); font-size:13px; }
+.lobby-private summary { cursor:pointer; }
+.lobby-progress { margin-top:12px; color:#e0b25a; }
 .repair-intro { color: var(--c-text-faint); font-size: 13px; line-height: 1.7; margin: 0 0 16px; }
 .repair-card { border: 1px solid rgba(224,178,90,.16); border-radius: 10px; margin-bottom: 10px; background: rgba(255,255,255,.025); }
 .repair-card summary { padding: 14px; cursor: pointer; font-size: 14px; color: var(--c-text); }

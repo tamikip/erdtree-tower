@@ -22,6 +22,9 @@ tower-*.json
 host.json
 guest.json
 GamePath.txt
+GamePath.OnlineFix.txt
+seamless-entry/onlinefix-runtime/
+seamless-entry/onlinefix-party-runtime/
 tower-options.ini
 /plugins/
 preview.launch.me3
