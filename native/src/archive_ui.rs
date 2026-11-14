@@ -173,7 +173,7 @@ pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<Texture
             4=>&[(Some(pad::MOVE_Y),"选择"),(Some(pad::CONFIRM),"换上 / 摘下"),(None,"只有光效、不加数值，联机时队友也看得到")],
             5=>&[(Some(pages),"分类"),(Some(pad::MOVE),"选择"),(Some(pad::CONFIRM),"开关"),(Some(Input::new(Pad::Y,"Space")),"升级")],
             _ if !crate::transmog::unlocked()=>&[(None,erdtree_tower::transmog::LOCKED_REASON)],
-            _=>&[(Some(pages),"翻页"),(None,"点击防具立即幻化 · 外观按角色保存")]};
+            _=>&[(Some(Input::new(Pad::Sticks,"")),"切换部位"),(Some(pages),"翻页"),(None,"点击防具立即幻化 · 外观按角色保存")]};
         pad::hints(ui,p(60.0,856.0),0.0,hint,22.0*s,15.0*s,DIM,pad::Tone::Light);
         let pos=p(1220.0,822.0);let extent=[320.0*s,60.0*s];
         ui.set_cursor_screen_pos(pos);ui.set_window_font_scale(s);

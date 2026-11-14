@@ -29,6 +29,10 @@ pub fn draw(ui:&Ui,page:&mut Page,icon:&mut dyn FnMut(u32)->Option<TextureId>,re
         style::centered(ui,"单人、联机均可 · 调试旅程不计入",p(76.0,548.0),p(1530.0,584.0),MUTED,0.95,s);
         return;
     }
+    if ready&&!ui.io().want_text_input {
+        let direction=if ui.is_key_pressed_no_repeat(Key::GamepadL3){-1}else if ui.is_key_pressed_no_repeat(Key::GamepadR3){1}else{0};
+        if direction!=0 {page.part=(page.part as isize+direction).rem_euclid(PARTS.len() as isize) as usize;page.page=0;page.selection=0;}
+    }
     // 部位切换：四段，带代表图标
     for (part,name) in PARTS.iter().enumerate() {
         let x=76.0+part as f32*232.0;let (min,max)=(p(x,222.0),p(x+218.0,270.0));

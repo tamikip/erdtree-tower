@@ -1007,6 +1007,7 @@ fn feed_pad(io:&mut Io,pad:&Gamepad,found:bool,map:bool) {
     for (key,mask) in [(Key::GamepadDpadUp,1),(Key::GamepadDpadDown,2),(Key::GamepadDpadLeft,4),(Key::GamepadDpadRight,8),(Key::GamepadFaceDown,0x1000),(Key::GamepadFaceRight,0x2000),(Key::GamepadFaceLeft,0x4000),(Key::GamepadFaceUp,0x8000),(Key::GamepadBack,0x20),(Key::GamepadL1,0x100),(Key::GamepadR1,0x200)] {
         io.add_key_event(key,found&&pad_direction(pad,mask,map));
     }
+    for (key,down) in [(Key::GamepadL2,pad.left_trigger>48),(Key::GamepadR2,pad.right_trigger>48),(Key::GamepadL3,pad.buttons&0x40!=0),(Key::GamepadR3,pad.buttons&0x80!=0)] {io.add_key_event(key,found&&down);}
     if !found||!map {MAP_POINTER.with(|state|*state.borrow_mut()=MapPointer::default());}
     if found&&map {
         let button=|mask|if pad.buttons&mask!=0 {1.0}else{0.0};
@@ -1026,14 +1027,14 @@ pub fn test_map_pad(io:&mut Io,point:[f32;2],down:bool) {
 }
 #[cfg(test)]
 pub fn test_pad_frames(context:&mut hudhook::imgui::Context) {
-    for key in [Key::GamepadDpadRight,Key::GamepadFaceDown,Key::GamepadFaceLeft,Key::GamepadFaceUp,Key::GamepadFaceRight] {
-        let mask=match key {Key::GamepadDpadRight=>8,Key::GamepadFaceDown=>0x1000,Key::GamepadFaceLeft=>0x4000,Key::GamepadFaceUp=>0x8000,_=>0x2000};
+    for key in [Key::GamepadDpadRight,Key::GamepadFaceDown,Key::GamepadFaceLeft,Key::GamepadFaceUp,Key::GamepadFaceRight,Key::GamepadL2,Key::GamepadR2,Key::GamepadL3,Key::GamepadR3] {
+        let mask=match key {Key::GamepadDpadRight=>8,Key::GamepadFaceDown=>0x1000,Key::GamepadFaceLeft=>0x4000,Key::GamepadFaceUp=>0x8000,Key::GamepadL3=>0x40,Key::GamepadR3=>0x80,Key::GamepadL2|Key::GamepadR2=>0,_=>0x2000};
         feed_pad(context.io_mut(),&Gamepad::default(),false,false);
         context.frame();context.render();
-        feed_pad(context.io_mut(),&Gamepad{buttons:mask,..Default::default()},true,false);
+        feed_pad(context.io_mut(),&Gamepad{buttons:mask,left_trigger:if key==Key::GamepadL2 {255}else{0},right_trigger:if key==Key::GamepadR2 {255}else{0},..Default::default()},true,false);
         assert!(context.frame().is_key_pressed_no_repeat(key),"Controller key lost during ImGui NewFrame: {key:?}");
         context.render();
-        feed_pad(context.io_mut(),&Gamepad{buttons:mask,..Default::default()},true,false);
+        feed_pad(context.io_mut(),&Gamepad{buttons:mask,left_trigger:if key==Key::GamepadL2 {255}else{0},right_trigger:if key==Key::GamepadR2 {255}else{0},..Default::default()},true,false);
         assert!(!context.frame().is_key_pressed_no_repeat(key),"Held button repeated unexpectedly");context.render();
         feed_pad(context.io_mut(),&Gamepad::default(),false,false);
         assert!(!context.frame().is_key_down(key),"Disconnected controller left a stuck button");context.render();

@@ -10,6 +10,7 @@ pub enum Pad {A,B,X,Y,View,
     Bumpers,
     /// LT 与 RT 两个键
     Triggers,
+    Sticks,
     /// 十字键：左右 / 上下 / 四向
     DpadX,DpadY,Dpad}
 /// 一个操作在手柄与键盘上的按键；键盘写法里用“ / ”分开多个键，方向键写 ←→、↑↓ 或 ←↑↓→；键盘上没有对应键时写空串
@@ -63,6 +64,7 @@ fn parts(input:Input,pad:bool)->Vec<Part> {
             Pad::A|Pad::B|Pad::X|Pad::Y=>vec![Part::Circle(pad_label(input.pad))],
             Pad::Bumpers=>vec![Part::Pill("LB"),Part::Pill("RB")],
             Pad::Triggers=>vec![Part::Pill("LT"),Part::Pill("RT")],
+            Pad::Sticks=>vec![Part::Pill("L3"),Part::Pill("R3")],
             Pad::DpadX=>vec![Part::Cross(0b1100)],Pad::DpadY=>vec![Part::Cross(0b0011)],Pad::Dpad=>vec![Part::Cross(0b1111)],
             other=>vec![Part::Pill(pad_label(other))],
         }
