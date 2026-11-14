@@ -6,6 +6,20 @@ using System.Text;
 
 namespace Tower.Launcher
 {
+    internal enum LaunchObservation { Waiting, Ready, Exited, Failed }
+    internal sealed class LaunchLifetime
+    {
+        public bool GameSeen { get; private set; }
+        int seenTick;
+        public LaunchObservation Observe(bool gameRunning, bool frameReady, int tick)
+        {
+            if (!GameSeen && (gameRunning || frameReady)) { GameSeen = true; seenTick = tick; }
+            if (!GameSeen) return LaunchObservation.Waiting;
+            if (!gameRunning) return frameReady ? LaunchObservation.Exited : LaunchObservation.Failed;
+            return frameReady || tick - seenTick >= 120 ? LaunchObservation.Ready : LaunchObservation.Waiting;
+        }
+    }
+
     internal sealed class LaunchProgress
     {
         readonly Stopwatch clock = Stopwatch.StartNew();

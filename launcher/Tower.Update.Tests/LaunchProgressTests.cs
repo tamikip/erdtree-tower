@@ -5,6 +5,34 @@ using Xunit;
 public class LaunchProgressTests
 {
     [Fact]
+    public void FirstFrameCompletesLaunchWithoutWaitingForWorkerExit()
+    {
+        var lifetime = new LaunchLifetime();
+        Assert.Equal(LaunchObservation.Waiting, lifetime.Observe(true, false, 10));
+        Assert.Equal(LaunchObservation.Ready, lifetime.Observe(true, true, 11));
+        Assert.Equal(LaunchObservation.Exited, lifetime.Observe(false, true, 12));
+    }
+    [Fact]
+    public void ExitBeforeFirstFrameAndFreshRelaunchHaveIndependentState()
+    {
+        var lifetime = new LaunchLifetime();
+        lifetime.Observe(true, false, 10);
+        Assert.Equal(LaunchObservation.Failed, lifetime.Observe(false, false, 11));
+        var next = new LaunchLifetime();
+        Assert.Equal(LaunchObservation.Waiting, next.Observe(false, false, 0));
+        Assert.False(next.GameSeen);
+        Assert.Equal(LaunchObservation.Ready, next.Observe(true, true, 1));
+    }
+    [Fact]
+    public void MissingFrameHasBoundedWaitButResourcePreparationDoesNotCount()
+    {
+        var lifetime = new LaunchLifetime();
+        Assert.Equal(LaunchObservation.Waiting, lifetime.Observe(false, false, 2000));
+        Assert.Equal(LaunchObservation.Waiting, lifetime.Observe(true, false, 2100));
+        Assert.Equal(LaunchObservation.Waiting, lifetime.Observe(true, false, 2219));
+        Assert.Equal(LaunchObservation.Ready, lifetime.Observe(true, false, 2220));
+    }
+    [Fact]
     public void CountsArePhaseLocalAndUnmeasuredStagesHaveNoInventedPercent()
     {
         var p = new LaunchProgress(); Assert.Null(p.Percent);

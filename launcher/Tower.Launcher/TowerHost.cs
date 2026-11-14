@@ -38,7 +38,7 @@ namespace Tower.Launcher
         bool checking, launching;
         LaunchProgress? launchProgress;
         bool historyLoading;
-        int? launchWorkerId;
+        (int Id, DateTime Started)? launchWorker;
         CancellationTokenSource? running;
         bool pausing, lastVerify;
         string? lastTargetTag;
@@ -696,8 +696,15 @@ namespace Tower.Launcher
         static bool GameRunning()
         {
             var processes = Process.GetProcessesByName("eldenring");
-            foreach (var process in processes) process.Dispose();
-            return processes.Length > 0;
+            var alive = false;
+            foreach (var process in processes) {
+                using (process) {
+                    try { alive |= !process.HasExited; }
+                    catch (InvalidOperationException) { }
+                    catch (Win32Exception) { alive = true; }
+                }
+            }
+            return alive;
         }
 
         // ---------------- 联机大厅 ----------------
@@ -904,12 +911,14 @@ namespace Tower.Launcher
         bool CanPrepareLaunch()
         {
             var workerRunning = false;
-            if (launchWorkerId.HasValue) {
+            if (launchWorker.HasValue) {
                 try {
-                    using var worker = Process.GetProcessById(launchWorkerId.Value);
-                    workerRunning = !worker.HasExited;
+                    using var worker = Process.GetProcessById(launchWorker.Value.Id);
+                    workerRunning = !worker.HasExited && worker.StartTime.ToUniversalTime() == launchWorker.Value.Started;
                 } catch (ArgumentException) { }
-                if (!workerRunning) launchWorkerId = null;
+                catch (InvalidOperationException) { }
+                catch (Win32Exception) { workerRunning = true; }
+                if (!workerRunning) launchWorker = null;
             }
             var reason = LobbyLaunch.BlockReason(GameRunning(), launching, workerRunning, running != null);
             if (reason == null) return true;
@@ -929,6 +938,7 @@ namespace Tower.Launcher
         {
             if (!CanPrepareLaunch()) return;
             launching = true;
+            var lifetime = new LaunchLifetime();
             launchProgress = new LaunchProgress(); PushLaunchProgress();
             try
             {
@@ -967,7 +977,7 @@ namespace Tower.Launcher
                     mode == HostSettings.Seamless ? "seamless-entry/" + NetworkProfile.Runtime(settings.Network) + "/tower-preview.log" : "tower-preview.log"), true);
                 var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
                 using var process = Process.Start(new ProcessStartInfo(powershell, arguments) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = paths.InstallDir })!;
-                launchWorkerId = process.Id;
+                launchWorker = (process.Id, process.StartTime.ToUniversalTime());
                 Toast("正在启动黄金树爬塔…", "info", 6000);
                 var localAssets = UsesLocalAssets();
                 launchProgress.Set(localAssets ? "checking" : "starting", localAssets ? "正在检查本地资源" : "正在启动加载器",
@@ -977,31 +987,40 @@ namespace Tower.Launcher
                 if (localAssets) Toast("正在检查本地资源；首次生成或修复可能需要数分钟，请勿重复启动", "info", 12000);
                 if (mode == HostSettings.Seamless && Seamless() is { } seamless && seamless.Installed && !seamless.Version().Verified)
                     Toast("这个无缝联机版本还没验证过：照常启动，联机复活修复会自动关闭；联机双方要用同一个版本", "warn", 8000);
-                // 加载器拉起游戏后脚本可能一直等到游戏退出，也可能马上结束：两种情况都只盯「脚本报错」和「游戏起来了」
-                var started = false;
-                var startedTick = -1;
-                for (var waited = 0; !process.HasExited || (process.ExitCode == 0 && (!started && waited < launchWaitTicks || started && !launchProgress.Terminal && waited - startedTick < 120)); waited++)
+                // The launch worker may outlive the game. It no longer owns the launch gate after handoff.
+                for (var waited = 0; ; waited++)
                 {
                     await Task.Delay(500);
                     foreach (var line in output.Read()) launchProgress.Output(line);
                     foreach (var line in nativeLog.Read()) launchProgress.Native(line);
-                    if (started && !launchProgress.Terminal && !GameRunning()) {
-                        launchProgress.End("failed", "游戏在画面就绪前退出", "请打开启动日志查看原因"); PushLaunchProgress(); break;
+                    if (process.HasExited && process.ExitCode != 0) break;
+                    var seen = lifetime.GameSeen;
+                    var observation = lifetime.Observe(GameRunning(), launchProgress.FrameReady, waited);
+                    if (!seen && lifetime.GameSeen) {
+                        launchProgress.GameDetected();
+                        Log.Write("游戏已启动");
                     }
-                    if (started && !launchProgress.Terminal && waited - startedTick >= 120)
-                        launchProgress.End("running", "游戏进程已启动", "尚未收到首帧信号，请查看游戏窗口；无需重复启动");
+                    if (observation == LaunchObservation.Exited || observation == LaunchObservation.Failed) {
+                        var failed = observation == LaunchObservation.Failed;
+                        launchProgress.End(failed ? "failed" : "cancelled", failed ? "游戏在画面就绪前退出" : "游戏已退出",
+                            failed ? "请打开启动日志查看原因，可以重新启动" : "可以再次启动游戏");
+                        Log.Write("游戏进程已退出，释放启动状态");
+                        break;
+                    }
+                    if (observation == LaunchObservation.Ready) {
+                        if (!launchProgress.Terminal) launchProgress.End("running", "游戏进程已启动", "尚未收到首帧信号，请查看游戏窗口；无需重复启动");
+                        PushLaunchProgress();
+                        Log.Write("启动已完成；后续重复启动检查以游戏进程为准");
+                        if (settings.CloseExit) form.Close();
+                        return;
+                    }
                     PushLaunchProgress();
-                    if (started && launchProgress.Terminal && settings.CloseExit) { form.Close(); return; }
-                    if (!started && waited >= launchWaitTicks - 1) {
+                    if (!lifetime.GameSeen && waited >= launchWaitTicks - 1) {
                         Log.Write("等待游戏进程超时；后台日志：" + logs);
                         launchProgress.End("failed", "启动等待超时", "后台可能仍在准备资源，请打开日志查看详情"); PushLaunchProgress();
                         Toast(localAssets ? "本地资源准备或启动耗时过长，请查看后台日志" : "60 秒内未检测到游戏启动，请查看后台日志", "error", 0, "打开日志", "openLogs");
                         return;
                     }
-                    if (started || !GameRunning()) continue;
-                    started = true;
-                    startedTick = waited; launchProgress.GameDetected(); PushLaunchProgress();
-                    Log.Write("游戏已启动");
                 }
                 if (process.HasExited && process.ExitCode != 0)
                 {
@@ -1019,6 +1038,7 @@ namespace Tower.Launcher
             }
             finally {
                 launching = false;
+                if (lifetime.GameSeen) launchWorker = null;
                 if (!launchProgress.Terminal) launchProgress.End("cancelled", "启动已结束", "可以查看日志或重新启动");
                 PushLaunchProgress();
             }
