@@ -40,6 +40,7 @@ pub fn deliver(data:&mut PlayerGameData,target:u64)->Result<(),String> {
     Ok(())
 }
 fn repair_slots(data:&mut PlayerGameData)->Result<(),String> {
+    let stones_before=super::smith::remaining(data);
     let remove_fn=super::items::checked_function(0x24d1e0,&[0x48,0x89,0x5c,0x24,0x20,0x89,0x54,0x24,0x10,0x55,0x56,0x57,0x41,0x56,0x41,0x57])?;
     let full=ItemId::new(ItemCategory::Goods,250).unwrap();
     if !data.equipment.equip_inventory_data.items_data.items().any(|e|e.item_id==full&&e.quantity>0) {return Err("灵药尚未补充，请清理背包后重试".into());}
@@ -56,6 +57,7 @@ fn repair_slots(data:&mut PlayerGameData)->Result<(),String> {
     for id in data.equipment.equipment_entries.quick_tems.iter_mut().chain(data.equipment.equipment_entries.pouch.iter_mut()) {
         if id.as_valid().is_some_and(bottle){*id=full.into();}
     }
+    if super::smith::remaining(data)!=stones_before {super::smith::trace(data,||format!("physick_inventory_changed before={stones_before}"),true);}
     Ok(())
 }
 

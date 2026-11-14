@@ -1,4 +1,9 @@
 {
+  "联机中不执行本地重传，避免队伍入场状态不同步。": "Local reloading is disabled in co-op to keep the party synchronized.",
+  "请等待当前战斗、领奖、复活或传送完成。": "Wait until combat, rewards, revival or travel has finished.",
+  "入场自救仅适用于等待进入战斗场地。": "Entry recovery is only available while waiting to enter a combat arena.",
+  "请先等待场地加载至少 15 秒，再尝试入场自救。": "Allow at least 15 seconds for the arena to load before retrying entry recovery.",
+  "正在重新载入当前入场点，路线与奖励保持不变。": "Reloading the current entry point. Route progress and rewards are unchanged.",
   "批量提升圣杯瓶恢复量": "Upgrade flask restoration in bulk",
   "使用身上可用的圣杯滴露，批量提升红、蓝圣杯瓶恢复量？最高 +12，多余滴露保留，不补充剩余次数。": "Use carried Sacred Tears to upgrade both flasks up to +12? Excess tears are kept. Remaining charges are not refilled.",
   "需要至少 1 枚圣杯滴露。": "At least one Sacred Tear is required.",

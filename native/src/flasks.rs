@@ -114,6 +114,7 @@ impl Flasks {
 }
 
 fn write_targets(data:&mut PlayerGameData,targets:[(ItemId,u32);2])->Result<(),String> {
+    let stones_before=super::smith::remaining(data);
     let mut grants = Vec::new();
     for (id,quantity) in targets {
         if !data.equipment.equip_inventory_data.items_data.items().any(|e|e.item_id==id&&e.quantity>0) {
@@ -151,6 +152,7 @@ fn write_targets(data:&mut PlayerGameData,targets:[(ItemId,u32);2])->Result<(),S
     }
     normalize_slots(&mut data.equipment.equip_item_data.quick_slots,&slots);
     sync_slot_ids(&data.equipment.equip_item_data.quick_slots,&mut data.equipment.equipment_entries.quick_tems);
+    if super::smith::remaining(data)!=stones_before {super::smith::trace(data,||format!("flask_inventory_changed before={stones_before}"),true);}
     Ok(())
 }
 

@@ -160,17 +160,17 @@ pub fn upgrade_talisman(data:&mut PlayerGameData,offer:TalismanOffer)->Result<()
     let equip_fn=super::items::checked_function(0x249160,&[0x40,0x53,0x55,0x56,0x57,0x41,0x56,0x48,0x81,0xec,0x90,0,0,0])?;
     let source=ItemId::new(ItemCategory::Accessory,offer.source).map_err(|e|e.to_string())?;
     let target=ItemId::new(ItemCategory::Accessory,offer.target).map_err(|e|e.to_string())?;
-    let voucher=ItemId::new(ItemCategory::Goods,VOUCHER).map_err(|e|e.to_string())?;
     let slots:Vec<_>=(17..=20).filter(|&i|data.equipment.chr_asm.equipment_param_ids[i]==offer.source as i32).collect();
     super::items::give(&[((0x20000000|offer.target) as i32,1,-1)])?;
     if data.equipment.equip_inventory_data.items_data.get_entry(target).is_none(){return Err("高阶护符未进入背包，未消耗材料".into());}
     for slot in slots {super::loadout::equip(data,slot,Some(target),equip_fn)?;}
     let remove:unsafe extern "C" fn(*mut EquipInventoryData,u32,i32)->usize=unsafe {std::mem::transmute(remove_fn)};
-    for item in [source,voucher] {
+    {
         let inventory=&mut data.equipment.equip_inventory_data;
-        let index=inventory.items_data.find_item_idx(item).ok_or("护符兑换材料发生变化")?;
+        let index=inventory.items_data.find_item_idx(source).ok_or("护符兑换材料发生变化")?;
         unsafe {remove(inventory,index,1);}
     }
+    consume_one(data)?;
     if remaining(data)+1!=before{return Err("强化石消耗未确认，请停止操作".into());}
     super::log(format!("Talisman upgraded: {} -> {}, one upgrade stone consumed",offer.source,offer.target));Ok(())
 }
@@ -219,8 +219,28 @@ pub fn remaining(data:&PlayerGameData)->u32 {
         .filter(|e|e.item_id.category()==ItemCategory::Goods&&e.item_id.param_id()==VOUCHER)
         .map(|e|e.quantity).sum()
 }
+pub fn trace(data:&PlayerGameData,context:impl FnOnce()->String,force:bool) {
+    use std::{sync::Mutex,time::{Duration,Instant}};
+    static LAST:Mutex<Option<(usize,[u64;5])>>=Mutex::new(None);
+    static CHECKED:Mutex<Option<Instant>>=Mutex::new(None);
+    if !force {
+        let Ok(mut checked)=CHECKED.lock() else{return;};
+        if checked.is_some_and(|at|at.elapsed()<Duration::from_millis(250)){return;}
+        *checked=Some(Instant::now());
+    }
+    let [normal,key,multi]=super::loot::goods_lists(data,VOUCHER);
+    let counts=[remaining(data) as u64,normal,key,multi,super::items::stack_count(data,VOUCHER)];
+    let owner=data as *const PlayerGameData as usize;
+    let Ok(mut last)=LAST.lock() else{return;};
+    if force||*last!=Some((owner,counts)) {
+        super::log(format!("STONE_TRACE {} owner={owner:x} previous={:?} counts(active,normal,key,multi,total)={counts:?}",context(),*last));
+        *last=Some((owner,counts));
+    }
+}
 pub fn clear(data:&mut PlayerGameData) {
+    trace(data,||"new_run_clear_before".into(),true);
     if let Err(error)=clear_checked(data) {super::log(error);}
+    trace(data,||"new_run_clear_after".into(),true);
 }
 fn clear_checked(data:&mut PlayerGameData)->Result<(),String> {
     let function=super::items::checked_function(0x24d1e0,&[0x48,0x89,0x5c,0x24,0x20,0x89,0x54,0x24,0x10,0x55,0x56,0x57,0x41,0x56,0x41,0x57])?;
@@ -238,21 +258,35 @@ fn clear_checked(data:&mut PlayerGameData)->Result<(),String> {
     Ok(())
 }
 /// 营地发放一块强化石（营地强化凭证）：不再清掉身上已有的强化石，离开营地也保留；只清掉更早版本的旧凭证
-pub fn prepare(_data:&mut PlayerGameData)->Result<(),String> {
+pub fn prepare(data:&mut PlayerGameData)->Result<(),String> {
     let params=unsafe {SoloParamRepository::instance()}.map_err(|_|"铁匠参数未就绪")?;
     if params.get::<EquipParamGoods>(VOUCHER).is_none(){return Err("缺少强化石参数，请更新完整启动包".into());}
     let _=OLD_VOUCHER;
+    trace(data,||"camp_grant_before".into(),true);
     super::items::give(&[((0x40000000|VOUCHER) as i32,1,-1)])?;
+    trace(data,||"camp_grant_after".into(),true);
     Ok(())
 }
 /// 用掉一块强化石（营地补瓶代替强化时）
+fn retain_stone_stack(entry:&mut eldenring::cs::EquipInventoryDataListEntry)->Result<bool,String> {
+    if entry.item_id.category()!=ItemCategory::Goods||entry.item_id.param_id()!=VOUCHER {return Err("强化石背包索引不匹配，未扣除".into());}
+    let remaining=entry.quantity.checked_sub(1).ok_or("身上没有强化石")?;
+    if remaining>0 {entry.quantity=remaining;Ok(true)}else{Ok(false)}
+}
 pub fn consume_one(data:&mut PlayerGameData)->Result<(),String> {
-    let function=super::items::checked_function(0x24d1e0,&[0x48,0x89,0x5c,0x24,0x20,0x89,0x54,0x24,0x10,0x55,0x56,0x57,0x41,0x56,0x41,0x57])?;
-    let remove:unsafe extern "C" fn(*mut eldenring::cs::EquipInventoryData,u32,i32)->usize=unsafe {std::mem::transmute(function)};
+    trace(data,||"stone_consume_before".into(),true);
     let voucher=eldenring::cs::ItemId::new(ItemCategory::Goods,VOUCHER).map_err(|e|e.to_string())?;
     let inventory=&mut data.equipment.equip_inventory_data;
     let index=inventory.items_data.find_item_idx(voucher).ok_or("身上没有强化石")?;
-    unsafe {remove(inventory,index,1);}
+    let entry=inventory.items_data.entry_at_slot_mut(index).and_then(|e|e.as_option_mut())
+        .filter(|e|e.item_id==voucher).ok_or("强化石背包索引不匹配，未扣除")?;
+    if !retain_stone_stack(entry)? {
+        // 2.7.2.0: 0x24d1e0 removes an entire slot; its third argument is a flag, not a quantity.
+        let function=super::items::checked_function(0x24d1e0,&[0x48,0x89,0x5c,0x24,0x20,0x89,0x54,0x24,0x10,0x55,0x56,0x57,0x41,0x56,0x41,0x57])?;
+        let remove:unsafe extern "C" fn(*mut eldenring::cs::EquipInventoryData,u32,i32)->usize=unsafe {std::mem::transmute(function)};
+        unsafe {remove(inventory,index,1);}
+    }
+    trace(data,||"stone_consume_after".into(),true);
     Ok(())
 }
 
@@ -260,6 +294,19 @@ pub fn consume_one(data:&mut PlayerGameData)->Result<(),String> {
 pub fn spent(issued:bool,completed:bool,remaining:u32,target:u32)->bool {issued&&!completed&&remaining<target}
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn consuming_one_stone_never_deletes_a_nonempty_stack() {
+        use eldenring::cs::{EquipInventoryDataListEntry,ItemId,ItemCategory,GaitemHandle,GaitemCategory};
+        let mut entry=EquipInventoryDataListEntry{gaitem_handle:GaitemHandle::from_parts(super::VOUCHER,GaitemCategory::Goods),item_id:ItemId::new(ItemCategory::Goods,super::VOUCHER).unwrap(),quantity:7,sort_id:42,is_new:true,pot_group:-1};
+        for remaining in (1..7).rev(){assert!(super::retain_stone_stack(&mut entry).unwrap());assert_eq!(entry.quantity,remaining);}
+        assert!(!super::retain_stone_stack(&mut entry).unwrap(),"Only the final stone may remove its slot");
+        assert_eq!(entry.quantity,1,"Native deletion owns the final slot cleanup");
+        assert_eq!(entry.sort_id,42);assert!(entry.is_new);assert_eq!(entry.pot_group,-1);
+        entry.quantity=99;assert!(super::retain_stone_stack(&mut entry).unwrap());assert_eq!(entry.quantity,98);
+        entry.quantity=0;assert!(super::retain_stone_stack(&mut entry).is_err());
+        entry.quantity=3;entry.item_id=ItemId::new(ItemCategory::Goods,250).unwrap();
+        assert!(super::retain_stone_stack(&mut entry).is_err());assert_eq!(entry.quantity,3);
+    }
     #[test]
     fn talisman_choices_require_owned_lower_tier_and_reject_duplicates() {
         assert!(super::eligible_offer(4000,4002,&[4000,6110]));
