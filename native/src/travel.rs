@@ -18,10 +18,9 @@ pub fn restore_arrival_hp(chr:&mut eldenring::cs::ChrIns,saved:i32,context:&str)
     super::log(format!("TRAVEL_HP {context} saved={saved} arrival={before} max={} restored={} dead={dead}",data.max_hp,data.hp));
 }
 
-pub fn combat_fp(class: erdtree_tower::Class, current: i32, maximum: i32) -> i32 {
-    if class != erdtree_tower::Class::Astrologer { return current; }
-    let maximum = maximum.max(0);
-    current.max(0).saturating_add(maximum / 2).min(maximum)
+/// HansFix 试验：星辉术士的天赋已换成蓝瓶持续回复（见 starsurge），进入战斗不再回复一半专注
+pub fn combat_fp(_class: erdtree_tower::Class, current: i32, _maximum: i32) -> i32 {
+    current
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -161,18 +160,10 @@ mod tests {
     #[test]
     fn combat_restores_half_maximum_fp_with_cap_and_integer_rounding() {
         use erdtree_tower::Class;
-        assert_eq!(combat_fp(Class::Astrologer, 0, 100), 50);
-        assert_eq!(combat_fp(Class::Astrologer, 20, 100), 70);
-        assert_eq!(combat_fp(Class::Astrologer, 80, 100), 100);
-        assert_eq!(combat_fp(Class::Astrologer, 100, 100), 100);
-        assert_eq!(combat_fp(Class::Astrologer, 10, 95), 57);
-        assert_eq!(combat_fp(Class::Astrologer, 0, 0), 0);
-        assert_eq!(combat_fp(Class::Astrologer, i32::MAX, i32::MAX), i32::MAX);
+        // HansFix：星辉术士进入战斗不再回复一半专注，所有职业都保持原值
         for class in Class::PLAYABLE {
-            if class != Class::Astrologer {
-                assert_eq!(combat_fp(class, 0, 100), 0);
-                assert_eq!(combat_fp(class, 20, 100), 20);
-            }
+            assert_eq!(combat_fp(class, 0, 100), 0);
+            assert_eq!(combat_fp(class, 20, 100), 20);
         }
     }
     #[test]

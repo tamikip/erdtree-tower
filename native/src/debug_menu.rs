@@ -416,6 +416,7 @@ impl Menu {
         }
         ui.separator();
         if ui.button(crate::i18n::t("回满生命、专注与圣杯瓶")) {send(Command::Heal);}
+        if ui.button(crate::i18n::t("生成大型蓝露滴粪金龟（星辉术士测试）")) {crate::starsurge::request_scarab();}
         let blocked=CHEATS_BLOCKED.load(Ordering::Relaxed);
         let disabled=ui.begin_disabled(blocked);
         let (mut god,mut one_shot)=(GOD.load(Ordering::Relaxed),ONE_SHOT.load(Ordering::Relaxed));

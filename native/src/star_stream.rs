@@ -46,6 +46,7 @@ unsafe extern "C" fn spawn(manager:*mut c_void,out:*mut i32,data:*const SpawnDat
     let original:Spawn=unsafe {std::mem::transmute(ORIGINAL.load(Ordering::Acquire))};
     // 余烬「魔力辉剑」：记下本机玩家的每次施法（只读，不改这次生成）
     if !data.is_null() {super::glintblade::observe(unsafe {&*data.cast::<super::glintblade::SpawnData>()});}
+    if !data.is_null() {super::starsurge::observe_spawn(unsafe {&(*data).0});}
     let aim=AIM.try_lock().ok().and_then(|s|*s).filter(|a|a.updated.elapsed()<Duration::from_millis(100));
     if let Some(aim)=aim.filter(|_|!data.is_null()&&!super::input::CAPTURE.load(Ordering::Relaxed)) {
         let mut local=unsafe {(*data).clone()};
@@ -69,6 +70,17 @@ pub fn ready()->bool {ORIGINAL.load(Ordering::Acquire)!=0}
 pub fn original()->Option<unsafe extern "C" fn(*mut c_void,*mut i32,*const super::glintblade::SpawnData,*mut i32)> {
     let address=ORIGINAL.load(Ordering::Acquire);
     (address!=0).then(||unsafe {std::mem::transmute::<usize,unsafe extern "C" fn(*mut c_void,*mut i32,*const super::glintblade::SpawnData,*mut i32)>(address)})
+}
+/// HansFix（星辉术士爆炸）：用一份生成数据直接生成弹体，绕过本钩子；返回游戏给的错误码
+pub fn spawn_raw(bytes:&[u8;0x110])->Result<(),i32> {
+    let address=ORIGINAL.load(Ordering::Acquire);
+    if address==0 {return Err(-100);}
+    let Ok(manager)=(unsafe {eldenring::cs::CSBulletManager::instance_mut()}) else{return Err(-101)};
+    let original:Spawn=unsafe {std::mem::transmute(address)};
+    let data=SpawnData(*bytes);
+    let (mut out,mut error)=(0,0);
+    unsafe {original(std::ptr::from_mut(manager).cast(),&mut out,&data,&mut error)};
+    if out==-1 {Err(error)}else{Ok(())}
 }
 pub fn clear() {if let Ok(mut aim)=AIM.lock(){*aim=None;}}
 pub unsafe fn install()->Result<(),String> {

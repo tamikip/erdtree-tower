@@ -28,6 +28,7 @@ mod frost_shackle;
 mod pad;
 mod retry_item;
 mod spell_affixes;
+mod starsurge;
 mod retry_rescue;
 mod options;
 mod gpu_engine;
@@ -457,6 +458,7 @@ impl ImguiRenderLoop for TowerPreview {
         if run_screen {return;}
         if let Some(view) = &view {
             if let Some(dummy)=&view.dummy {dummy::draw_hud(ui,dummy);}
+            starsurge::draw_hud(ui,&mut |icon|rewards.icon(icon),view.ready&&!view.travelling);
             if view.room.is_some()||view.shared_event {
                 return;
             }

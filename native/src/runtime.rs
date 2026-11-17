@@ -139,6 +139,7 @@ fn heal_victory(world:&mut WorldChrMan,run:&Run)->String {
         return String::new();
     }
     super::passives::heal_victory(&mut player.chr_ins,run);super::contracts::heal_victory(&mut player.chr_ins,run);
+    if run.class==erdtree_tower::Class::Astrologer {super::starsurge::victory();}
     let data=&player.chr_ins.modules.data;
     super::log(format!("VICTORY_HEAL class={:?} hp={hp}->{}/{} fp={fp}->{}/{}",run.class,data.hp,data.max_hp,data.fp,data.max_fp));
     let mut parts=vec![];
@@ -1541,6 +1542,16 @@ pub fn tick() {
     if let Ok(mut state)=STATE.try_lock() {
         if let Ok(world)=unsafe {WorldChrMan::instance_mut()}{
             sync_action_guard(&mut state,world);
+            super::starsurge::debug_tick(world);
+            // HansFix 星辉术士：通关返还的蓝露滴（starsurge::victory 在 heal_victory 里判定）
+            if super::starsurge::take_flask_gift() {
+                if let (Some(flasks),Some(player))=(state.flasks.as_mut(),world.main_player.as_mut()) {
+                    match flasks.grant(unsafe {player.player_game_data.as_mut()},[0,1]) {
+                        Ok(granted)=>super::log(format!("STARSURGE victory flask granted={granted}")),
+                        Err(error)=>super::log(format!("STARSURGE victory flask failed: {error}")),
+                    }
+                }
+            }
             super::frost_shackle::finish_frame(world,state.view.travelling||state.view.run.is_none());
         }
         sync_map(&mut state);
@@ -1928,6 +1939,7 @@ fn tick_locked() {
         let flasks=state.flasks.as_ref().map(|f|f.total());
         // Practice never forwards combat rewards or persistent stack gains.
         let _=state.ember_practice.tick(world,key,&held,&foes,true,false,flasks,keeper,false);
+        super::starsurge::fight(world,&foes.iter().map(|f|f.0).collect::<Vec<_>>());
         super::frost_shackle::observe(world,key,&foes,held.contains(&erdtree_tower::embers::Ember::FrostShackle));
         super::embers::clear_practice_critical();
     } else {
@@ -1945,7 +1957,8 @@ fn tick_locked() {
     let contract_run=state.view.run.as_ref().filter(|_|state.hub.as_ref().is_some_and(|h|!h.active));
     let spirit_alive=super::embers::living_spirit(world);
     let ember_state=if practice {&state.ember_practice}else{&state.ember_fight};
-    if let Some(player)=world.main_player.as_mut(){let greatshield_guard=super::embers::bulwark_guard(player);let light=super::contracts::light_load(unsafe {player.player_game_data.as_ref()});super::contracts::sync(&mut player.chr_ins,contract_run,light);super::elite::sync(&mut player.chr_ins,contract_run);super::passives::sync(&mut player.chr_ins,contract_run);super::auras::sync(&mut player.chr_ins);super::law::sync(&mut player.chr_ins,contract_run,state.law_fight.overtime());super::embers::sync(&mut player.chr_ins,contract_run,ember_state,spirit_alive,greatshield_guard);let data=player.player_game_data.as_ptr();super::weapon_glow::sync(&mut player.chr_ins,unsafe {&*data},super::weapon_glow::clock());super::affix_stack::sync(&mut player.chr_ins,unsafe {&*data});}
+    let blue_flasks=state.flasks.as_ref().map(|f|f.remaining[1]);
+    if let Some(player)=world.main_player.as_mut(){let greatshield_guard=super::embers::bulwark_guard(player);let light=super::contracts::light_load(unsafe {player.player_game_data.as_ref()});super::contracts::sync(&mut player.chr_ins,contract_run,light);super::elite::sync(&mut player.chr_ins,contract_run);super::passives::sync(&mut player.chr_ins,contract_run);super::auras::sync(&mut player.chr_ins);super::law::sync(&mut player.chr_ins,contract_run,state.law_fight.overtime());super::embers::sync(&mut player.chr_ins,contract_run,ember_state,spirit_alive,greatshield_guard);let data=player.player_game_data.as_ptr();super::starsurge::sync(&mut player.chr_ins,contract_run,blue_flasks);super::weapon_glow::sync(&mut player.chr_ins,unsafe {&*data},super::weapon_glow::clock());super::affix_stack::sync(&mut player.chr_ins,unsafe {&*data});}
     // 处决期间敌人不再无敌，我方照旧无敌（旅程进行中）
     super::throw_guard::sync(world,contract_run.is_some_and(|run|!matches!(run.phase,Phase::Dead|Phase::Won)));
     if let Some(player)=world.main_player.as_mut(){super::auras::countdown(&mut player.chr_ins,false);}
@@ -3086,10 +3099,9 @@ fn host_embers(state:&mut Runtime,world:&mut WorldChrMan) {
     let foes:Vec<_>=pending.foes.iter().enumerate().filter_map(|(slot,f)|Some((f.fight.handle()?,super::enemies::bar_rank(&f.spec),slot as u8))).collect();
     let keeper=run.ember_stacks.level(erdtree_tower::embers::Ember::SpiritKeeper);
     let key=(run.seed,run.act,id);
-    let astro=run.class==erdtree_tower::Class::Astrologer;
-    let events=state.ember_fight.tick(world,key,&embers,&foes,authority,state.party.is_some(),flasks,keeper,astro);
+    let events=state.ember_fight.tick(world,key,&embers,&foes,authority,state.party.is_some(),flasks,keeper,false);
+    super::starsurge::fight(world,&foes.iter().map(|f|f.0).collect::<Vec<_>>());
     if events.feast {grant_feast(state.flasks.as_mut(),world);}
-    if let Some(player)=world.main_player.as_mut() {super::passives::kill_fp(&mut player.chr_ins,Some(&pending.next_run),&events.gains);}
     grant_captures(state,world,&events.captures);
     record_ember_gains(state,events.gains,key);
     // 鲜血骑士的破势：自己持有，或联机时任一在场队员持有，都由房主（单人即自己）执行
@@ -3187,10 +3199,9 @@ fn member_embers(state:&mut Runtime,world:&mut WorldChrMan) {
     if let Some(link)=state.party.as_ref(){super::frost_shackle::receive(world,key,&foes,&link.event.frost_shackles);}
     let keeper=run.ember_stacks.level(erdtree_tower::embers::Ember::SpiritKeeper);
     let flasks=state.flasks.as_ref().map(|f|f.total());
-    let astro=run.class==erdtree_tower::Class::Astrologer;
-    let events=state.ember_fight.tick(world,key,&embers,&foes,false,true,flasks,keeper,astro);
+    let events=state.ember_fight.tick(world,key,&embers,&foes,false,true,flasks,keeper,false);
+    super::starsurge::fight(world,&foes.iter().map(|f|f.0).collect::<Vec<_>>());
     if events.feast {grant_feast(state.flasks.as_mut(),world);}
-    if let Some(player)=world.main_player.as_mut() {super::passives::kill_fp(&mut player.chr_ins,state.view.run.as_ref(),&events.gains);}
     grant_captures(state,world,&events.captures);
     record_ember_gains(state,events.gains,key);
     // 作用在敌人身上的余烬交给房主执行
