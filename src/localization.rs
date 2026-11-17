@@ -188,6 +188,14 @@ pub fn translate_en(text:&str)->Cow<'_,str> {translate_en_inner(text,true)}
 /// Translate presentation text only; never use translated text as a save key or network identifier.
 pub fn text(text:&str)->Cow<'_,str> {if english(){translate_en(text)}else if traditional(){to_traditional(text)}else{Cow::Borrowed(text)}}
 
+/// Translate the original description before flattening it for compact UI panels.
+/// Catalog keys and format patterns can contain newlines; flattening first loses them.
+pub fn inline(text:&str)->String {inline_for(text,english())}
+fn inline_for(text:&str,english:bool)->String {
+    let translated=if english {translate_en(text)} else {Cow::Borrowed(text)};
+    translated.replace('\n',if english {" "} else {"，"})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,5 +256,70 @@ mod tests {
     #[test]
     fn english_catalog_has_no_untranslated_chinese() {
         assert!(CATALOG.exact.iter().all(|(_,value)|!cjk(value)));
+    }
+
+    #[test]
+    fn inline_effects_translate_before_flattening_and_preserve_chinese() {
+        let source=crate::embers::Ember::Bloodlord.effect();
+        assert_eq!(inline_for(&source,true),"Each hit inflicts 40 hemorrhage buildup");
+        assert_eq!(inline_for(&source,false),"每次命中积累，40 点出血");
+        assert_eq!(inline_for("胜利恢复最大生命 15%\n最大专注 20%",true),
+            "On victory, recover 15% max HP and 20% max FP");
+        assert_eq!(inline_for("未知效果\n未翻译说明",true),"未知效果 未翻译说明");
+        assert_eq!(inline_for("",true),"");
+    }
+
+    #[test]
+    fn every_build_ember_and_oath_has_an_english_inline_description() {
+        for ember in crate::embers::Ember::ALL.into_iter().chain([crate::embers::Ember::Stride]) {
+            let source=ember.effect();
+            let rendered=inline_for(&source,true);
+            assert!(!cjk(&rendered),"{ember:?}: {rendered}");
+            assert!(!rendered.contains('\n'),"{ember:?}: {rendered}");
+            assert_eq!(rendered,translate_en(&source).replace('\n'," "));
+            assert_eq!(inline_for(&source,false),source.replace('\n',"，"));
+            assert!(!cjk(&translate_en(ember.name())),"{ember:?}");
+            let reward=format!("余烬「{}」：{rendered}；本局生效",ember.name());
+            assert_eq!(translate_en(&reward),format!("Ember: {} - {rendered}. Lasts for this run.",translate_en(ember.name())));
+            for level in [0,1,7,123] {
+                if let Some(bonus)=ember.stack_bonus(level) {
+                    let name=format!("{} · {level} 层",ember.name());
+                    let bonus=format!("当前加成：{bonus}");
+                    assert!(!cjk(&translate_en(&name)),"{name}");
+                    assert!(!cjk(&translate_en(&bonus)),"{bonus}");
+                }
+            }
+        }
+        for kind in crate::contracts::Kind::ALL {
+            for level in 0..=3 {
+                let (boon,bane)=if level==0 {(kind.boon().to_owned(),kind.bane())} else {(kind.boon_at(level),kind.bane_at())};
+                let rendered=inline_for(&boon,true);
+                assert!(!cjk(&rendered),"{kind:?} {level}: {rendered}");
+                assert!(!rendered.contains('\n'));
+                assert_eq!(inline_for(&boon,false),boon.replace('\n',"，"));
+                assert!(!cjk(&translate_en(&format!("代价：{bane}"))),"{kind:?}: {bane}");
+            }
+        }
+    }
+
+    #[test]
+    fn build_talisman_buffs_and_stat_labels_are_english() {
+        let details:HashMap<u32,Vec<&str>>=include_str!("../scene-assets/reward-details.tsv").lines()
+            .filter_map(|line| {
+                let fields:Vec<_>=line.split('\t').collect();
+                Some((fields.first()?.parse().ok()?,fields))
+            }).collect();
+        for id in crate::elite::BUFFS {
+            let fields=&details[&(0x20000000|id)];
+            assert!(!cjk(&translate_en(fields[2])),"{}",fields[2]);
+            let info=fields[3].replace("\\n","\n");
+            let rendered=inline_for(&info,true);
+            assert!(!cjk(&rendered),"{id}: {rendered}");
+            assert_eq!(inline_for(&info,false),info.replace('\n',"，"));
+        }
+        for stat in crate::stat_summary::STATS {
+            assert!(!cjk(&translate_en(stat.group)),"{}",stat.group);
+            assert!(!cjk(&translate_en(stat.label)),"{}",stat.label);
+        }
     }
 }

@@ -464,21 +464,27 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
         };
         let text=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,align:f32| {
             if color[3]<=0.01 {return;}
-            let (_font,k)=font_for(value);
-            ui.set_window_font_scale(scale*k*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(crate::i18n::t(value))[0]*align,oy+y*s]);ui.text_colored(color,crate::i18n::t(value));
+            let value=crate::i18n::t(value);let (_font,k)=font_for(&value);
+            ui.set_window_font_scale(scale*k*s);ui.set_cursor_screen_pos([ox+x*s-ui.calc_text_size(&value)[0]*align,oy+y*s]);ui.text_colored(color,&value);
         };
         // 量一段文字的宽度（设计单位），与 text 用同一种字体
-        let measure=|value:&str,scale:f32|->f32 {let (_font,k)=font_for(value);ui.set_window_font_scale(scale*k*s);ui.calc_text_size(crate::i18n::t(value))[0]/s};
+        let measure=|value:&str,scale:f32|->f32 {let value=crate::i18n::t(value);let (_font,k)=font_for(&value);ui.set_window_font_scale(scale*k*s);ui.calc_text_size(&value)[0]/s};
         // 逐字打出：已出现的字正常，正在出现的那个字淡入
         let typed=|x:f32,y:f32,value:&str,color:[f32;4],scale:f32,start:f64,rate:f64| {
+            // Translate the complete message before revealing or measuring individual glyphs.
+            let value=crate::i18n::t(value);
             let shown=((elapsed-start)*rate).max(0.0);
-            let (_font,fk)=font_for(value);
+            let (_font,fk)=font_for(&value);
             ui.set_window_font_scale(scale*fk*s);
+            let right=if x<990.0 {950.0} else {1480.0};
+            let fit=((right-x)*s/ui.calc_text_size(&value)[0].max(1.0)).min(1.0);
+            ui.set_window_font_scale(scale*fk*s*fit);
             // 每个字的位置按前面整段的宽度算（逐字累加会因取整越来越宽）
             for (i,(at,c)) in value.char_indices().enumerate() {
                 let k=(shown-i as f64).clamp(0.0,1.0) as f32;if k<=0.0 {break;}
-                let cx=x+ui.calc_text_size(crate::i18n::t(&value[..at]))[0]/s;
-                ui.set_cursor_screen_pos([ox+cx*s,oy+(y+(1.0-k)*6.0)*s]);ui.text_colored(fade(color,k*color[3]),crate::i18n::t(&value[at..at+c.len_utf8()]));
+                let cx=x+ui.calc_text_size(&value[..at])[0]/s;
+                ui.set_cursor_screen_pos([ox+cx*s,oy+(y+(1.0-k)*6.0)*s]);ui.text_colored(fade(color,k*color[3]),&value[at..at+c.len_utf8()]);
+                #[cfg(test)] SUMMARY_GLYPHS.with(|items|items.borrow_mut().push((value[at..at+c.len_utf8()].to_owned(),ui.item_rect_min(),ui.item_rect_max(),ox+right*s)));
             }
         };
         // 从中间往两头长出来的细线，生长的两端带一点亮光
@@ -580,8 +586,10 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
             ["一","二","三"][usize::from(record.act.clamp(1,3)-1)],record.layer);
         if won {status=format!("登顶成功  ·  {}  ·  三幕全部通关",crate::map_ui::class_name(record.class));}
         let status_y=number_top+height+30.0;
-        typed(110.0,status_y,&status,white,1.3,status_at,55.0);
-        let tag_x=110.0+measure(&status,1.3)+24.0;
+        let tag_width=if fresh {measure("新纪录",1.0)+48.0} else {best.filter(|_|!from_archive).map_or(0.0,|best|measure(&format!("历史最高 {} · {}",best.rank(),best.total()),0.95)+24.0)};
+        let status_scale=1.3*((840.0-tag_width)/measure(&status,1.3).max(1.0)).min(1.0);
+        typed(110.0,status_y,&status,white,status_scale,status_at,55.0);
+        let tag_x=110.0+measure(&status,status_scale)+24.0;
         let k=ease(elapsed,status_at,0.3);
         if fresh&&elapsed>=record_at {
             // 新纪录：带回弹弹出、闪白，之后每隔一会儿有一道高光扫过
@@ -632,7 +640,7 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
             let k=ease(elapsed,lower+0.25,0.3);
             text(110.0-slide,row_y+60.0,ember.name(),fade(gold,k),0.95,0.0);
             let indent=110.0+measure(ember.name(),0.95)+14.0;
-            text(indent-slide,row_y+61.0,&ember.effect().replace('\n',"，"),fade(muted,k),0.9,0.0);
+            text(indent-slide,row_y+61.0,&erdtree_tower::localization::inline(&ember.effect()),fade(muted,k),0.9,0.0);
         }
         // 誓约：菱形徽记依次放大出现
         let oath_y=row_y+108.0;let k=ease(elapsed,lower+0.15,0.3);let slide=(1.0-k)*30.0;
@@ -737,21 +745,28 @@ fn summary_page(ui:&Ui,record:&Record,gain:Option<Gain>,focus:&mut usize,from_ar
                 draw.add_rect(min,max,rgba(white,(0.42+0.33*hover_k)*a)).thickness(1.4*s).build();
             }
             drop(draw);
+            let label=crate::i18n::t(label);
             let ink=fade(if primary{[0.06,0.06,0.05,1.0]}else{white},a);
             let font=crate::fancy_text::button_font().map(|f|ui.push_font(f));
-            let scale=if font.is_some(){0.78*30.0/crate::fancy_text::SANS_PIXELS}else{1.15};let gap=(7.0+2.0*hover_k)*s;
+            let scale=if font.is_some(){0.78*30.0/crate::fancy_text::SANS_PIXELS}else{1.15};
+            let gap=if erdtree_tower::localization::english(){(0.5+0.2*hover_k)*s}else{(7.0+2.0*hover_k)*s};
             ui.set_window_font_scale(scale*s);
-            let widths:Vec<f32>=label.chars().map(|c|ui.calc_text_size(crate::i18n::t(c.to_string()))[0]).collect();
+            let widths:Vec<f32>=label.chars().map(|c|ui.calc_text_size(c.to_string())[0]).collect();
             let width=widths.iter().sum::<f32>()+gap*(widths.len().saturating_sub(1)) as f32;
-            let height=ui.calc_text_size(crate::i18n::t(label))[1];
             // 按键标签（crate::pad，手柄 / 键盘随最后用的设备切换）：主按钮深底金字，次按钮浅底深字，悬停时略放大
             let h=(25.0+3.0*hover_k)*s;let badge=crate::pad::width(ui,key,h);let badge_gap=if badge>0.0 {12.0*s}else{0.0};
+            let fit=((max[0]-min[0]-badge-badge_gap-24.0*s)/width.max(1.0)).min(1.0);
+            let width=width*fit;let gap=gap*fit;let scale=scale*fit;
+            ui.set_window_font_scale(scale*s);let height=ui.calc_text_size(&label)[1];
             let mut x=(min[0]+max[0]-width-badge-badge_gap)*0.5;let mid=(min[1]+max[1])*0.5;
             crate::pad::badge(ui,x,mid,h,key,if primary {crate::pad::Tone::Dark}else{crate::pad::Tone::Light},a);
             ui.set_window_font_scale(scale*s);
             x+=badge+badge_gap;let y=mid-height*0.5;
             ui.set_window_font_scale(scale*s);
-            for (c,w) in label.chars().zip(&widths) {ui.set_cursor_screen_pos([x,y]);ui.text_colored(ink,crate::i18n::t(c.to_string()));x+=w+gap;}
+            for (c,w) in label.chars().zip(&widths) {
+                ui.set_cursor_screen_pos([x,y]);ui.text_colored(ink,c.to_string());x+=w*fit+gap;
+                #[cfg(test)] SUMMARY_GLYPHS.with(|items|items.borrow_mut().push((c.to_string(),ui.item_rect_min(),ui.item_rect_max(),max[0]-12.0*s)));
+            }
             drop(font);
             (clicked,hover)
         };
@@ -791,8 +806,67 @@ pub(crate) fn oath_badge(ui:&Ui,c:[f32;2],h:f32,numeral:&str,lit:bool,s:f32) {
     }
 }
 #[cfg(test)]
+thread_local! {static SUMMARY_GLYPHS:std::cell::RefCell<Vec<(String,[f32;2],[f32;2],f32)>>=const {std::cell::RefCell::new(Vec::new())};}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "run explicitly with --ignored --test-threads=1; optional ERDTREE_SUMMARY_PREVIEW exports frames"]
+    fn localized_summary_animates_translated_glyphs_and_fits_buttons() {
+        use erdtree_tower::localization::{self,Language};
+        use hudhook::imgui::{Context,FontConfig,FontGlyphRanges,FontSource};
+        struct Restore(bool);
+        impl Drop for Restore {fn drop(&mut self){localization::set(if self.0 {Language::English}else{Language::Chinese});crate::fancy_text::reset_fonts();}}
+        let _restore=Restore(localization::english());
+        let mut ctx=Context::create();ctx.set_ini_filename(None);ctx.io_mut().delta_time=1.0/60.0;
+        ctx.fonts().add_font(&[FontSource::TtfData{data:include_bytes!("../../scene-assets/fonts/TowerSerif-Regular.otf"),size_pixels:20.0,
+            config:Some(FontConfig{glyph_ranges:FontGlyphRanges::chinese_full(),..Default::default()})}]);
+        let font=ctx.fonts().add_font(&[FontSource::TtfData{data:include_bytes!("../../scene-assets/fonts/TowerSans-Bold.otf"),size_pixels:crate::fancy_text::SANS_PIXELS,
+            config:Some(FontConfig{glyph_ranges:FontGlyphRanges::chinese_full(),..Default::default()})}]);
+        crate::fancy_text::set_button_font(crate::fancy_text::TitleFont(font));
+        let output=std::env::var_os("ERDTREE_SUMMARY_PREVIEW").map(std::path::PathBuf::from);
+        let atlas=ctx.fonts().build_rgba32_texture();
+        if let Some(path)=&output {
+            std::fs::create_dir_all(path).unwrap();std::fs::write(path.join("font.rgba"),atlas.data).unwrap();
+            std::fs::write(path.join("font.size"),format!("{} {}",atlas.width,atlas.height)).unwrap();
+        }
+        for language in [Language::English,Language::Chinese] {
+            localization::set(language);
+            for (width,height) in [(1280,720),(1920,1080),(2560,1440),(3840,2160)] {
+                ctx.io_mut().display_size=[width as f32,height as f32];
+                for &class in &Class::PLAYABLE {
+                    let record=Record{seed:1794831384587750200,class,result:Outcome::Dead,layer:16,
+                        fights:vec![erdtree_tower::journal::Fight{act:1,layer:16,kind:"Boss".into(),won:false,enemies:vec!["“鲜血君王”蒙格".into()]}],..Default::default()};
+                    let gain=Some(Gain{class,xp:502,before:4,after:5});
+                    let mut cues=Cues{fired:u16::MAX,locked:u16::MAX,..Default::default()};let mut focus=0;
+                    for elapsed in [0.5,1.5,10.0] {
+                        SUMMARY_GLYPHS.with(|items|items.borrow_mut().clear());
+                        summary_page(ctx.frame(),&record,gain,&mut focus,false,None,elapsed,&mut cues,&mut |_|None,false);
+                        let data=ctx.render();
+                        SUMMARY_GLYPHS.with(|items|{
+                            let items=items.borrow();let rendered=items.iter().map(|item|item.0.as_str()).collect::<String>();
+                            if language==Language::English {
+                                assert!(!rendered.chars().any(|c|('\u{3400}'..='\u{9fff}').contains(&c)),"{class:?}: {rendered}");
+                                if elapsed==10.0 {
+                                    for expected in ["Journey Ended","Floor 16","Defeated by Mohg, Lord of Blood","mastery +502","Reached Lv 5","No Laws of Hardship were selected for this run","Return to Roundtable Hold","Copy Seed"] {
+                                        assert!(rendered.contains(expected),"{class:?}: missing {expected}: {rendered}");
+                                    }
+                                }
+                            }
+                            for (_,min,max,right) in items.iter() {assert!(min[0]>=0.0&&max[0]<=right+2.0&&max[1]<=height as f32,"{class:?}: {min:?} {max:?} {right}");}
+                            if elapsed==10.0 {for pair in items.windows(2) {
+                                if (pair[0].1[1]-pair[1].1[1]).abs()<0.1 {assert!(pair[1].1[0]>=pair[0].2[0]-2.0,"Overlapping glyphs: {pair:?}");}
+                            }}
+                        });
+                        if width==1920&&class==Class::Prophet&&elapsed==10.0 {if let Some(path)=&output {
+                            crate::reward_ui::write_frame(&path.join(format!("summary-{}.draw",language.id())),data,width,height);
+                        }}
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn seed_input_accepts_full_u64_without_float_precision_loss() {
         assert_eq!(parse_seed(" 18446744073709551615 "),Ok(u64::MAX));

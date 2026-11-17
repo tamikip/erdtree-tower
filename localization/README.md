@@ -6,6 +6,8 @@ Translations are applied only when displaying text. Save keys, item IDs, network
 
 `official-en.json` is generated from the installed game's English FMGs. Custom catalogs override it. Unknown strings deliberately remain unchanged so coverage audits can identify missing translations.
 
+For compact effect descriptions, use `localization::inline` before drawing the text. It translates the original multiline catalog key before joining lines with spaces in English or Chinese commas in Chinese; replacing newlines before translation prevents multiline keys and patterns from matching.
+
 ## Regenerating native text
 
 Use a separate staging directory. `SceneBuilder` arguments are game directory, output directory, input scene-assets directory, mode, and optional mode input:

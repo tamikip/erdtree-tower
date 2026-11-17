@@ -769,9 +769,14 @@ impl Panel {
                     if let Some(font)=font {font.pop();}
                 }
                 ui.set_window_font_scale(scale*0.90);
-                let summary=if summary.chars().count()>48 {format!("{}…",summary.chars().take(48).collect::<String>())}else{summary};
-                ui.set_cursor_pos([x+40.0*scale,y+329.0*scale]);
-                {let _color=ui.push_style_color(StyleColor::Text,quality_color);let _wrap=ui.push_text_wrap_pos_with_pos(x+width-40.0*scale);let _cjk=crate::fancy_text::wrap_at(x+width-40.0*scale);crate::fancy_text::text_wrapped(ui,summary);}
+                let summary_top=y+329.0*scale;
+                let summary_bottom=y+height-84.0*scale;
+                let step=ui.text_line_height_with_spacing();
+                let max_lines=((summary_bottom-summary_top+ui.clone_style().item_spacing[1])/step).floor().max(1.0) as usize;
+                for (row,line) in summary_lines(&summary,width-80.0*scale,max_lines,|text|ui.calc_text_size(text)[0]).iter().enumerate() {
+                    ui.set_cursor_pos([x+40.0*scale,summary_top+row as f32*step]);
+                    ui.text_colored(quality_color,line);
+                }
                 ui.set_window_font_scale(scale);
                 if selected {center(ui,x+width*0.5,y+height-76.0*scale,"已选",gold);}
                 ui.set_cursor_pos([x,y]);let _disabled=ui.begin_disabled(!ready||self.selection.details||self.selection.skip);
@@ -816,6 +821,19 @@ fn textured_button(ui:&Ui,label:&str,input:Option<crate::pad::Input>,pos:[f32;2]
     crate::pad::label_in(ui,min,max,input,label,color,scale,crate::pad::Tone::Light);
     clicked
 }
+// wrap_lines translates the complete source before wrapping. Never truncate catalog keys.
+fn summary_lines(text:&str,width:f32,max_lines:usize,measure:impl Fn(&str)->f32)->Vec<String> {
+    let mut lines=crate::fancy_text::wrap_lines(text,width,&measure);
+    let overflow=lines.len()>max_lines;
+    lines.truncate(max_lines);
+    for (index,line) in lines.iter_mut().enumerate() {
+        if (overflow&&index+1==max_lines)||measure(line)>width {
+            while !line.is_empty()&&measure(&format!("{}…",line.trim_end()))>width {line.pop();}
+            *line=format!("{}…",line.trim_end());
+        }
+    }
+    lines
+}
 fn center(ui:&Ui,x:f32,y:f32,text:&str,color:[f32;4]) {ui.set_cursor_pos([x-ui.calc_text_size(crate::i18n::t(text))[0]*0.5,y]);ui.text_colored(color,crate::i18n::t(text));}
 fn center_fitted(ui:&Ui,x:f32,y:f32,text:&str,color:[f32;4],scale:f32,width:f32) {
     ui.set_window_font_scale(scale);
@@ -826,7 +844,7 @@ fn center_fitted(ui:&Ui,x:f32,y:f32,text:&str,color:[f32;4],scale:f32,width:f32)
 }
 
 #[cfg(test)]
-fn write_frame(path:&std::path::Path,data:&hudhook::imgui::DrawData,width:i32,height:i32) {
+pub(crate) fn write_frame(path:&std::path::Path,data:&hudhook::imgui::DrawData,width:i32,height:i32) {
     use std::io::Write;
     let mut file=std::fs::File::create(path).unwrap();writeln!(file,"{width} {height}").unwrap();
     for list in data.draw_lists(){for cmd in list.commands(){if let hudhook::imgui::DrawCmd::Elements{count,cmd_params:p}=cmd {
@@ -1043,6 +1061,76 @@ pub fn test_pad_frames(context:&mut hudhook::imgui::Context) {
 
 #[cfg(test)]
 mod tests {
+    // ImGui and the selected language are process-global; run this test separately.
+    #[test]
+    #[ignore = "run explicitly with --ignored --test-threads=1; optional ERDTREE_CARD_PREVIEW exports frames"]
+    fn localized_card_summaries_translate_before_clipping() {
+        use super::*;
+        use erdtree_tower::{embers::Ember,localization::{self,Language}};
+        use hudhook::imgui::{Context,FontConfig,FontGlyphRanges,FontSource};
+        struct RestoreLanguage(bool);
+        impl Drop for RestoreLanguage {fn drop(&mut self){localization::set(if self.0 {Language::English} else {Language::Chinese});}}
+        let _restore=RestoreLanguage(localization::english());
+        let mut ctx=Context::create();ctx.set_ini_filename(None);ctx.io_mut().delta_time=1.0/60.0;
+        ctx.fonts().add_font(&[FontSource::TtfData{data:include_bytes!("../../scene-assets/fonts/TowerSerif-Regular.otf"),size_pixels:20.0,
+            config:Some(FontConfig{glyph_ranges:FontGlyphRanges::chinese_full(),..Default::default()})}]);
+        let output=std::env::var_os("ERDTREE_CARD_PREVIEW").map(std::path::PathBuf::from);
+        let atlas=ctx.fonts().build_rgba32_texture();
+        if let Some(path)=&output {
+            std::fs::create_dir_all(path).unwrap();std::fs::write(path.join("font.rgba"),atlas.data).unwrap();
+            std::fs::write(path.join("font.size"),format!("{} {}",atlas.width,atlas.height)).unwrap();
+        }
+        let harvest=Ember::Harvest.effect();
+        assert_eq!(localization::translate_en(&harvest),"Killing with a critical hit raises max HP\nNormal enemy: 2%\nElite: 5%; boss: 10%\nEach bonus multiplies current max HP\nUncapped, retained for the entire run");
+        for language in [Language::English,Language::Chinese] {
+            localization::set(language);
+            for (width,height) in [(1280,720),(1920,1080),(2560,1440),(3840,2160)] {
+                ctx.io_mut().display_size=[width as f32,height as f32];
+                let ui=ctx.frame();
+                ui.window("card-summary-test").build(|| {
+                    let scale=(width as f32/1600.0).min(height as f32/900.0);
+                    ui.set_window_font_scale(scale*0.90);
+                    let measure=|text:&str|ui.calc_text_size(text)[0];
+                    let available=250.0*scale;
+                    let step=ui.text_line_height_with_spacing();
+                    let count=((77.0*scale+ui.clone_style().item_spacing[1])/step).floor() as usize;
+                    for ember in Ember::ALL.into_iter().chain([Ember::Stride]) {
+                        let source=ember.effect();
+                        let full=crate::fancy_text::wrap_lines(&source,available,measure);
+                        let clipped=summary_lines(&source,available,count,measure);
+                        assert!(!clipped.is_empty()&&clipped.len()<=count,"{ember:?}");
+                        assert!((clipped.len()-1) as f32*step+ui.text_line_height()<=77.0*scale+0.1);
+                        for line in &clipped {
+                            assert!(measure(line)<=available+0.1,"{ember:?}: {line}");
+                            if language==Language::English {assert!(!line.chars().any(|c|('\u{3400}'..='\u{9fff}').contains(&c)),"{ember:?}: {line}");}
+                        }
+                        if full.len()>count {assert!(clipped.last().unwrap().ends_with('…'));}
+                        else {assert_eq!(clipped,full);}
+                        let prefix=clipped.join(" ");let source=full.join(" ");
+                        assert!(source.starts_with(prefix.trim_end_matches('…')),"{ember:?}: {prefix}");
+                    }
+                    assert_eq!(summary_lines("",available,count,measure),vec![""]);
+                    let long="x".repeat(200);let clipped=summary_lines(&long,available,count,measure);
+                    assert!(clipped[0].ends_with('…')&&measure(&clipped[0])<=available);
+                });
+                ctx.render();
+            }
+            if let Some(path)=&output {
+                crate::oath_art::preview();
+                ctx.io_mut().display_size=[1920.0,1080.0];
+                let mut run=Run::new(42,erdtree_tower::Class::Samurai);
+                run.phase=Phase::Reward{id:0,offers:vec![Reward::Ember(Ember::Harvest),Reward::Ember(Ember::Bloodlord),Reward::Ember(Ember::FrostShackle)]};
+                let mut view=runtime::view().unwrap();view.ready=true;view.busy=false;
+                let mut panel=Panel::default();panel.card=Some(TextureId::new(200003));panel.rarity_cards=Some(TextureId::new(200004));panel.rare_blue=Some(TextureId::new(200005));
+                for ember in [Ember::Harvest,Ember::Bloodlord,Ember::FrostShackle] {if let Some(icon)=ember_icon(ember){panel.textures.insert(icon,Some(TextureId::new(icon as usize+1)));}}
+                for _ in 0..120 {panel.draw(ctx.frame(),&run,&view);ctx.render();}
+                panel.draw(ctx.frame(),&run,&view);write_frame(&path.join(format!("cards-{}.draw",language.id())),ctx.render(),1920,1080);
+                panel.selection.details=true;
+                for _ in 0..3 {panel.draw(ctx.frame(),&run,&view);ctx.render();}
+                panel.draw(ctx.frame(),&run,&view);write_frame(&path.join(format!("details-{}.draw",language.id())),ctx.render(),1920,1080);
+            }
+        }
+    }
     #[test]
     fn special_rewards_have_their_own_card_icons() {
         let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scene-assets/reward-icons");

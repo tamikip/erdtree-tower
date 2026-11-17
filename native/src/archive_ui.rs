@@ -226,7 +226,7 @@ fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureI
             text([min[0]+104.0*s,min[1]+44.0*s],&format!("{law}  ·  种子 {}",record.seed),MUTED,0.82,0.0);
             // 誓约名与余烬徽记
             let oaths:Vec<_>=record.oaths.iter().map(|o|format!("{} {}",o.kind.name(),ROMAN[usize::from(o.level.min(3))]).trim().to_owned()).collect();
-            let mut line=if oaths.is_empty(){"没有誓约".to_string()}else{oaths.join(" · ")};
+            let mut line=crate::i18n::t(if oaths.is_empty(){"没有誓约".to_string()}else{oaths.join(" · ")});
             ui.set_window_font_scale(0.84*s);
             while ui.calc_text_size(crate::i18n::t(&line))[0]>380.0*s&&line.chars().count()>4 {let keep=line.chars().count()-2;line=line.chars().take(keep).collect::<String>();line.push('…');line=line.replace("……","…");}
             text([min[0]+520.0*s,min[1]+12.0*s],&line,if oaths.is_empty(){DIM}else{BOON},0.84,0.0);
@@ -343,7 +343,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
             if !lit {hint(ui,300.0,"在幕间立下这条誓约后解锁");return;}
             text(p(1202.0,300.0),kind.name(),GOLD,1.2,0.0);
             text(p(1202.0,334.0),&format!("最高等级 {} · 立誓 {taken} 次",ROMAN[usize::from(best.min(3))]),MUTED,0.84,0.0);
-            let y=wrapped(ui,p(1130.0,380.0),right,&kind.boon_at(best.max(1)).replace('\n',"，"),BOON,0.92*s);
+            let y=wrapped(ui,p(1130.0,380.0),right,&erdtree_tower::localization::inline(&kind.boon_at(best.max(1))),BOON,0.92*s);
             wrapped(ui,[ox+1130.0*s,y+6.0*s],right,&format!("代价：{}",kind.bane_at()),RED,0.92*s);
         },
         Item::Ember(i)=>{
@@ -355,7 +355,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
             if !lit {hint(ui,410.0,"在普通战或精英战的奖励里选择这枚余烬后解锁");return;}
             text(p(1244.0,312.0),ember.name(),GOLD,1.15,0.0);
             text(p(1244.0,348.0),&format!("获得 {taken} 次{}",crate::reward_ui::ember_class_label(ember).map_or(String::new(),|l|format!(" · {l}"))),MUTED,0.84,0.0);
-            wrapped(ui,p(1130.0,410.0),right,&ember.effect().replace('\n',"，"),BOON,0.92*s);
+            wrapped(ui,p(1130.0,410.0),right,&erdtree_tower::localization::inline(&ember.effect()),BOON,0.92*s);
         },
         Item::Boss(i)=>{
             let (act,name)=&archive.bosses[i];
