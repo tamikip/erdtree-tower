@@ -270,7 +270,7 @@ impl ImguiRenderLoop for TowerPreview {
         let capture = runtime::with_view(|view| input::capture_route(self.visible, player_present, view)).unwrap_or(false);
         input::CAPTURE.store(capture, Ordering::Relaxed);
         input::watch_pointer();
-        if {let io=ctx.io();io.mouse_down[0]||io.mouse_wheel!=0.0||io.mouse_delta[0]!=0.0||io.mouse_delta[1]!=0.0} {input::note_mouse();}
+        if {let io=ctx.io();io.mouse_down.iter().any(|&down|down)||io.mouse_wheel!=0.0||io.mouse_wheel_h!=0.0||io.mouse_delta.iter().any(|&delta|delta!=0.0)} {input::note_mouse();}
         let map=runtime::with_view(|view|view.run.as_ref().is_some_and(|run|
             matches!(run.phase,Phase::Map)&&!run.contract_pending())).unwrap_or(false);
         reward_ui::poll_pad(ctx.io_mut(),capture&&input::active(),map);
