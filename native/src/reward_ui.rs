@@ -944,7 +944,7 @@ pub fn test_frames(context:&mut hudhook::imgui::Context) {
 }
 
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default,Clone,Copy)]
 struct Gamepad {buttons:u16,left_trigger:u8,right_trigger:u8,lx:i16,ly:i16,rx:i16,ry:i16}
 #[repr(C)]
 #[derive(Default)]
@@ -955,6 +955,19 @@ fn stick(value:i16)->f32 {
     let value=value as f32;
     if value.abs()<=8000.0 {0.0}else{value.signum()*((value.abs()-8000.0)/24767.0).min(1.0)}
 }
+//[fix] 只把「新输入」算作手柄活动：一直按着不放不该每帧刷新，否则会把刚动过的鼠标盖掉。
+fn trigger_on(value:u8)->bool {value>48}
+fn axis_level(value:i16)->i8 {
+    let value=stick(value);
+    if value.abs()<=0.4 {0}else{(value*3.0).round().clamp(-3.0,3.0) as i8}
+}
+fn pad_signature(pad:&Gamepad)->(u16,bool,bool,i8,i8,i8,i8) {
+    (pad.buttons,trigger_on(pad.left_trigger),trigger_on(pad.right_trigger),axis_level(pad.lx),axis_level(pad.ly),axis_level(pad.rx),axis_level(pad.ry))
+}
+fn pad_changed(previous:Option<&Gamepad>,now:&Gamepad)->bool {
+    match previous {None=>true,Some(previous)=>pad_signature(previous)!=pad_signature(now)}
+}
+thread_local! {static PAD_LAST:std::cell::RefCell<Option<Gamepad>>=const {std::cell::RefCell::new(None)};}
 fn pad_direction(pad:&Gamepad,mask:u16,map:bool)->bool {
     pad.buttons&mask!=0 || !map&&match mask {1=>stick(pad.ly)>0.5,2=>stick(pad.ly)< -0.5,4=>stick(pad.lx)< -0.5,8=>stick(pad.lx)>0.5,_=>false}
 }
@@ -1003,8 +1016,10 @@ pub fn poll_pad(io:&mut Io,active:bool,map:bool) {
     feed_pad(io,&state.pad,found,map);
 }
 fn feed_pad(io:&mut Io,pad:&Gamepad,found:bool,map:bool) {
+    let changed=PAD_LAST.with(|state|{let mut last=state.borrow_mut();let changed=pad_changed(last.as_ref(),pad);*last=Some(*pad);changed});
     //[fix] 地图界面右摇杆是当鼠标用的，那上面按「鼠标」算，不算手柄输入（否则一推摇杆箭头就闪没）。
-    if found&&!map&&(pad.buttons!=0||pad.left_trigger>48||pad.right_trigger>48||stick(pad.lx).abs()>0.4||stick(pad.ly).abs()>0.4||stick(pad.rx).abs()>0.4||stick(pad.ry).abs()>0.4) {crate::input::note_pad();}
+    //[fix] 只有按键/摇杆/扳机出现了新变化才算手柄活动；一直按着不放不再每帧刷新。
+    if found&&!map&&changed {crate::input::note_pad();}
     MAP_CONFIRM.with(|state|state.borrow_mut().update(found&&map,found&&pad.buttons&0x1000!=0));
     io.backend_flags.set(hudhook::imgui::BackendFlags::HAS_GAMEPAD,found);
     for (key,mask) in [(Key::GamepadDpadUp,1),(Key::GamepadDpadDown,2),(Key::GamepadDpadLeft,4),(Key::GamepadDpadRight,8),(Key::GamepadFaceDown,0x1000),(Key::GamepadFaceRight,0x2000),(Key::GamepadFaceLeft,0x4000),(Key::GamepadFaceUp,0x8000),(Key::GamepadBack,0x20),(Key::GamepadL1,0x100),(Key::GamepadR1,0x200)] {
@@ -1184,6 +1199,24 @@ mod tests {
         }
         assert!(card_summary(&DETAILS[&33000000]).contains("施展魔法"));
         assert!(card_summary(&DETAILS[&34000000]).contains("施展祷告"));
+    }
+    #[test]
+    fn pad_activity_counts_new_input_not_still_held_input() {
+        let idle=Gamepad::default();
+        let held=Gamepad{buttons:0x1000,..Default::default()};
+        for _ in 0..120 {assert!(!pad_changed(Some(&held),&held));}
+        assert!(pad_changed(None,&idle));
+        assert!(!pad_changed(Some(&idle),&idle));
+        assert!(pad_changed(Some(&idle),&held));
+        assert!(pad_changed(Some(&held),&idle));
+        let pressed=Gamepad{left_trigger:52,..Default::default()};
+        assert!(pad_changed(Some(&idle),&pressed));
+        assert!(!pad_changed(Some(&pressed),&Gamepad{left_trigger:60,..Default::default()}));
+        let jitter=Gamepad{lx:9000,..Default::default()};
+        assert!(!pad_changed(Some(&Gamepad{lx:12000,..Default::default()}),&jitter));
+        assert!(pad_changed(Some(&idle),&Gamepad{lx:i16::MAX,..Default::default()}));
+        assert!(!pad_changed(Some(&Gamepad{lx:i16::MAX,..Default::default()}),&Gamepad{lx:30000,..Default::default()}));
+        assert!(pad_changed(Some(&Gamepad{lx:i16::MAX,..Default::default()}),&idle));
     }
 }
 /// 职业专属余烬的标注（“影刃专属”“星辉术士、祷誓者专属”）；通用余烬没有
