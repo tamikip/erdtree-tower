@@ -11,6 +11,10 @@ pub enum ArchiveAction {Close,Open(Record)}
 enum Item {Oath(usize),Ember(usize),Boss(usize),Affix(usize)}
 /// 往期旅程只列最近的这么多局
 const LIMIT:usize=100;
+const CANVAS_HEIGHT:f32=900.0;
+// ImGui 子窗口会乘上父窗口的字号倍率。父级沿用 1080p 的倍率，由子窗口按当前分辨率缩放。
+const CHILD_PARENT_SCALE:f32=1080.0/CANVAS_HEIGHT;
+const TAB_FONT_SCALE:f32=1.1;
 const ROMAN:[&str;4]=["","I","II","III"];
 const GOLD:[f32;4]=[0.94,0.82,0.56,1.0];const WHITE:[f32;4]=[0.96,0.94,0.87,1.0];const MUTED:[f32;4]=[0.78,0.75,0.67,1.0];
 const DIM:[f32;4]=[0.65,0.62,0.55,1.0];const RED:[f32;4]=[0.92,0.47,0.38,1.0];const BOON:[f32;4]=[0.86,0.8,0.64,1.0];
@@ -90,8 +94,8 @@ fn step(items:&[(Item,[f32;4])],from:usize,dx:f32,dy:f32)->usize {
     }).min_by(|a,b|a.1.total_cmp(&b.1)).map_or(from,|(i,_)|i)
 }
 pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureId>)->Option<ArchiveAction> {
-    let size=ui.io().display_size;let s=(size[0]/1600.0).min(size[1]/900.0);
-    let (ox,oy)=((size[0]-1600.0*s)*0.5,(size[1]-900.0*s)*0.5);let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
+    let size=ui.io().display_size;let s=(size[0]/1600.0).min(size[1]/CANVAS_HEIGHT);
+    let (ox,oy)=((size[0]-1600.0*s)*0.5,(size[1]-CANVAS_HEIGHT*s)*0.5);let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let background=ui.get_background_draw_list();crate::oath_art::background(&background,size);
     let shade=|a:u8|ImColor32::from_rgba(0,0,0,a);
     background.add_rect_filled_multicolor([0.0,0.0],size,shade(90),shade(90),shade(170),shade(170));drop(background);
@@ -156,7 +160,7 @@ pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<Texture
             ui.set_cursor_screen_pos(p(x-80.0,92.0));ui.set_window_font_scale(s);
             if ui.invisible_button(format!("tab-{i}"),[160.0*s,40.0*s])&&ready {archive.tab=i;archive.follow=true;}
             let hover=ui.is_item_hovered();
-            text(x,98.0,label,if active{GOLD}else if hover{WHITE}else{MUTED},1.1,0.5);
+            text(x,98.0,label,if active{GOLD}else if hover{WHITE}else{MUTED},TAB_FONT_SCALE,0.5);
             if active {ui.get_window_draw_list().add_rect(p(x-46.0,130.0),p(x+46.0,132.0),ImColor32::from_rgba(214,180,112,230)).filled(true).build();}
         }
         let draw=ui.get_window_draw_list();ornament(&draw,p(800.0,150.0),420.0*s,s);drop(draw);
@@ -185,6 +189,7 @@ pub fn draw(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<Texture
 }
 #[allow(clippy::too_many_arguments)]
 fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureId>,action:&mut Option<ArchiveAction>,moved:bool,ready:bool,s:f32,ox:f32,oy:f32) {
+    const SUMMARY_FONT_SCALE:f32=0.9;
     let p=|x:f32,y:f32|[ox+x*s,oy+y*s];
     let text=|pos:[f32;2],value:&str,color:[f32;4],scale:f32,align:f32| {
         ui.set_window_font_scale(scale*s);ui.set_cursor_screen_pos([pos[0]-ui.calc_text_size(crate::i18n::t(value))[0]*align,pos[1]]);ui.text_colored(color,crate::i18n::t(value));
@@ -193,10 +198,11 @@ fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureI
     let summary=if codex.runs==0 {"还没有完整的旅程记录".to_string()} else {
         format!("共 {} 局  ·  登顶 {} 次  ·  最远 第 {} 幕第 {} 层{}",codex.runs,codex.wins,codex.deepest.0,codex.deepest.1,if codex.best_law>0{format!("  ·  律法最高 {} 分",codex.best_law)}else{String::new()})
     };
-    text(p(800.0,172.0),&summary,MUTED,0.9,0.5);
+    text(p(800.0,172.0),&summary,MUTED,SUMMARY_FONT_SCALE,0.5);
     if archive.records.is_empty() {text(p(800.0,460.0),"结束一局旅程后，记录会出现在这里",DIM,1.0,0.5);return;}
     ui.set_cursor_screen_pos(p(200.0,210.0));
     let _padding=ui.push_style_var(StyleVar::WindowPadding([0.0,0.0]));
+    ui.set_window_font_scale(SUMMARY_FONT_SCALE*CHILD_PARENT_SCALE);
     ui.child_window("archive-history").size([1200.0*s,590.0*s]).build(|| {
         let origin=ui.cursor_screen_pos();let (row,gap)=(76.0*s,8.0*s);
         if archive.follow {
@@ -251,6 +257,7 @@ fn history(ui:&Ui,archive:&mut Archive,icon:&mut dyn FnMut(u32)->Option<TextureI
         let wheel=ui.io().mouse_wheel;
         if wheel!=0.0&&!ui.is_window_hovered() {ui.set_scroll_y((ui.scroll_y()-wheel*60.0*s).clamp(0.0,ui.scroll_max_y()));}
     });
+    ui.set_window_font_scale(SUMMARY_FONT_SCALE*s);
 }
 #[allow(clippy::too_many_arguments)]
 fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Option<TextureId>,moved:bool,s:f32,ox:f32,oy:f32) {
@@ -261,6 +268,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
     archive.focus=archive.focus.min(layout.items.len().saturating_sub(1));
     ui.set_cursor_screen_pos(p(70.0,176.0));
     let _padding=ui.push_style_var(StyleVar::WindowPadding([0.0,0.0]));
+    ui.set_window_font_scale(TAB_FONT_SCALE*CHILD_PARENT_SCALE);
     ui.child_window("archive-codex").size([1014.0*s,624.0*s]).build(|| {
         let origin=ui.cursor_screen_pos();let at=|x:f32,y:f32|[origin[0]+x*s,origin[1]+y*s];
         if archive.follow && let Some((_,r))=layout.items.get(archive.focus) {
@@ -322,6 +330,7 @@ fn codex(ui:&Ui,archive:&mut Archive,layout:&Layout,icon:&mut dyn FnMut(u32)->Op
         let wheel=ui.io().mouse_wheel;
         if wheel!=0.0&&!ui.is_window_hovered() {ui.set_scroll_y((ui.scroll_y()-wheel*60.0*s).clamp(0.0,ui.scroll_max_y()));}
     });
+    ui.set_window_font_scale(TAB_FONT_SCALE*s);
     // 右侧：总览与选中条目的详情
     let draw=ui.get_window_draw_list();panel(&draw,p(1104.0,176.0),p(1530.0,800.0),s);drop(draw);
     let c=&archive.codex;
