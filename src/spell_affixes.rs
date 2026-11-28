@@ -34,7 +34,8 @@ mod tests {
     #[test]
     fn every_spell_has_four_tiers_without_duplicate_ids() {
         assert_eq!(BY_ID.len(),VARIANTS.len());
-        for item in crate::rewards::CATALOG.iter().filter(|i|matches!(i.kind,ItemKind::Sorcery|ItemKind::Incantation)) {
+        // HansFix 惜别泪滴（6990）是后加的祷告，没有法术词条变体
+        for item in crate::rewards::CATALOG.iter().filter(|i|matches!(i.kind,ItemKind::Sorcery|ItemKind::Incantation)&&i.id!=(0x40000000|6990)) {
             let rows=&BY_BASE[&item.id];
             for i in rows {let v=&VARIANTS[*i];assert_eq!(v.item.kind,item.kind);assert!(v.kind<8&&v.tier<4);
                 for tier in 0..4{assert_eq!(rows.iter().filter(|j|VARIANTS[**j].kind==v.kind&&VARIANTS[**j].tier==tier).count(),1);}}

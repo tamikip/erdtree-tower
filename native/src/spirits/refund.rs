@@ -109,11 +109,11 @@ impl Ledger {
 
 static LEDGER:Mutex<Ledger>=Mutex::new(Ledger{inventory:Vec::new(),observed_inventory:None,pending_restores:Vec::new(),uses:Vec::new(),closed:true,owner_dead:false});
 fn local_members(manager:&SummonBuddyManager,owner:i32,owner_dead:bool)->Vec<Member> {
-    manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter(|group|!group.is_remote).map(|group| {
-        let chr=unsafe {group.chr_ins.as_ref()};let handle=chr.field_ins_handle;
-        Member{key:(u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0),param:group.buddy_param_id,
+    manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter(|group|!group.is_remote).filter_map(|group| {
+        let chr=super::live_chr(group)?;let handle=chr.field_ins_handle;
+        Some(Member{key:(u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0),param:group.buddy_param_id,
             killed:chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(),
-            alive:chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&(owner_dead||!group.disappear_requested||manager.disappear_requested)}
+            alive:chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&(owner_dead||!group.disappear_requested||manager.disappear_requested)})
     }).collect()
 }
 pub(super) fn capture(manager:&SummonBuddyManager,goods:i32,effect:i32)->Option<Use> {

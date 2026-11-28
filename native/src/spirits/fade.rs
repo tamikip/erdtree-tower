@@ -44,7 +44,7 @@ pub(super) unsafe fn tick(manager:*mut u8) {
     let mut present=std::collections::HashSet::new();
     for group in buddy.groups.iter().flat_map(|pair|pair.second.iter()) {
         if !custom(group.buddy_param_id){continue;}
-        let chr=unsafe {&mut *group.chr_ins.as_ptr()};
+        let Some(chr)=super::live_chr_mut(group) else{continue;};
         let handle=chr.field_ins_handle;
         let key=((u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0),group.chr_ins.as_ptr() as usize);
         present.insert(key);

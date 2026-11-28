@@ -37,7 +37,8 @@ fn parse(bytes:&[u8])->Option<Sound> {
     let ((tag,channels,rate,bits),data)=(format?,data?);
     (tag==1&&bits==16&&channels>0).then(||Sound{channels,rate,samples:data.chunks_exact(2).map(|c|i16::from_le_bytes([c[0],c[1]])).collect()})
 }
-const NAMES:[&str;17]=["open","tick1","tick2","tick3","stamp","record","hover","confirm","lock1","lock2","lock3","lock4","lock5","lock6","sweep","total","close"];
+// shatter：HansFix 惜别泪滴破碎（tools/hansfix 里用程序合成，非外部素材）
+const NAMES:[&str;18]=["open","tick1","tick2","tick3","stamp","record","hover","confirm","lock1","lock2","lock3","lock4","lock5","lock6","sweep","total","close","shatter"];
 static SOUNDS:LazyLock<HashMap<&'static str,Sound>>=LazyLock::new(|| {
     let volume=f32::from(crate::options::get().sfx)/100.0;
     let dir=crate::LOG_PATH.with_file_name("scene-assets").join("sfx");

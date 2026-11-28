@@ -1285,10 +1285,16 @@ fn tick_party(state:&mut Runtime,world:&mut WorldChrMan,game:&mut GameMan)->Resu
                 // 与房主使用相同普通房波次和精英节奏，未到出场时机的敌人不计入就绪等待。
                 let held=member_held(&mut state.member_spawn_gaps,(link.config.session,link.epoch,run.act,id),world,run,id,&roster,&ids);
                 let mut ready=vec![false;roster.len()];
+                static REQUESTED:std::sync::Mutex<Vec<(u64,u32)>>=std::sync::Mutex::new(Vec::new());
                 for (slot,&entity) in ids.iter().enumerate() {
                     if held[slot] {continue;}
                     super::enemies::position_map_entity(entity,slot)?;
                     ready[slot]=super::enemies::request_map_entity(entity,true)?;
+                    if let Ok(mut seen)=REQUESTED.lock()&&!seen.contains(&(link.epoch,entity)) {
+                        if seen.len()>64 {seen.clear();}
+                        seen.push((link.epoch,entity));
+                        super::log(format!("TOWER_PARTY member released slot {slot} entity={entity} epoch={} ready={}",link.epoch,ready[slot]));
+                    }
                 }
                 if !link.bound {
                     let mut seen=held.clone();
@@ -1942,6 +1948,7 @@ fn tick_locked() {
         let run=runtime.view.run.as_ref().filter(|_|game.save_slot>=0 && !game.warp_requested && !runtime.hub.as_ref().is_some_and(|h|h.active)
             && world.main_player.as_ref().is_some_and(|p|runtime.identity==Some((unsafe {p.player_game_data.as_ref()}.character_id,game.save_slot))));
         runtime.archery.sync(world.main_player.as_mut().map(|p|&mut **p),run);
+        super::tears::tick(world,runtime.view.run.as_ref().map(|r|r.seed));
     }
     PLAYER_READY.store(world.main_player.is_some()&&game.save_slot>=0,std::sync::atomic::Ordering::Relaxed);
     if let Some(player)=world.main_player.as_ref().filter(|_|game.save_slot>=0) {
@@ -1958,6 +1965,7 @@ fn tick_locked() {
     }
     // 内置死亡不掉卢恩（祭品树枝的效果常驻）、清理南瓜头遗留旗帜摆件参数、修正山妖骨灰 AI 参数，并兜底抑制龙王平台原版 c4520 游离苏醒
     super::enemies::disable_lingering_props();
+    super::skill_elements::apply_once();
     super::spirits::repair_custom_spirit_ai();
     super::enemies::suppress_stray_dragonlord(world);
     if let Some(player)=world.main_player.as_mut().filter(|_|!game.warp_requested) {super::keep_runes::tick(&mut player.chr_ins);}
@@ -2334,7 +2342,9 @@ fn tick_locked() {
         // 星辉术士：营地的测伤人偶不交给 starsurge；商人房、宝箱房等名单外的战斗靠它扫身边的敌人（联机也算）
         // 联机成员：名单外的敌人没有转发通道，打满只出特效、不在本机扣额外的血（扣了也会被房主同步盖掉）；叠层照常
         let member=state.party.as_ref().is_some_and(|p|!p.host());
-        if member {super::starsurge::fight_unsynced(world);}else{super::starsurge::fight(world,&[],state.party.is_some(),None);}
+        // 房间还在加载（刚开始切图、地图正在卸载）时不扫：这时场上的角色、弹体可能正在销毁
+        let settled=state.room.as_ref().is_none_or(|r|!r.view.loading);
+        if settled {if member {super::starsurge::fight_unsynced(world);}else{super::starsurge::fight(world,&[],state.party.is_some(),None);}}
         super::frost_shackle::observe(world,key,&foes,held.contains(&erdtree_tower::embers::Ember::FrostShackle));
         super::embers::clear_practice_critical();
     } else {
@@ -3195,6 +3205,8 @@ fn tick_locked() {
             if runtime.party.as_ref().is_none_or(|p|p.fighting) {
                 let team=runtime.party.as_ref().map(|p|p.gate.flask_uses());
                 runtime.law_fight.tick(world,(run.seed,run.act,id),run.law,&handles,authority,flasks,team.as_deref());
+        super::stance_floor::tick(world,&handles);
+        super::stance_trace::observe(world,&handles);
                 runtime.view.law_clock=runtime.law_fight.clock();
             }
             if runtime.bout.active() {
@@ -3725,6 +3737,8 @@ fn member_combat(state:&mut Runtime,world:&mut WorldChrMan) {
     let engaged=state.party.as_ref().is_some_and(|p|p.fighting&&!p.victory);
     if engaged {
         state.law_fight.tick(world,key,run.law,&handles,false,flasks,None);
+        super::stance_floor::tick(world,&handles);
+        super::stance_trace::observe(world,&handles);
         state.view.law_clock=state.law_fight.clock();
         state.boss_fight.begin(key,erdtree_tower::boss_affixes::roll(run,id),run.law.empowered_affixes());
         state.boss_fight.tick(world,&handles,false,true,flasks,None,&[]);
@@ -3781,12 +3795,25 @@ fn member_held(delays:&mut Option<MemberSpawnGaps>,key:(u64,u64,u8,usize),world:
     let gaps=member_gaps(delays,key,roster.len());
     let now=spawn_clock();
     // 每个位置：(已倒下, 生命, 最大生命)；还没放出来的为 None
-    let state:Vec<Option<(bool,i32,i32)>>=roster.iter().zip(ids).map(|(spec,&entity)|{
-        world.chr_sets.iter().flatten().flat_map(|set|set.characters())
-            .find(|chr|chr.event_entity_id==entity&&chr.npc_id==spec.model&&chr.npc_param_id==spec.npc&&!chr.debug_flags.character_disabled()
+    // HansFix：0 血时成员这边的副本会被停用（"disabled undead member copy"）。停用了但血量归零的副本要算「已倒下」，
+    // 不能当成「还没放出来」——否则精英战第二波一直等前一波倒下，成员这边永远不放第二波（房主那边已经出来了）。
+    // 停用后加载状态也可能变掉、甚至被卸载，所以这一场里只要看到过某个位置倒下，就一直记作已倒下（DOWNED）。
+    static DOWNED:std::sync::Mutex<Vec<((u64,u64,u8,usize),usize)>>=std::sync::Mutex::new(Vec::new());
+    let mut downed=DOWNED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    downed.retain(|(k,_)|*k==key);
+    let state:Vec<Option<(bool,i32,i32)>>=roster.iter().zip(ids).enumerate().map(|(slot,(spec,&entity))|{
+        let found=world.chr_sets.iter().flatten().flat_map(|set|set.characters())
+            .find(|chr|chr.event_entity_id==entity&&chr.npc_id==spec.model&&chr.npc_param_id==spec.npc
+                &&(!chr.debug_flags.character_disabled()||chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag())
                 &&enemy_loaded(unsafe {chr.chr_set_entry.as_ref()}.chr_load_status))
-            .map(|chr|(chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(),chr.modules.data.hp,chr.modules.data.max_hp))
+            .map(|chr|(chr.modules.data.hp<=0||chr.chr_flags1c5.death_flag(),chr.modules.data.hp,chr.modules.data.max_hp));
+        if found.is_some_and(|f|f.0)&&!downed.iter().any(|(_,s)|*s==slot) {
+            downed.push((key,slot));
+            super::log(format!("TOWER_PARTY member saw slot {slot} defeated (entity={entity}); later paced enemies may spawn"));
+        }
+        if downed.iter().any(|(_,s)|*s==slot) {Some((true,0,found.map_or(0,|f|f.2)))} else {found}
     }).collect();
+    drop(downed);
     (0..roster.len()).map(|i|{
         let earlier:Vec<_>=(0..i).filter(|&j|super::enemies::paced_combatant(&roster[j])).map(|j|match state[j] {
             Some((true,_,_))=>(Spawn::Victory,None),
@@ -3796,8 +3823,39 @@ fn member_held(delays:&mut Option<MemberSpawnGaps>,key:(u64,u64,u8,usize),world:
         let previous:Vec<_>=state[..i].iter().map(|s|if matches!(s,Some((true,_,_))){Spawn::Victory}else{Spawn::Waiting}).collect();
         let held=super::enemies::paced_combatant(&roster[i])&&pacing.waits(&earlier);
         let eligible=erdtree_tower::encounter::may_spawn_paced(true,monster,held,&roles,i,&previous);
-        !gaps[i].allows(now,eligible)
+        let allowed=gaps[i].allows(now,eligible);
+        pacing_trace("member",key,i,ids[i],&roster[i],world,format!("state={:?} paced_held={held} eligible={eligible} allowed={allowed} role={:?} pacing={pacing:?} monster={monster}",state[i],roles[i]));
+        !allowed
     }).collect()
+}
+/// HansFix 诊断：分波出场的每一步。每个位置在判定结果变化时记一行，另外每 5 秒记一次快照；最多 800 行。
+/// raw 列出场上所有这个实体编号的角色（不加任何过滤）：模型/NPC/生命/死亡/停用/加载状态；flags 是激活请求/就绪旗标。
+pub(crate) fn pacing_trace(side:&str,key:(u64,u64,u8,usize),slot:usize,entity:u32,spec:&super::enemies::Enemy,world:&WorldChrMan,decision:String) {
+    use std::sync::atomic::{AtomicU32,Ordering};
+    static LINES:AtomicU32=AtomicU32::new(0);
+    static LAST:std::sync::Mutex<Vec<((u64,u64,u8,usize),usize,String,Instant)>>=std::sync::Mutex::new(Vec::new());
+    if LINES.load(Ordering::Relaxed)>=800 {return;}
+    let Ok(mut last)=LAST.try_lock() else{return};
+    last.retain(|(k,_,_,_)|*k==key);
+    let now=Instant::now();
+    let previous=last.iter().position(|(_,s,_,_)|*s==slot);
+    let changed=previous.is_none_or(|i|last[i].2!=decision);
+    let stale=previous.is_some_and(|i|now.duration_since(last[i].3)>=Duration::from_secs(5));
+    if !changed&&!stale {return;}
+    match previous {Some(i)=>last[i]=(key,slot,decision.clone(),now),None=>last.push((key,slot,decision.clone(),now))}
+    drop(last);
+    let raw:Vec<String>=world.chr_sets.iter().flatten().flat_map(|set|set.characters()).filter(|chr|chr.event_entity_id==entity).map(|chr|format!(
+        "{}/{} hp={}/{} dead={} disabled={} load={:?}",chr.npc_id,chr.npc_param_id,chr.modules.data.hp,chr.modules.data.max_hp,chr.chr_flags1c5.death_flag(),
+        chr.debug_flags.character_disabled(),unsafe {chr.chr_set_entry.as_ref()}.chr_load_status)).collect();
+    let flags=super::enemies::map_controls(entity).and_then(|(request,ready)|{
+        use fromsoftware_shared::FromStatic;
+        let man=unsafe {eldenring::cs::CSEventFlagMan::instance()}.ok()?;
+        Some((man.virtual_memory_flag.get_flag(request),man.virtual_memory_flag.get_flag(ready)))
+    });
+    if LINES.fetch_add(1,Ordering::Relaxed)<800 {
+        super::log(format!("PACING_TRACE {side} node={} epoch={} slot={slot} entity={entity} want={}/{} {} {decision} flags(request,ready)={flags:?} raw={raw:?}{}",
+            key.3,key.1,spec.model,spec.npc,spec.name,if changed{""}else{" (snapshot)"}));
+    }
 }
 fn enemy_loaded(status: ChrLoadStatus) -> bool {
     // The pinned 1.17.1 game uses state 4 for the live player and debug-spawned enemies.
@@ -5319,7 +5377,12 @@ fn poll_group(pending: &mut Pending, world: &mut WorldChrMan, dead: bool, block:
         }).collect();
         let held=super::enemies::paced_combatant(&pending.foes[i].spec)&&pacing.waits(&earlier);
         let eligible=erdtree_tower::encounter::may_spawn_group(pending.all_at_once,pending.networked,monster_node,held,&roles,i,&outcomes);
-        if !pending.foes[i].spawn_gap.allows(now,eligible) {
+        let allowed=pending.foes[i].spawn_gap.allows(now,eligible);
+        if pending.networked&&let (Some(ids),Phase::Combat{id})=(&map_ids,&pending.next_run.phase) {
+            pacing_trace("host",(pending.next_run.seed,0,pending.next_run.act,*id),i,ids[i],&pending.foes[i].spec,world,
+                format!("previous={:?} paced_held={held} eligible={eligible} allowed={allowed} bound={}",&outcomes[..],pending.foes[i].fight.handle().is_some()));
+        }
+        if !allowed {
             outcomes.push(Outcome::Waiting);
             continue;
         }

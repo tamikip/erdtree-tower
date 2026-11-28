@@ -21,6 +21,10 @@ use hudhook::{
 };
 
 mod blessings;
+mod skill_elements;
+mod crash_trace;
+mod crash_guard;
+mod tears;
 mod spawn_guard;
 mod spawn_grace;
 mod glintblade;
@@ -31,6 +35,8 @@ mod pad;
 mod retry_item;
 mod spell_affixes;
 mod starsurge;
+mod stance_trace;
+mod stance_floor;
 mod retry_rescue;
 mod options;
 mod gpu_engine;
@@ -667,6 +673,9 @@ impl ImguiRenderLoop for TowerPreview {
         let rewards=&mut self.rewards;
         // 癫火舞会：跳舞时只画舞会画面（它自己接管输入）
         let run_screen=dance_ui::draw(ui)||run_screen::draw(ui,&mut |icon|rewards.icon(icon));
+        // HansFix 惜别泪滴：左上角状态小图标（画在最上层，全屏面板 / 路线图预览打开时不画）。
+        // 身上的特效由游戏原生渲染（regulation 里 SpEffectVfx 1699000 / 1699001），不用叠加层画。
+        tears::draw_hud(ui,&mut |icon|rewards.icon(icon),!run_screen&&!self.map_preview);
         if options::pressed(ui,Hotkey::Debug) {debug_menu::toggle();}
         self.debug.draw(ui,view.as_ref());
         // 战斗顶部 HUD（原指南针位置：Boss 词条、护盾预警、苦难律法限时）
@@ -788,6 +797,8 @@ pub unsafe extern "system" fn DllMain(module: HINSTANCE, reason: u32, _: *mut c_
     let address = module.0 as usize;
     std::thread::spawn(move || {
         diagnostics::startup(address);
+        crash_trace::install(address,LOG_PATH.parent().map(std::path::Path::to_path_buf).unwrap_or_else(std::env::temp_dir));
+        crash_guard::install();
         options::init(diagnostics::module_path(address));
         diagnostics::watchdog();
         if std::env::var("ERDTREE_TOWER_PREVIEW").as_deref() != Ok("1") {

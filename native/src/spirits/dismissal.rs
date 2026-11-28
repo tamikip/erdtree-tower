@@ -40,11 +40,11 @@ pub(super) unsafe fn tick(manager:*mut u8,clear:usize) {
         let owner=unsafe {player.player_game_data.as_ref()}.character_event_id as i32;
         let buddy=unsafe {&*manager.cast::<SummonBuddyManager>()};
         if buddy.request_summon_speffect_id>=0{return None;}
-        let members:Vec<_>=buddy.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).map(|group|{
-            let chr=unsafe {group.chr_ins.as_ref()};let handle=chr.field_ins_handle;
+        let members:Vec<_>=buddy.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter_map(|group|{
+            let chr=super::live_chr(group)?;let handle=chr.field_ins_handle;
             let custom=super::fade::custom(group.buddy_param_id);
-            Member {key:(u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0),custom,remote:group.is_remote,
-                disappearing:group.disappear_requested,delay:group.disappear_delay_sec}
+            Some(Member {key:(u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0),custom,remote:group.is_remote,
+                disappearing:group.disappear_requested,delay:group.disappear_delay_sec})
         }).collect();
         if !eligible(buddy.request_summon_speffect_id,buddy.buddy_disappear_delay_sec,&members)
             || waiting_for_native(crate::runtime::in_party(),buddy.buddy_disappear_delay_sec,&members){return None;}

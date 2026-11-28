@@ -294,6 +294,12 @@ static TEXT: LazyLock<Mutex<HashMap<TextKey, Box<[u16]>>>> = LazyLock::new(Defau
 unsafe extern "C" fn lookup(table: usize, query: i32) -> *const u16 {
     let original: Lookup = unsafe { std::mem::transmute(ORIGINAL.load(Ordering::Acquire)) };
     let raw = unsafe { original(table, query) };
+    // HansFix 惜别泪滴：新增祷告在原版文本表里没有条目
+    if raw.is_null() && query == super::tears::SPELL {
+        if let Some(text) = super::tears::text(table, &|t, q| unsafe { original(t, q) }) {
+            return text;
+        }
+    }
     if raw.is_null() || query < 0 {
         return raw;
     }

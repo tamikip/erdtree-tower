@@ -55,10 +55,10 @@ pub fn has_local_groups(world:&WorldChrMan)->bool {
 pub fn log_remaining(world:&WorldChrMan,reason:&str) {
     let entries:Vec<_>=world.summon_buddy_manager.groups.iter().flat_map(|pair| {
         let owner=pair.first;
-        pair.second.iter().map(move |group| {
-            let chr=unsafe {group.chr_ins.as_ref()};
-            format!("owner={owner} buddy={} npc={} remote={} hp={}/{} dismiss={} delay={:.2}",
-                group.buddy_param_id,chr.npc_param_id,group.is_remote,chr.modules.data.hp,chr.modules.data.max_hp,group.disappear_requested,group.disappear_delay_sec)
+        pair.second.iter().filter_map(move |group| {
+            let Some(chr)=live_chr(group) else{return Some(format!("owner={owner} buddy={} chr=unloaded remote={} dismiss={}",group.buddy_param_id,group.is_remote,group.disappear_requested));};
+            Some(format!("owner={owner} buddy={} npc={} remote={} hp={}/{} dismiss={} delay={:.2}",
+                group.buddy_param_id,chr.npc_param_id,group.is_remote,chr.modules.data.hp,chr.modules.data.max_hp,group.disappear_requested,group.disappear_delay_sec))
         })
     }).collect();
     if !entries.is_empty() {
@@ -147,12 +147,26 @@ static RESUMMON_ARMED:AtomicBool=AtomicBool::new(false);
 pub fn set_resummon(on:bool){if !on{RESUMMON_ARMED.store(false,Ordering::Release);}if RESUMMON.swap(on,Ordering::AcqRel)!=on {super::log(format!("TOWER_RESUMMON enabled={on}"));}}
 /// 刷怪前已召唤的骨灰，开战重绑召唤点后 used 可以为 false；以实际存活状态为准。
 fn resummon_allowed(enabled:bool,_used:bool,seen:bool,buddies:usize)->bool {enabled&&seen&&buddies==0}
+/// 召唤物组里的角色在切图、战斗结算、队友骨灰消散的那几帧可能已经半销毁：角色指针或它的模块容器是空的。
+/// 这两个字段在类型上是 NonNull / OwnedPtr，普通的判空会被编译器当成「永远不为空」优化掉（r12 星涌就栽在这），
+/// 所以这里用 volatile 读原始指针判空。阿苏勒狂战士 r16 闪退：结算时 fade::tick 读到 modules=null。
+pub(crate) fn live_chr(group:&eldenring::cs::SummonBuddyGroup)->Option<&eldenring::cs::ChrIns> {
+    let chr=unsafe {std::ptr::read_volatile(std::ptr::addr_of!(group.chr_ins).cast::<usize>())};
+    if chr==0 {return None;}
+    let modules=unsafe {std::ptr::read_volatile((chr+std::mem::offset_of!(eldenring::cs::ChrIns,modules)) as *const usize)};
+    if modules==0 {return None;}
+    Some(unsafe {&*(chr as *const eldenring::cs::ChrIns)})
+}
+pub(crate) fn live_chr_mut(group:&eldenring::cs::SummonBuddyGroup)->Option<&mut eldenring::cs::ChrIns> {
+    live_chr(group)?;
+    Some(unsafe {&mut *group.chr_ins.as_ptr()})
+}
 fn resummon_use_allowed(enabled:bool,armed:bool,pending:i32,cooldown:f32,registered:bool,buddies:usize)->bool {
     enabled&&armed&&pending<0&&cooldown<=0.0&&registered&&buddies==0
 }
 fn local_buddies(manager:&eldenring::cs::SummonBuddyManager,owner:i32)->usize {
     manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter(|group| {
-        let chr=unsafe {group.chr_ins.as_ref()};
+        let Some(chr)=live_chr(group) else{return false;};
         !group.is_remote&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()
     }).count()
 }
@@ -160,22 +174,22 @@ pub fn local_handles(world:&WorldChrMan)->Vec<eldenring::cs::FieldInsHandle> {
     let Some(owner)=world.main_player.as_ref().map(|p|unsafe {p.player_game_data.as_ref()}.character_event_id as i32) else{return Vec::new();};
     world.summon_buddy_manager.groups.iter().filter(|pair|pair.first==owner)
         .flat_map(|pair|pair.second.iter()).filter(|group|!group.is_remote)
-        .map(|group|unsafe {group.chr_ins.as_ref()}.field_ins_handle).collect()
+        .filter_map(|group|live_chr(group).map(|chr|chr.field_ins_handle)).collect()
 }
 pub fn local_living_handles(world:&WorldChrMan)->Vec<eldenring::cs::FieldInsHandle> {
     let Some(owner)=world.main_player.as_ref().map(|p|unsafe {p.player_game_data.as_ref()}.character_event_id as i32) else{return Vec::new();};
     world.summon_buddy_manager.groups.iter().filter(|pair|pair.first==owner)
-        .flat_map(|pair|pair.second.iter()).filter(|group| {
-            let chr=unsafe {group.chr_ins.as_ref()};
-            !group.is_remote&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&!chr.debug_flags.character_disabled()
-        }).map(|group|unsafe {group.chr_ins.as_ref()}.field_ins_handle).collect()
+        .flat_map(|pair|pair.second.iter()).filter_map(|group| {
+            let chr=live_chr(group)?;
+            (!group.is_remote&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&!chr.debug_flags.character_disabled()).then_some(chr.field_ins_handle)
+        }).collect()
 }
 /// 场上当前存活的本机召唤物组数：战斗中优先按 refund 账本按次统计（同一骨灰连召两组也记 2 组），账本未开启时按 buddy_param_id/1000 去重兜底。
 pub fn local_living_group_count(world:&WorldChrMan)->usize {
     let Some(owner)=world.main_player.as_ref().map(|p|unsafe {p.player_game_data.as_ref()}.character_event_id as i32) else{return 0;};
     let mut families=std::collections::BTreeSet::new();
     for group in world.summon_buddy_manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()) {
-        let chr=unsafe {group.chr_ins.as_ref()};
+        let Some(chr)=live_chr(group) else{continue;};
         if !group.is_remote&&chr.modules.data.hp>0&&!chr.chr_flags1c5.death_flag()&&!chr.debug_flags.character_disabled() {
             families.insert(group.buddy_param_id/1000);
         }

@@ -171,7 +171,7 @@ struct Combat {cycle:Cycle,live:Vec<Live>,hp:Vec<(FieldInsHandle,i32)>,counted:V
     /// 这段时间里明显偏小的掉血算爆炸余波，不当作新的伤害判定（否则会一帧接一帧连锁引爆）
     echo:Vec<(FieldInsHandle,Instant,i32)>,
     /// 当前挂着的增伤行；下一帧要核对的增伤；爆炸后要核对的敌人（编号、爆炸前生命、时间）
-    row:Option<i32>,verify:Option<(i32,u32)>,applied_at:Option<Instant>,burst_check:Option<(FieldInsHandle,i32,Instant)>,}
+    row:Option<i32>,verify:Option<(i32,u32)>,applied_at:Option<Instant>,lost_since:Option<Instant>,burst_check:Option<(FieldInsHandle,i32,Instant)>,}
 /// 叠层显示：高 32 位为当前层数，低 32 位为上限
 static HUD:AtomicU64=AtomicU64::new(0);
 fn publish_hud(layers:u32,cap:u32) {HUD.store((u64::from(layers)<<32)|u64::from(cap),Ordering::Relaxed);}
@@ -345,9 +345,11 @@ pub fn sync(chr:&mut ChrIns,run:Option<&Run>) {
     if let Ok(mut combat)=COMBAT.lock() {
         let combat=combat.get_or_insert_with(||restore_combat(Some(seed)));
         publish_hud(combat.cycle.layers,combat.cycle.cap().max(SINGLE_CAP));
-        // 读档、换层后增伤要马上挂上，不等进战斗
-        let layers=combat.cycle.layers;
-        apply_buff(chr,layers,combat);
+        // 读档、换层后增伤要马上挂上，不等进战斗；切图、读图中（角色还没就绪）不动角色身上的特效
+        if super::runtime::PLAYER_READY.load(Ordering::Relaxed) {
+            let layers=combat.cycle.layers;
+            apply_buff(chr,layers,combat);
+        } else {combat.lost_since=None;}
     }
 }
 fn restore_combat(seed:Option<u64>)->Combat {
@@ -380,8 +382,13 @@ fn apply_buff(chr:&mut ChrIns,layers:u32,combat:&mut Combat) {
         super::log(format!("STARSURGE_BUFF verify row={id} layers={expected} present={present} rate={rate:?}"));
     }
     // 读档、切图会清掉身上的特效：层数没变但增伤丢了也要重新挂上
-    let lost=layers>0&&combat.applied_at.is_some_and(|t|t.elapsed()>Duration::from_secs(1))
+    // 切图时游戏自己会清特效，这段时间不能补挂：连续 3 秒都不在、且角色已就绪才补
+    let missing=layers>0&&combat.applied_at.is_some_and(|t|t.elapsed()>Duration::from_secs(1))
         &&combat.row.is_some_and(|id|!chr.special_effect.entries().any(|e|e.param_id==id));
+    if !missing||!super::runtime::PLAYER_READY.load(Ordering::Relaxed) {combat.lost_since=None;}
+    else if combat.lost_since.is_none() {combat.lost_since=Some(Instant::now());}
+    let lost=combat.lost_since.is_some_and(|t|t.elapsed()>=Duration::from_secs(3));
+    if lost {combat.lost_since=None;}
     if layers==combat.applied&&!lost {return;}
     combat.applied=layers;combat.applied_at=Some(Instant::now());
     let old=combat.row.take();
@@ -509,8 +516,18 @@ pub fn fight(world:&mut WorldChrMan,foes:&[(FieldInsHandle,u8,u8)],multiplayer:b
     let combat=guard.get_or_insert_with(||restore_combat(seed));
     let now=Instant::now();
     // 队友和所有骨灰（本机、远程）：它们的弹体、它们打的伤害都不算自己的
-    let spirits:Vec<FieldInsHandle>=world.summon_buddy_manager.groups.iter().flat_map(|pair|pair.second.iter())
-        .map(|group|unsafe {group.chr_ins.as_ref()}.field_ins_handle).collect();
+    // 召唤组里的角色指针在切图、骨灰消失时可能已经失效：不解引用，只和场上活着的角色比地址，比上了再取它的句柄
+    // 召唤管理器本身在离开联机会话（离别黑雾）、切图重建世界时可能是空指针：先判空，空就当没有骨灰
+    // 注意：OwnedPtr 里是 NonNull，`as_ptr().is_null()` 会被编译器直接当成 false 优化掉（r12 的判空就是这样失效的）。
+    // 所以按原始内存把这个指针字段读成整数再判空。
+    let manager=unsafe {std::ptr::read_volatile(std::ptr::addr_of!(world.summon_buddy_manager).cast::<usize>())};
+    let summoned:Vec<usize>=if manager==0 {Vec::new()} else {
+        unsafe {&*(manager as *const eldenring::cs::SummonBuddyManager)}.groups.iter().flat_map(|pair|pair.second.iter()).map(|group|group.chr_ins.as_ptr() as usize).collect()
+    };
+    let spirits:Vec<FieldInsHandle>=if summoned.is_empty() {Vec::new()} else {
+        world.chr_sets.iter().flatten().flat_map(|set|set.characters())
+            .filter(|chr|summoned.contains(&(std::ptr::from_ref::<ChrIns>(chr) as usize))).map(|chr|chr.field_ins_handle).collect()
+    };
     let teammates:Vec<u64>=world.player_chr_set.characters().map(|p|handle_bits(&p.chr_ins.field_ins_handle)).filter(|h|*h!=owner).collect();
     if let Ok(mut others)=OTHERS.lock() {*others=teammates.iter().copied().chain(spirits.iter().map(handle_bits)).collect();}
     // 商人、事件房间等没有名单的场合：身边 60 米内所有活着的非玩家角色都算（名单敌人照旧在前）
@@ -522,6 +539,8 @@ pub fn fight(world:&mut WorldChrMan,foes:&[(FieldInsHandle,u8,u8)],multiplayer:b
         // 联机时也扫（商人房的铃珠猎人、宝箱房的伏击等都不在名单里）；别人打的由 last_hit_by 排除
         if let Some(me)=me {
             for chr in world.chr_sets.iter().flatten().flat_map(|set|set.characters()) {
+                // 只看已经加载好、正在场上的角色：切图卸载地图时角色表里会有正在销毁的角色，碰它们的数据会闪退
+                if !matches!(unsafe {chr.chr_set_entry.as_ref()}.chr_load_status,eldenring::cs::ChrLoadStatus::Active|eldenring::cs::ChrLoadStatus::ReadyForActivation) {continue;}
                 let h=chr.field_ins_handle;
                 // 测伤人偶、商人等不会动的角色不算（它们被设成不能移动）
                 if players.contains(&h)||spirits.contains(&h)||all.contains(&h)||scarab==Some(h)||chr.modules.data.hp<=0||chr.debug_flags.disabled_movement() {continue;}

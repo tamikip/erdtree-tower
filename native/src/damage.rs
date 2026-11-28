@@ -40,6 +40,17 @@ fn reduced(original:i32,requested:Option<i32>)->i32 {
     requested.filter(|&value|original>0&&value>=1&&value<=original).unwrap_or(original)
 }
 unsafe extern "C" fn before_hp(module:usize,packet:usize,hp:i32,attacker:usize) {
+    unsafe {before_hp_filters(module,packet,hp,attacker)};
+    // HansFix 惜别泪滴：所有减伤（含适应）算完之后，若这一下仍会致死就留 1 点生命
+    if module!=0&&packet!=0&&hp>0 {
+        let target=unsafe {((module+8) as *const usize).read_unaligned()};
+        let value=unsafe {((packet+0x228) as *const i32).read_unaligned()};
+        if value>0&&let Ok(Some(v))=std::panic::catch_unwind(||super::tears::lethal(target,hp,value)) {
+            unsafe {((packet+0x228) as *mut i32).write_unaligned(v)};
+        }
+    }
+}
+unsafe fn before_hp_filters(module:usize,packet:usize,hp:i32,attacker:usize) {
     let filter=FILTER.load(Ordering::Acquire);
     if module==0||packet==0||hp<=0||filter==0&&!*TRACE {return;}
     let target=unsafe {((module+8) as *const *const ChrIns).read_unaligned()};
@@ -63,6 +74,15 @@ unsafe extern "C" fn before_hp(module:usize,packet:usize,hp:i32,attacker:usize) 
 }
 
 unsafe extern "C" fn after_hp(module:usize,packet:usize,hp:i32,attacker:usize) {
+    // HansFix 失衡保底：玩家打中敌人时记下目标和那一刻的失衡值（stance_floor 下一帧补到至少 1 点）
+    if module!=0&&packet!=0&&hp>0&&attacker!=0 {
+        let target=unsafe {((module+8) as *const *const ChrIns).read_unaligned()};
+        if let Some(chr)=unsafe {target.as_ref()} {
+            let by=unsafe {((attacker+8) as *const FieldInsHandle).read_unaligned()};
+            let (handle,stance)=(chr.field_ins_handle,chr.modules.super_armor.sa_durability);
+            let _=std::panic::catch_unwind(||super::stance_floor::on_hit(by,handle,stance));
+        }
+    }
     let observer=OBSERVER.load(Ordering::Acquire);
     if observer==0||module==0||packet==0||hp<=0||attacker==0 {return;}
     let target=unsafe {((module+8) as *const *const ChrIns).read_unaligned()};

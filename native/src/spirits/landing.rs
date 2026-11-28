@@ -54,7 +54,7 @@ pub(crate) fn tick(world:&mut WorldChrMan,warping:bool) {
     let samples:Vec<_>=manager.groups.iter().filter(|pair|pair.first==owner).flat_map(|pair|pair.second.iter()).filter_map(|group|{
         let offset=group.buddy_param_id.checked_sub(1600000000)?;
         if offset<0||offset/40000>=erdtree_tower::rewards::CUSTOM_SPIRITS.len() as i32||offset%1000>=3{return None;}
-        let chr=unsafe {group.chr_ins.as_ref()};let physics=&chr.modules.physics;
+        let chr=super::live_chr(group)?;let physics=&chr.modules.physics;
         let handle=chr.field_ins_handle;let key=(u64::from(handle.block_id.0 as u32)<<32)|u64::from(handle.selector.0);
         let time=&chr.modules.time_act;
         Some((key,handle,[physics.position.0,physics.position.1,physics.position.2],Sample{radius:physics.hit_radius.max(physics.chr_hit_radius),y:physics.position.1,player_y,

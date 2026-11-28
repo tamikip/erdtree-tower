@@ -438,6 +438,8 @@ impl Panel {
         for icon in self.wanted.drain(..self.wanted.len().min(6)).collect::<Vec<_>>() {
             let texture=match std::fs::read(root.join(format!("{icon}.rgba"))) {
                 Ok(data) if data.len()==160*160*4=>renderer.load_texture(&data,160,160).map_err(|e|crate::log(format!("Reward texture upload failed: {icon} {e:?}"))).ok(),
+                // HansFix：惜别泪滴的符文贴图是 256×256
+                Ok(data) if data.len()==256*256*4=>renderer.load_texture(&data,256,256).map_err(|e|crate::log(format!("Reward texture upload failed: {icon} {e:?}"))).ok(),
                 _=>{crate::log(format!("Reward icon missing: {icon}"));None},
             };
             self.textures.insert(icon,texture);

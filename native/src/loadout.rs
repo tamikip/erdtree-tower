@@ -242,6 +242,12 @@ pub fn reset(data: &mut PlayerGameData, archetype: u8) -> Result<(), String> {
         super::items::give(&[(id|0x40000000,1,-1)])?;
         data.equipment.equip_magic_data.entries[slot].param_id=id;
     }
+    // 祷誓者开局自带惜别泪滴：放进背包；有空的记忆格就直接装上（原版两格已被两个起手祷告占满）
+    if super::class_from_archetype(archetype)==Some(erdtree_tower::Class::Prophet) {
+        super::items::give(&[(super::tears::ITEM as i32,1,-1)])?;
+        let open=data.unlocked_magic_slots as usize;
+        if let Some(entry)=data.equipment.equip_magic_data.entries.iter_mut().take(open).find(|e|e.param_id<0) {entry.param_id=super::tears::SPELL;}
+    }
     for (id,qty) in [(p.item_01(),p.item_num_01()),(p.item_02(),p.item_num_02()),(p.item_03(),p.item_num_03()),(p.item_04(),p.item_num_04()),(p.item_05(),p.item_num_05()),(p.item_06(),p.item_num_06()),(p.item_07(),p.item_num_07()),(p.item_08(),p.item_num_08()),(p.item_09(),p.item_num_09()),(p.item_10(),p.item_num_10()),(p.secondary_item_01(),p.secondary_item_num_01()),(p.secondary_item_02(),p.secondary_item_num_02()),(p.secondary_item_03(),p.secondary_item_num_03()),(p.secondary_item_04(),p.secondary_item_num_04()),(p.secondary_item_05(),p.secondary_item_num_05()),(p.secondary_item_06(),p.secondary_item_num_06())] {
         if id>=0 && qty>0 {super::items::give(&[(id|0x40000000,qty as i32,-1)])?;}
     }

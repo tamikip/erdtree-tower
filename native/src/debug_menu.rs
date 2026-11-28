@@ -29,7 +29,7 @@ fn trace_custom_spirits(world:&eldenring::cs::WorldChrMan) {
     let now=std::time::Instant::now();
     if traces.len()>64 {traces.clear();}
     for group in world.summon_buddy_manager.groups.iter().flat_map(|pair|pair.second.iter()).filter(|g|!g.is_remote) {
-        let chr=unsafe {group.chr_ins.as_ref()};
+        let Some(chr)=crate::spirits::live_chr(group) else {continue;};
         let Some(goods)=custom_buddy_item(group.buddy_param_id) else {continue;};
         let state=traces.entry(chr.field_ins_handle.to_string()).or_insert((now,0));
         if state.1>=120||state.1>0&&now.duration_since(state.0)<std::time::Duration::from_millis(250) {continue;}
@@ -72,11 +72,11 @@ pub fn tick_enemies(world:&mut eldenring::cs::WorldChrMan) {
     let Some(player)=world.main_player.as_ref() else{return};
     let origin={let p=&player.chr_ins.modules.physics.position;[p.0,p.1,p.2]};
     if open&&let Ok(mut rows)=SUMMONS.lock() {
-        *rows=world.summon_buddy_manager.groups.iter().flat_map(|pair|pair.second.iter()).filter(|g|!g.is_remote).map(|group| {
-            let chr=unsafe {group.chr_ins.as_ref()};let p=&chr.modules.physics.position;
+        *rows=world.summon_buddy_manager.groups.iter().flat_map(|pair|pair.second.iter()).filter(|g|!g.is_remote).filter_map(|group| {
+            let chr=crate::spirits::live_chr(group)?;let p=&chr.modules.physics.position;
             let distance=((p.0-origin[0]).powi(2)+(p.1-origin[1]).powi(2)+(p.2-origin[2]).powi(2)).sqrt();
             let name=custom_buddy_item(group.buddy_param_id).and_then(erdtree_tower::rewards::lookup).map_or("原版召唤物",|i|i.name);
-            format!("{name} · 生命 {}/{} · 距离 {distance:.1} 米 · 高差 {:.1} · 落地 {} · 下坠 {}{}",chr.modules.data.hp,chr.modules.data.max_hp,p.1-origin[1],chr.modules.physics.is_touching_ground,chr.modules.physics.is_falling,if group.disappear_requested{" · 正在离场"}else{""})
+            Some(format!("{name} · 生命 {}/{} · 距离 {distance:.1} 米 · 高差 {:.1} · 落地 {} · 下坠 {}{}",chr.modules.data.hp,chr.modules.data.max_hp,p.1-origin[1],chr.modules.physics.is_touching_ground,chr.modules.physics.is_falling,if group.disappear_requested{" · 正在离场"}else{""}))
         }).collect();
     }
     let friends:Vec<eldenring::cs::FieldInsHandle>=world.player_chr_set.characters().map(|p|p.chr_ins.field_ins_handle)
@@ -416,6 +416,7 @@ impl Menu {
         }
         ui.separator();
         if ui.button(crate::i18n::t("回满生命、专注与圣杯瓶")) {send(Command::Heal);}
+        if ui.button(crate::i18n::t("获得惜别泪滴（HansFix 测试）")) {send(Command::Item(crate::tears::ITEM));}
         if ui.button(crate::i18n::t("生成大型蓝露滴粪金龟（星辉术士测试）")) {crate::starsurge::request_scarab();}
         let blocked=CHEATS_BLOCKED.load(Ordering::Relaxed);
         let disabled=ui.begin_disabled(blocked);
